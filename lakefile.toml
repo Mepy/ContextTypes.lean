@@ -2,5 +2,10 @@ name = "ContextTypes"
 version = "0.1.0"
 defaultTargets = ["ContextTypes"]
 
+[[require]]
+name = "mathlib"
+git = "https://github.com/leanprover-community/mathlib4"
+rev = "abc669d11b88e163aed1c05b352b5b16889c4ad8"
+
 [[lean_lib]]
 name = "ContextTypes"
