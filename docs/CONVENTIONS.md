@@ -72,8 +72,8 @@ open scoped ContextTypes
 | Context interpretation | `⟦Γ⟧[Σ]` | `Context.interpUnder Σ Γ` |
 | Context typing | `Φ ⊢ᶜ [Σ; Γ] e ⋮ τ` | `HasContextType Φ Σ Γ e τ` |
 | Semantic typing | `Φ ⊨ᶜ [Σ; Γ] e ⋮ τ` | `SemTyp Φ Σ Γ e τ` |
-| Semantic subtype | `sub[Σ; Γ](τ₁, τ₂)` | `SubTypeUnder Σ Γ τ₁ τ₂` |
-| Semantic context subtype | `ctxsub[Σ; X](Γ₁, Γ₂)` | `ContextSubUnder Σ X Γ₁ Γ₂` |
+| Semantic subtype | `Σ , Γ ⊢ τ₁ <: τ₂` | `SubTypeUnder Σ Γ τ₁ τ₂` |
+| Semantic context subtype | `Σ ⊢ Γ₁ ≤[X] Γ₂` | `ContextSubUnder Σ X Γ₁ Γ₂` |
 
 Do not introduce alternate spellings such as `≤w`, `WorldLe`, `Satisfies`,
 `SemanticallyTyped`, or `ContextHasType`.
@@ -127,10 +127,12 @@ Use the following notation consistently:
 | `τ₁ → τ₂` | Ordinary/entangled function type |
 | `τ₁ -∗ τ₂` | Separating function type |
 | `□ τ` | Persistent type |
+| `{ν : b | q}` | Overapproximate/demonic context type |
+| `[ν : b | q]` | Underapproximate/angelic context type |
 | `P ∗ Q` | Separating conjunction |
 | `P -∗[d] Q` | Binder-aware magic wand |
-| `over P` | Overapproximate/demonic modality |
-| `under P` | Underapproximate/angelic modality |
+| `🄾 P` | Overapproximate/demonic modality |
+| `🅄 P` | Underapproximate/angelic modality |
 | `□ P` | Persistent formula |
 | `fib D |> P` | Fiber quantification over `D` |
 
@@ -139,6 +141,11 @@ whose binder accounting is implicit.
 
 Qualifier top observes the result binder.  It must not be represented by an
 empty-support predicate.
+
+The modality tokens are `🄾` (U+1F13E, SQUARED LATIN CAPITAL LETTER O) and
+`🅄` (U+1F144, SQUARED LATIN CAPITAL LETTER U).  Do not add parallel word-style
+notations such as `over P` and `under P`.  The braces and brackets distinguish
+the corresponding context-type constructors from formula modalities.
 
 ## Notation and pretty printing
 
