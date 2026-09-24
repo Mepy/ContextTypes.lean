@@ -1,0 +1,6 @@
+name = "ContextTypes"
+version = "0.1.0"
+defaultTargets = ["ContextTypes"]
+
+[[lean_lib]]
+name = "ContextTypes"

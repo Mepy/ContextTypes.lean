@@ -1,0 +1,6 @@
+/-!
+This module is the public root of the `ContextTypes` library.
+
+Modules will be added here as the formalization is implemented.  The intended
+module boundaries and dependency order are recorded in `docs/struct.md`.
+-/
