@@ -96,11 +96,6 @@ namespace Formula
 abbrev wandOne (P Q : Formula) : Formula :=
   .wand 1 P Q
 
-/-- Paper-facing universal binder.  `x` is a display name; occurrences in
-`P` use the locally nameless index `LogicVar.bound 0`. -/
-def allNamed (_x : Atom) (P : Formula) : Formula :=
-  .all P
-
 set_option hygiene false in
 scoped[ContextTypes] notation:max (name := formulaTop) "⊤ᶜ" =>
   ContextTypes.Formula.top
@@ -138,9 +133,14 @@ scoped[ContextTypes] notation:60 (name := formulaWandDepth)
     P:61 " -∗[" d "] " Q:60 =>
   ContextTypes.Formula.wand d P Q
 
-set_option hygiene false in
-scoped[ContextTypes] notation:25 (name := formulaAll) "∀ " x ", " P:25 =>
-  ContextTypes.Formula.allNamed x P
+end Formula
+
+scoped syntax:25 (name := formulaAll) "∀ᶜ " ident ", " term:25 : term
+
+scoped macro_rules (kind := formulaAll)
+  | `(∀ᶜ $_:ident, $P:term) => `(ContextTypes.Formula.all $P)
+
+namespace Formula
 
 set_option hygiene false in
 scoped[ContextTypes] prefix:30 (name := formulaOver) "🄾 " =>

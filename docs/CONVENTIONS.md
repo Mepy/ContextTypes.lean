@@ -167,7 +167,7 @@ Use the following notation consistently:
 | `P ∗ Q` | Separating conjunction |
 | `P -∗ Q` | Magic wand (paper-facing form) |
 | `P -∗[d] Q` | Magic wand with explicit binder depth |
-| `∀ x, P` | Universal formula |
+| `∀ᶜ x, P` | Universal formula |
 | `🄾 P` | Overapproximate/demonic modality |
 | `🅄 P` | Underapproximate/angelic modality |
 | `P ⊕ Q` | Capability-splitting sum |
