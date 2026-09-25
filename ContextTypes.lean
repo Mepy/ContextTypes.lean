@@ -5,6 +5,7 @@ import ContextTypes.Capability
 import ContextTypes.Qualifier
 import ContextTypes.ContextType
 import ContextTypes.Notation
+import ContextTypes.BasicTyp
 
 /-!
 This module is the public root of the `ContextTypes` library.
