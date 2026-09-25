@@ -1,4 +1,5 @@
 import ContextTypes.Syntax
+import ContextTypes.Subst
 
 /-!
 This module is the public root of the `ContextTypes` library.

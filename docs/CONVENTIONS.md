@@ -9,6 +9,7 @@ instead of introducing parallel names or notation.
 | Module | Responsibility |
 | --- | --- |
 | `Syntax.lean` | Core-language syntax and binding operations |
+| `Subst.lean` | Free-atom substitution and its structural laws |
 | `OperSem.lean` | Primitive, head, small-step, and multi-step operational semantics |
 | `Capability.lean` | Contextual capabilities, algebra, fibers, and extensions |
 | `Qualifier.lean` | Supported qualifiers and their binding operations |

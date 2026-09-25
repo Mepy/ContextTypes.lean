@@ -23,13 +23,14 @@ an implementation directory tree mechanically:
 The intended dependency direction is:
 
 ```text
-Syntax ──┬──> OperSem
+Syntax ──┬──> Subst
+         ├──> OperSem
          ├──> Capability
          └──> Qualifier ──> ContextType ──> Notation
 
 Capability + Qualifier ──> CtxLogic
 
-OperSem + ContextType ──> BasicTyp
+OperSem + Subst + ContextType ──> BasicTyp
 BasicTyp + CtxLogic + ContextType ──> Interp ──> Pretty ──> SynTyp
                                                               │
                                                               v
@@ -59,10 +60,22 @@ Owns the syntax shared by the remainder of the development:
 - base and simple types;
 - constants and primitive-operation names;
 - core values and terms;
-- core-language opening, closing, substitution, and support operations.
+- core-language opening, closing, swapping, local closure, and support
+  operations.
 
 The first port follows the checked core language: unit, booleans, naturals,
 unary primitives, application, let, Boolean matching, lambda, and fixpoint.
+
+### `Subst.lean`
+
+Owns free-atom substitution for core values and terms, together with its
+support, local-closure, and opening-commutation laws.  Bound-variable
+instantiation remains the `openAt` operation in `Syntax.lean`; the separate
+module keeps the two locally nameless operations mathematically distinct.
+
+Operational reduction imports only `Syntax.lean`, while typing and
+environment instantiation import `Subst.lean` when free-variable substitution
+is required.
 
 ### `OperSem.lean`
 
@@ -248,7 +261,7 @@ representations should remain behind the APIs of their owning modules.
 
 Modules are added with working content rather than as empty placeholders:
 
-1. `Syntax`;
+1. `Syntax` and `Subst`;
 2. `OperSem`, `Capability`, and `Qualifier`;
 3. `ContextType` and `Notation`;
 4. `BasicTyp` and `CtxLogic`;
