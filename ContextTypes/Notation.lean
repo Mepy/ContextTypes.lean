@@ -28,7 +28,7 @@ set_option hygiene false in
 scoped[ContextTypes] infixr:70 " ⊕ " => ContextTypes.ContextType.sum
 
 set_option hygiene false in
-scoped[ContextTypes] infixr:99 " → " => ContextTypes.ContextType.arrow
+scoped[ContextTypes] infixr:25 " → " => ContextTypes.ContextType.arrow
 
 set_option hygiene false in
 scoped[ContextTypes] infixr:60 " -∗ " => ContextTypes.ContextType.wand
