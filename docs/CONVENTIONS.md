@@ -8,12 +8,14 @@ instead of introducing parallel names or notation.
 
 | Module | Responsibility |
 | --- | --- |
-| `Syntax.lean` | Core-language and context-type syntax, binding operations, and erasure |
-| `Notation.lean` | Scoped surface syntax for terms, context types, and contexts |
+| `Syntax.lean` | Core-language syntax and binding operations |
 | `OperSem.lean` | Primitive, head, small-step, and multi-step operational semantics |
-| `BasicTyp.lean` | Simple typing and syntactic well-formedness |
 | `Capability.lean` | Contextual capabilities, algebra, fibers, and extensions |
-| `CtxLogic.lean` | Qualifiers, formulas, satisfaction, entailment, and logic laws |
+| `Qualifier.lean` | Supported qualifiers and their binding operations |
+| `ContextType.lean` | Context types, bunched contexts, support, and erasure |
+| `Notation.lean` | Scoped surface syntax for terms, context types, and contexts |
+| `BasicTyp.lean` | Simple typing and syntactic well-formedness |
+| `CtxLogic.lean` | Formulas, satisfaction, entailment, and logic laws |
 | `Interp.lean` | Type and context interpretation and semantic subtyping |
 | `Pretty.lean` | Delaborators for readable InfoView output |
 | `SynTyp.lean` | The context-typing judgment and its regularity properties |
@@ -40,7 +42,7 @@ Use the following principal names:
 | `ContextType` | An over/under context type |
 | `Context` | A bunched context of context types |
 | `PrimitiveContext` | Context-type signatures for primitive operations |
-| `HasContextType` | The syntactic context-typing judgment |
+| `SynTyp` | The syntactic context-typing judgment |
 | `SemTyp` | The semantic context-typing judgment |
 
 Use `Capability` as the public name for the paper's contextual capabilities.
@@ -61,29 +63,31 @@ open scoped ContextTypes
 
 | Meaning | Preferred form | Declaration |
 | --- | --- | --- |
-| Basic value typing | `Δ ⊢ᵥ v ⋮ T` | `ValueTyping Δ v T` |
-| Basic term typing | `Δ ⊢ₑ e ⋮ T` | `TermTyping Δ e T` |
-| Capability projection order | `m ⊑ n` | `SqSubsetEq.sqSubsetEq m n` |
-| Same-domain possibility inclusion | `m ⊆ᵣ n` | `Capability.Subset m n` |
+| Basic value typing | `Δ ⊢ᵥ v ⋮ T` | `BasicValTyp Δ v T` |
+| Basic term typing | `Δ ⊢ₑ e ⋮ T` | `BasicTermTyp Δ e T` |
+| Capability refinement/projection order | `m ⊑ n` | `Capability.Refines m n` |
+| Capability inclusion | `m ⊆ n` | `Capability.Subset m n` |
 | Formula satisfaction | `m ⊨ P` | `Formula.Models m P` |
 | Formula entailment | `P ⊫ Q` | `Formula.Entails P Q` |
 | Formula equivalence | `P ⊣⊢ Q` | `Formula.Equiv P Q` |
 | Type interpretation | `⟦τ⟧[Δ] e` | `ContextType.interp Δ τ e` |
 | Context interpretation | `⟦Γ⟧[Σ]` | `Context.interpUnder Σ Γ` |
-| Context typing | `Φ ⊢ᶜ [Σ; Γ] e ⋮ τ` | `HasContextType Φ Σ Γ e τ` |
-| Semantic typing | `Φ ⊨ᶜ [Σ; Γ] e ⋮ τ` | `SemTyp Φ Σ Γ e τ` |
+| Syntactic typing | `Φ ; Σ ; Γ ⊢ e ⋮ τ` | `SynTyp Φ Σ Γ e τ` |
+| Semantic typing | `Φ ; Σ ; Γ ⊨ e ⋮ τ` | `SemTyp Φ Σ Γ e τ` |
 | Semantic subtype | `Σ , Γ ⊢ τ₁ <: τ₂` | `SubTypeUnder Σ Γ τ₁ τ₂` |
-| Semantic context subtype | `Σ ⊢ Γ₁ ≤[X] Γ₂` | `ContextSubUnder Σ X Γ₁ Γ₂` |
+| Semantic context subtype | `Σ ⊢ Γ₁ ≤[X] Γ₂` | `SubCtxUnder Σ X Γ₁ Γ₂` |
 
 Do not introduce alternate spellings such as `≤w`, `WorldLe`, `Satisfies`,
-`SemanticallyTyped`, or `ContextHasType`.
+or `SemanticallyTyped`.
 
 The notation `m ⊑ n` is the projection/Kripke relation: `m` is the
 restriction of `n` to the domain visible in `m`.  It is not inclusion between
 sets of possible stores.
 
-The notation `m ⊆ᵣ n` compares possible stores at the same domain.  Keep these
-relations distinct in definitions, theorem names, and prose.
+The notation `m ⊆ n` is ordinary inclusion between the possible stores of two
+capabilities.  Since capabilities are nonempty and all their stores share one
+domain, this inclusion forces `m` and `n` to have the same domain.  Keep it
+distinct from `m ⊑ n` in definitions, theorem names, and prose.
 
 ## Mathematical variables
 
@@ -167,7 +171,7 @@ Use local hygiene disabling for judgment-facing notation:
 ```lean
 set_option hygiene false in
 scoped notation:50 m:51 " ⊑ " n:51 =>
-  SqSubsetEq.sqSubsetEq m n
+  Capability.Refines m n
 ```
 
 Do not disable hygiene for an entire file.  Project-specific notation belongs
@@ -198,7 +202,7 @@ Definitions and theorems use domain namespaces rather than repeated prefixes:
 ```lean
 Capability.restrict
 Capability.restrict_idem
-Capability.sqSubset_trans
+Capability.refines_trans
 Formula.models_kripke
 Formula.models_star_iff
 ContextType.erase
@@ -217,7 +221,7 @@ are too vague unless qualified by an owning domain namespace.
 
 ## Semantic typing and the Fundamental theorem
 
-`SemTyp` is the semantic counterpart of `HasContextType`: context
+`SemTyp` is the semantic counterpart of `SynTyp`: context
 interpretation entails type interpretation.  The namespace contains one
 compatibility theorem for every syntactic typing constructor, with parallel
 names such as:
@@ -239,7 +243,7 @@ SemTyp.fixpoint
 SemTyp.persist
 ```
 
-`Fundamental.lean` only performs induction on a `HasContextType` derivation
+`Fundamental.lean` only performs induction on a `SynTyp` derivation
 and dispatches to these named compatibility theorems.  Case-specific semantic
 proofs do not belong there.
 
