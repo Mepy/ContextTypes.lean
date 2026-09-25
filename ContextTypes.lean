@@ -4,6 +4,7 @@ import ContextTypes.OperSem
 import ContextTypes.Capability
 import ContextTypes.Qualifier
 import ContextTypes.ContextType
+import ContextTypes.Notation
 
 /-!
 This module is the public root of the `ContextTypes` library.
