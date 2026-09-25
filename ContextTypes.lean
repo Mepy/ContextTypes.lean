@@ -3,6 +3,7 @@ import ContextTypes.Subst
 import ContextTypes.OperSem
 import ContextTypes.Capability
 import ContextTypes.Qualifier
+import ContextTypes.ContextType
 
 /-!
 This module is the public root of the `ContextTypes` library.

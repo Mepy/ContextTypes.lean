@@ -269,6 +269,32 @@ def substituteBack (X : Finset LogicVar) (ρ : Assignment)
 
 end AssignmentOn
 
+namespace LogicVar
+
+/-- Insert a binder at depth `k`, shifting bound indices at or above it. -/
+def shiftFrom (k : Nat) : LogicVar → LogicVar
+  | .bound n => if k ≤ n then .bound (n + 1) else .bound n
+  | .free x => .free x
+
+theorem shiftFrom_injective (k : Nat) : Function.Injective (shiftFrom k) := by
+  intro ξ ζ same
+  cases ξ with
+  | free x =>
+      cases ζ with
+      | free y => simpa [shiftFrom] using same
+      | bound n =>
+          by_cases hn : k ≤ n <;> simp [shiftFrom, hn] at same
+  | bound n =>
+      cases ζ with
+      | free y =>
+          by_cases hn : k ≤ n <;> simp [shiftFrom, hn] at same
+      | bound m =>
+          simp only [shiftFrom] at same
+          by_cases hn : k ≤ n <;> by_cases hm : k ≤ m <;>
+            simp [hn, hm] at same ⊢ <;> omega
+
+end LogicVar
+
 /-- A semantic predicate with an explicit finite logical-variable support. -/
 structure Qualifier where
   support : Finset LogicVar
@@ -323,6 +349,17 @@ def substitute (q : Qualifier) (ρ : Assignment) : Qualifier where
   support := q.support \ ρ.domain
   holds := fun σ => q.holds (σ.substituteBack q.support ρ)
 
+/-- Transport a qualifier along an injective logical-variable renaming. -/
+def rename (q : Qualifier) (f : LogicVar → LogicVar)
+    (_inj : Function.Injective f) : Qualifier where
+  support := q.support.image f
+  holds := fun σ => ∃ ρ : AssignmentOn q.support,
+    q.holds ρ ∧ ∀ ξ, ρ.assignment.lookup ξ = σ.assignment.lookup (f ξ)
+
+/-- Shift bound logical variables at or above depth `k`. -/
+def shiftFrom (q : Qualifier) (k : Nat) : Qualifier :=
+  q.rename (LogicVar.shiftFrom k) (LogicVar.shiftFrom_injective k)
+
 /-- The always-true qualifier on exactly `X`. -/
 def topOn (X : Finset LogicVar) : Qualifier where
   support := X
@@ -362,6 +399,14 @@ abbrev locallyClosed (q : Qualifier) : Prop :=
 
 @[simp] theorem support_substitute (q : Qualifier) (ρ : Assignment) :
     (q.substitute ρ).support = q.support \ ρ.domain :=
+  rfl
+
+@[simp] theorem support_rename (q : Qualifier) (f : LogicVar → LogicVar)
+    (inj : Function.Injective f) : (q.rename f inj).support = q.support.image f :=
+  rfl
+
+@[simp] theorem support_shiftFrom (q : Qualifier) (k : Nat) :
+    (q.shiftFrom k).support = q.support.image (LogicVar.shiftFrom k) :=
   rfl
 
 @[simp] theorem support_topOn (X : Finset LogicVar) :
@@ -491,6 +536,22 @@ theorem swap_fresh (q : Qualifier) (x y : Atom)
     have back : ρ.swapBack (.free x) (.free y) = σ := by
       apply AssignmentOn.ext
       change ρ.assignment.swap (.free x) (.free y) = σ.assignment
+      rw [same]
+      apply Assignment.swap_fresh
+      · rwa [σ.domain_eq]
+      · rwa [σ.domain_eq]
+    rw [back]
+
+theorem openAt_fresh (q : Qualifier) (k : Nat) (x : Atom)
+    (hk : LogicVar.bound k ∉ q.support)
+    (hx : LogicVar.free x ∉ q.support) : q.openAt k x = q := by
+  apply ext
+  · exact image_swap_eq_self_of_fresh (.bound k) (.free x) q.support hk hx
+  · intro ρ σ same
+    change q.holds (ρ.swapBack (.bound k) (.free x)) ↔ q.holds σ
+    have back : ρ.swapBack (.bound k) (.free x) = σ := by
+      apply AssignmentOn.ext
+      change ρ.assignment.swap (.bound k) (.free x) = σ.assignment
       rw [same]
       apply Assignment.swap_fresh
       · rwa [σ.domain_eq]
