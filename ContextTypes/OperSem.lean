@@ -207,9 +207,46 @@ namespace Term
 def isValue (e : Term) : Prop :=
   ∃ v, e = .ret v
 
+/-- A closed returned value is an operational result. -/
+def IsResult (e : Term) : Prop :=
+  ∃ v, e = .ret v ∧ v.locallyClosed
+
+/-- A term can take at least one reduction step. -/
+def CanStep (e : Term) : Prop :=
+  ∃ e', Step e e'
+
+/-- Every reduction branch reaches a result after finitely many steps. -/
+inductive MustTerminate : Term → Prop where
+  | result {e : Term} (result : e.IsResult) : e.MustTerminate
+  | step {e : Term} (steps : e.CanStep)
+      (next : ∀ e', Step e e' → e'.MustTerminate) : e.MustTerminate
+
+theorem MustTerminate.ret (v : Value) (closed : v.locallyClosed) :
+    MustTerminate (.ret v) :=
+  .result ⟨v, rfl, closed⟩
+
+theorem MustTerminate.step_inv {e e' : Term} (terminates : e.MustTerminate)
+    (step : Step e e') : e'.MustTerminate := by
+  cases terminates with
+  | result result =>
+      obtain ⟨v, rfl, closed⟩ := result
+      exact (Steps.ret_no_step v step).elim
+  | step steps next => exact next e' step
+
 /-- Evaluation of `e` may return `v`. -/
 def reaches (e : Term) (v : Value) : Prop :=
   Steps e (.ret v)
+
+theorem MustTerminate.reaches_result {e : Term} (terminates : e.MustTerminate) :
+    ∃ v, e.reaches v := by
+  induction terminates with
+  | result result =>
+      obtain ⟨v, rfl, closed⟩ := result
+      exact ⟨v, .refl _ closed⟩
+  | step steps next ih =>
+      obtain ⟨e', step⟩ := steps
+      obtain ⟨v, reaches⟩ := ih e' step
+      exact ⟨v, .tail step reaches⟩
 
 /-- The relational set of all possible results of a term. -/
 def results (e : Term) : Set Value :=
