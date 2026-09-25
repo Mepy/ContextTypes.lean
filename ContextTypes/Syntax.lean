@@ -19,61 +19,60 @@ abbrev Atom := Nat
 
 /-- A locally nameless logical variable. -/
 inductive LogicVar where
-  | bound (index : Nat)
-  | free (name : Atom)
+  | bound (k : Nat)
+  | free (x : Atom)
   deriving DecidableEq, Repr
 
 namespace LogicVar
 
 /-- Swap two logical variables.  Logical-variable opening is represented by
 such a transposition, following the finite-support development. -/
-def swap (left right : LogicVar) (target : LogicVar) : LogicVar :=
-  if target = left then right
-  else if target = right then left
-  else target
+def swap (ξ₁ ξ₂ ξ : LogicVar) : LogicVar :=
+  if ξ = ξ₁ then ξ₂
+  else if ξ = ξ₂ then ξ₁
+  else ξ
 
-/-- Open logical binder `index` with the fresh atom `name`.
+/-- Open logical binder `k` with the fresh atom `x`.
 
 This operation is deliberately involutive: it swaps the bound and free keys.
 The one-sided operation is provided separately for situations where the
 inverse action is not wanted. -/
-def openBinder (index : Nat) (name : Atom) : LogicVar → LogicVar :=
-  swap (.bound index) (.free name)
+def openBinder (k : Nat) (x : Atom) : LogicVar → LogicVar :=
+  swap (.bound k) (.free x)
 
 /-- Replace one bound logical variable by a free variable. -/
-def openOneSided (index : Nat) (name : Atom) : LogicVar → LogicVar
-  | .bound other => if other = index then .free name else .bound other
-  | .free other => .free other
+def openOneSided (k : Nat) (x : Atom) : LogicVar → LogicVar
+  | .bound j => if j = k then .free x else .bound j
+  | .free y => .free y
 
 /-- The free-atom support of a logical variable. -/
 def freeAtoms : LogicVar → Finset Atom
   | .bound _ => ∅
-  | .free name => {name}
+  | .free x => {x}
 
-/-- Shift every bound logical variable by `amount`. -/
-def shift (amount : Nat) : LogicVar → LogicVar
-  | .bound index => .bound (amount + index)
-  | .free name => .free name
+/-- Shift every bound logical variable by `d`. -/
+def shift (d : Nat) : LogicVar → LogicVar
+  | .bound k => .bound (d + k)
+  | .free x => .free x
 
-@[simp] theorem swap_left (left right : LogicVar) :
-    swap left right left = right := by
+@[simp] theorem swap_left (ξ₁ ξ₂ : LogicVar) :
+    swap ξ₁ ξ₂ ξ₁ = ξ₂ := by
   simp [swap]
 
-@[simp] theorem swap_right (left right : LogicVar) :
-    swap left right right = left := by
-  by_cases same : right = left
-  · subst right
+@[simp] theorem swap_right (ξ₁ ξ₂ : LogicVar) :
+    swap ξ₁ ξ₂ ξ₂ = ξ₁ := by
+  by_cases same : ξ₂ = ξ₁
+  · subst ξ₂
     simp [swap]
   · simp [swap, same]
 
-@[simp] theorem swap_involutive (left right target : LogicVar) :
-    swap left right (swap left right target) = target := by
-  by_cases target = left <;> by_cases target = right <;>
+@[simp] theorem swap_involutive (ξ₁ ξ₂ ξ : LogicVar) :
+    swap ξ₁ ξ₂ (swap ξ₁ ξ₂ ξ) = ξ := by
+  by_cases ξ = ξ₁ <;> by_cases ξ = ξ₂ <;>
     simp_all [swap]
 
-@[simp] theorem open_involutive (index : Nat) (name : Atom)
-    (target : LogicVar) :
-    openBinder index name (openBinder index name target) = target := by
+@[simp] theorem open_involutive (k : Nat) (x : Atom) (ξ : LogicVar) :
+    openBinder k x (openBinder k x ξ) = ξ := by
   exact swap_involutive _ _ _
 
 end LogicVar
@@ -87,15 +86,15 @@ inductive BaseType where
 
 /-- Erased/simple types used by the operational language. -/
 inductive SimpleType where
-  | base (type : BaseType)
-  | arrow (domain codomain : SimpleType)
+  | base (b : BaseType)
+  | arrow (T U : SimpleType)
   deriving DecidableEq, Repr
 
 /-- Core-language constants. -/
 inductive Constant where
   | unit
-  | bool (value : Bool)
-  | nat (value : Nat)
+  | bool (b : Bool)
+  | nat (n : Nat)
   deriving DecidableEq, Repr
 
 /-- Unary primitive operations.  The generators are nondeterministic and
@@ -122,113 +121,97 @@ mutual
 
   /-- Core values.  Lambdas and fixed points bind index zero in their body. -/
   inductive Value where
-    | const (constant : Constant)
-    | free (name : Atom)
-    | bound (index : Nat)
-    | lam (domain : SimpleType) (body : Term)
+    | const (c : Constant)
+    | free (x : Atom)
+    | bound (k : Nat)
+    | lam (T : SimpleType) (e : Term)
     /-- HATs-style fixed point.  Index zero is the ordinary argument; after
-    opening it, `body` is expected to accept the recursive self reference. -/
-    | fix (functionType : SimpleType) (body : Value)
+    opening it, `v` is expected to accept the recursive self reference. -/
+    | fix (T : SimpleType) (v : Value)
     deriving DecidableEq, Repr
 
   /-- Core call-by-value terms. -/
   inductive Term where
-    | ret (value : Value)
-    | letE (bound body : Term)
-    | primitive (operation : Primitive) (argument : Value)
-    | app (function argument : Value)
-    | matchBool (discriminant : Value) (ifTrue ifFalse : Term)
+    | ret (v : Value)
+    | letE (e₁ e₂ : Term)
+    | primitive (op : Primitive) (v : Value)
+    | app (v₁ v₂ : Value)
+    | matchBool (v : Value) (e₁ e₂ : Term)
     deriving DecidableEq, Repr
 
 end
 
 mutual
 
-  /-- Open de Bruijn index `depth` in a value. -/
+  /-- Open de Bruijn index `d` in a value. -/
   def Value.openAt : Value → Nat → Value → Value
-    | .const constant, _, _ => .const constant
-    | .free name, _, _ => .free name
-    | .bound index, depth, replacement =>
-        if index = depth then replacement else .bound index
-    | .lam domain body, depth, replacement =>
-        .lam domain (body.openAt (depth + 1) replacement)
-    | .fix functionType body, depth, replacement =>
-        .fix functionType (body.openAt (depth + 1) replacement)
+    | .const c, _, _ => .const c
+    | .free x, _, _ => .free x
+    | .bound k, d, u => if k = d then u else .bound k
+    | .lam T e, d, u => .lam T (e.openAt (d + 1) u)
+    | .fix T v, d, u => .fix T (v.openAt (d + 1) u)
 
-  /-- Open de Bruijn index `depth` in a term. -/
+  /-- Open de Bruijn index `d` in a term. -/
   def Term.openAt : Term → Nat → Value → Term
-    | .ret value, depth, replacement => .ret (value.openAt depth replacement)
-    | .letE bound body, depth, replacement =>
-        .letE (bound.openAt depth replacement)
-          (body.openAt (depth + 1) replacement)
-    | .primitive operation argument, depth, replacement =>
-        .primitive operation (argument.openAt depth replacement)
-    | .app function argument, depth, replacement =>
-        .app (function.openAt depth replacement)
-          (argument.openAt depth replacement)
-    | .matchBool discriminant ifTrue ifFalse, depth, replacement =>
-        .matchBool (discriminant.openAt depth replacement)
-          (ifTrue.openAt depth replacement) (ifFalse.openAt depth replacement)
+    | .ret v, d, u => .ret (v.openAt d u)
+    | .letE e₁ e₂, d, u => .letE (e₁.openAt d u) (e₂.openAt (d + 1) u)
+    | .primitive op v, d, u => .primitive op (v.openAt d u)
+    | .app v₁ v₂, d, u => .app (v₁.openAt d u) (v₂.openAt d u)
+    | .matchBool v e₁ e₂, d, u =>
+        .matchBool (v.openAt d u) (e₁.openAt d u) (e₂.openAt d u)
 
 end
 
 namespace Value
 
 /-- Open the outermost binder in a value. -/
-abbrev openOuter (value replacement : Value) : Value :=
-  value.openAt 0 replacement
+abbrev openOuter (v u : Value) : Value :=
+  v.openAt 0 u
 
 end Value
 
 namespace Term
 
 /-- Open the outermost binder in a term. -/
-abbrev openOuter (term : Term) (replacement : Value) : Term :=
-  term.openAt 0 replacement
+abbrev openOuter (e : Term) (u : Value) : Term :=
+  e.openAt 0 u
 
 end Term
 
 mutual
 
-  /-- Close free atom `name` as de Bruijn index `depth` in a value. -/
+  /-- Close free atom `x` as de Bruijn index `d` in a value. -/
   def Value.closeAt : Value → Atom → Nat → Value
-    | .const constant, _, _ => .const constant
-    | .free other, name, depth =>
-        if other = name then .bound depth else .free other
-    | .bound index, _, _ => .bound index
-    | .lam domain body, name, depth =>
-        .lam domain (body.closeAt name (depth + 1))
-    | .fix functionType body, name, depth =>
-        .fix functionType (body.closeAt name (depth + 1))
+    | .const c, _, _ => .const c
+    | .free y, x, d => if y = x then .bound d else .free y
+    | .bound k, _, _ => .bound k
+    | .lam T e, x, d => .lam T (e.closeAt x (d + 1))
+    | .fix T v, x, d => .fix T (v.closeAt x (d + 1))
 
-  /-- Close free atom `name` as de Bruijn index `depth` in a term. -/
+  /-- Close free atom `x` as de Bruijn index `d` in a term. -/
   def Term.closeAt : Term → Atom → Nat → Term
-    | .ret value, name, depth => .ret (value.closeAt name depth)
-    | .letE bound body, name, depth =>
-        .letE (bound.closeAt name depth) (body.closeAt name (depth + 1))
-    | .primitive operation argument, name, depth =>
-        .primitive operation (argument.closeAt name depth)
-    | .app function argument, name, depth =>
-        .app (function.closeAt name depth) (argument.closeAt name depth)
-    | .matchBool discriminant ifTrue ifFalse, name, depth =>
-        .matchBool (discriminant.closeAt name depth)
-          (ifTrue.closeAt name depth) (ifFalse.closeAt name depth)
+    | .ret v, x, d => .ret (v.closeAt x d)
+    | .letE e₁ e₂, x, d => .letE (e₁.closeAt x d) (e₂.closeAt x (d + 1))
+    | .primitive op v, x, d => .primitive op (v.closeAt x d)
+    | .app v₁ v₂, x, d => .app (v₁.closeAt x d) (v₂.closeAt x d)
+    | .matchBool v e₁ e₂, x, d =>
+        .matchBool (v.closeAt x d) (e₁.closeAt x d) (e₂.closeAt x d)
 
 end
 
 namespace Value
 
 /-- Close a free atom as the outermost binder in a value. -/
-abbrev close (value : Value) (name : Atom) : Value :=
-  value.closeAt name 0
+abbrev close (v : Value) (x : Atom) : Value :=
+  v.closeAt x 0
 
 end Value
 
 namespace Term
 
 /-- Close a free atom as the outermost binder in a term. -/
-abbrev close (term : Term) (name : Atom) : Term :=
-  term.closeAt name 0
+abbrev close (e : Term) (x : Atom) : Term :=
+  e.closeAt x 0
 
 end Term
 
@@ -236,60 +219,47 @@ mutual
 
   /-- Capture-avoiding substitution for a free atom in a value. -/
   def Value.substitute : Value → Atom → Value → Value
-    | .const constant, _, _ => .const constant
-    | .free other, name, replacement =>
-        if other = name then replacement else .free other
-    | .bound index, _, _ => .bound index
-    | .lam domain body, name, replacement =>
-        .lam domain (body.substitute name replacement)
-    | .fix functionType body, name, replacement =>
-        .fix functionType (body.substitute name replacement)
+    | .const c, _, _ => .const c
+    | .free y, x, u => if y = x then u else .free y
+    | .bound k, _, _ => .bound k
+    | .lam T e, x, u => .lam T (e.substitute x u)
+    | .fix T v, x, u => .fix T (v.substitute x u)
 
   /-- Capture-avoiding substitution for a free atom in a term. -/
   def Term.substitute : Term → Atom → Value → Term
-    | .ret value, name, replacement => .ret (value.substitute name replacement)
-    | .letE bound body, name, replacement =>
-        .letE (bound.substitute name replacement)
-          (body.substitute name replacement)
-    | .primitive operation argument, name, replacement =>
-        .primitive operation (argument.substitute name replacement)
-    | .app function argument, name, replacement =>
-        .app (function.substitute name replacement)
-          (argument.substitute name replacement)
-    | .matchBool discriminant ifTrue ifFalse, name, replacement =>
-        .matchBool (discriminant.substitute name replacement)
-          (ifTrue.substitute name replacement)
-          (ifFalse.substitute name replacement)
+    | .ret v, x, u => .ret (v.substitute x u)
+    | .letE e₁ e₂, x, u => .letE (e₁.substitute x u) (e₂.substitute x u)
+    | .primitive op v, x, u => .primitive op (v.substitute x u)
+    | .app v₁ v₂, x, u => .app (v₁.substitute x u) (v₂.substitute x u)
+    | .matchBool v e₁ e₂, x, u =>
+        .matchBool (v.substitute x u) (e₁.substitute x u) (e₂.substitute x u)
 
 end
 
 /-- Swap two free atoms. -/
-def swapAtom (left right name : Atom) : Atom :=
-  if name = left then right
-  else if name = right then left
-  else name
+def swapAtom (x y z : Atom) : Atom :=
+  if z = x then y
+  else if z = y then x
+  else z
 
 mutual
 
   /-- Swap two free atoms throughout a value. -/
-  def Value.swap (left right : Atom) : Value → Value
-    | .const constant => .const constant
-    | .free name => .free (swapAtom left right name)
-    | .bound index => .bound index
-    | .lam domain body => .lam domain (body.swap left right)
-    | .fix functionType body => .fix functionType (body.swap left right)
+  def Value.swap (x y : Atom) : Value → Value
+    | .const c => .const c
+    | .free z => .free (swapAtom x y z)
+    | .bound k => .bound k
+    | .lam T e => .lam T (e.swap x y)
+    | .fix T v => .fix T (v.swap x y)
 
   /-- Swap two free atoms throughout a term. -/
-  def Term.swap (left right : Atom) : Term → Term
-    | .ret value => .ret (value.swap left right)
-    | .letE bound body => .letE (bound.swap left right) (body.swap left right)
-    | .primitive operation argument =>
-        .primitive operation (argument.swap left right)
-    | .app function argument =>
-        .app (function.swap left right) (argument.swap left right)
-    | .matchBool discriminant ifTrue ifFalse =>
-        .matchBool (discriminant.swap left right)
-          (ifTrue.swap left right) (ifFalse.swap left right)
+  def Term.swap (x y : Atom) : Term → Term
+    | .ret v => .ret (v.swap x y)
+    | .letE e₁ e₂ => .letE (e₁.swap x y) (e₂.swap x y)
+    | .primitive op v => .primitive op (v.swap x y)
+    | .app v₁ v₂ => .app (v₁.swap x y) (v₂.swap x y)
+    | .matchBool v e₁ e₂ =>
+        .matchBool (v.swap x y) (e₁.swap x y) (e₂.swap x y)
 
 end
 
@@ -298,104 +268,97 @@ mutual
   /-- Free atoms occurring in a value. -/
   def Value.support : Value → Finset Atom
     | .const _ => ∅
-    | .free name => {name}
+    | .free x => {x}
     | .bound _ => ∅
-    | .lam _ body => body.support
-    | .fix _ body => body.support
+    | .lam _ e => e.support
+    | .fix _ v => v.support
 
   /-- Free atoms occurring in a term. -/
   def Term.support : Term → Finset Atom
-    | .ret value => value.support
-    | .letE bound body => bound.support ∪ body.support
-    | .primitive _ argument => argument.support
-    | .app function argument => function.support ∪ argument.support
-    | .matchBool discriminant ifTrue ifFalse =>
-        discriminant.support ∪ ifTrue.support ∪ ifFalse.support
+    | .ret v => v.support
+    | .letE e₁ e₂ => e₁.support ∪ e₂.support
+    | .primitive _ v => v.support
+    | .app v₁ v₂ => v₁.support ∪ v₂.support
+    | .matchBool v e₁ e₂ => v.support ∪ e₁.support ∪ e₂.support
 
 end
 
 /-- The externally visible logical-variable key for a bound occurrence at a
 given binder cutoff. -/
-def boundLogicSupportAt (cutoff index : Nat) : Finset LogicVar :=
-  if cutoff ≤ index then {.bound (index - cutoff)} else ∅
+def boundLogicSupportAt (d k : Nat) : Finset LogicVar :=
+  if d ≤ k then {.bound (k - d)} else ∅
 
 mutual
 
   /-- Logical-variable support of a value, relative to a binder cutoff. -/
-  def Value.logicSupportAt (cutoff : Nat) : Value → Finset LogicVar
+  def Value.logicSupportAt (d : Nat) : Value → Finset LogicVar
     | .const _ => ∅
-    | .free name => {.free name}
-    | .bound index => boundLogicSupportAt cutoff index
-    | .lam _ body => body.logicSupportAt (cutoff + 1)
-    | .fix _ body => body.logicSupportAt (cutoff + 1)
+    | .free x => {.free x}
+    | .bound k => boundLogicSupportAt d k
+    | .lam _ e => e.logicSupportAt (d + 1)
+    | .fix _ v => v.logicSupportAt (d + 1)
 
   /-- Logical-variable support of a term, relative to a binder cutoff. -/
-  def Term.logicSupportAt (cutoff : Nat) : Term → Finset LogicVar
-    | .ret value => value.logicSupportAt cutoff
-    | .letE bound body =>
-        bound.logicSupportAt cutoff ∪ body.logicSupportAt (cutoff + 1)
-    | .primitive _ argument => argument.logicSupportAt cutoff
-    | .app function argument =>
-        function.logicSupportAt cutoff ∪ argument.logicSupportAt cutoff
-    | .matchBool discriminant ifTrue ifFalse =>
-        discriminant.logicSupportAt cutoff ∪
-          ifTrue.logicSupportAt cutoff ∪ ifFalse.logicSupportAt cutoff
+  def Term.logicSupportAt (d : Nat) : Term → Finset LogicVar
+    | .ret v => v.logicSupportAt d
+    | .letE e₁ e₂ => e₁.logicSupportAt d ∪ e₂.logicSupportAt (d + 1)
+    | .primitive _ v => v.logicSupportAt d
+    | .app v₁ v₂ => v₁.logicSupportAt d ∪ v₂.logicSupportAt d
+    | .matchBool v e₁ e₂ =>
+        v.logicSupportAt d ∪ e₁.logicSupportAt d ∪ e₂.logicSupportAt d
 
 end
 
 namespace Value
 
 /-- Logical-variable support at the outermost level. -/
-abbrev logicSupport (value : Value) : Finset LogicVar :=
-  value.logicSupportAt 0
+abbrev logicSupport (v : Value) : Finset LogicVar :=
+  v.logicSupportAt 0
 
 end Value
 
 namespace Term
 
 /-- Logical-variable support at the outermost level. -/
-abbrev logicSupport (term : Term) : Finset LogicVar :=
-  term.logicSupportAt 0
+abbrev logicSupport (e : Term) : Finset LogicVar :=
+  e.logicSupportAt 0
 
 end Term
 
 mutual
 
   /-- Every bound occurrence in a value is below the ambient binder depth. -/
-  def Value.LocallyClosedAt (depth : Nat) : Value → Prop
+  def Value.LocallyClosedAt (d : Nat) : Value → Prop
     | .const _ => True
     | .free _ => True
-    | .bound index => index < depth
-    | .lam _ body => body.LocallyClosedAt (depth + 1)
-    | .fix _ body => body.LocallyClosedAt (depth + 1)
+    | .bound k => k < d
+    | .lam _ e => e.LocallyClosedAt (d + 1)
+    | .fix _ v => v.LocallyClosedAt (d + 1)
 
   /-- Every bound occurrence in a term is below the ambient binder depth. -/
-  def Term.LocallyClosedAt (depth : Nat) : Term → Prop
-    | .ret value => value.LocallyClosedAt depth
-    | .letE bound body =>
-        bound.LocallyClosedAt depth ∧ body.LocallyClosedAt (depth + 1)
-    | .primitive _ argument => argument.LocallyClosedAt depth
-    | .app function argument =>
-        function.LocallyClosedAt depth ∧ argument.LocallyClosedAt depth
-    | .matchBool discriminant ifTrue ifFalse =>
-        discriminant.LocallyClosedAt depth ∧
-          ifTrue.LocallyClosedAt depth ∧ ifFalse.LocallyClosedAt depth
+  def Term.LocallyClosedAt (d : Nat) : Term → Prop
+    | .ret v => v.LocallyClosedAt d
+    | .letE e₁ e₂ => e₁.LocallyClosedAt d ∧ e₂.LocallyClosedAt (d + 1)
+    | .primitive _ v => v.LocallyClosedAt d
+    | .app v₁ v₂ => v₁.LocallyClosedAt d ∧ v₂.LocallyClosedAt d
+    | .matchBool v e₁ e₂ =>
+        v.LocallyClosedAt d ∧ e₁.LocallyClosedAt d ∧ e₂.LocallyClosedAt d
 
 end
 
 namespace Value
 
 /-- A value with no dangling bound variables. -/
-abbrev LocallyClosed (value : Value) : Prop :=
-  value.LocallyClosedAt 0
+abbrev LocallyClosed (v : Value) : Prop :=
+  v.LocallyClosedAt 0
 
 end Value
 
 namespace Term
 
 /-- A term with no dangling bound variables. -/
-abbrev LocallyClosed (term : Term) : Prop :=
-  term.LocallyClosedAt 0
+abbrev LocallyClosed (e : Term) : Prop :=
+  e.LocallyClosedAt 0
 
 end Term
 
