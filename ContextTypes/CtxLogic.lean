@@ -102,11 +102,11 @@ def allNamed (_x : Atom) (P : Formula) : Formula :=
   .all P
 
 set_option hygiene false in
-scoped[ContextTypes] notation:max (name := formulaTop) "⊤" =>
+scoped[ContextTypes] notation:max (name := formulaTop) "⊤ᶜ" =>
   ContextTypes.Formula.top
 
 set_option hygiene false in
-scoped[ContextTypes] notation:max (name := formulaBot) "⊥" =>
+scoped[ContextTypes] notation:max (name := formulaBot) "⊥ᶜ" =>
   ContextTypes.Formula.bot
 
 set_option hygiene false in
@@ -114,15 +114,15 @@ scoped[ContextTypes] notation:max (name := formulaAtom) "Atom(" q ")" =>
   ContextTypes.Formula.atom q
 
 set_option hygiene false in
-scoped[ContextTypes] infixr:35 (name := formulaAnd) " ∧ " =>
+scoped[ContextTypes] infixr:35 (name := formulaAnd) " ∧ᶜ " =>
   ContextTypes.Formula.and
 
 set_option hygiene false in
-scoped[ContextTypes] infixr:30 (name := formulaOr) " ∨ " =>
+scoped[ContextTypes] infixr:30 (name := formulaOr) " ∨ᶜ " =>
   ContextTypes.Formula.or
 
 set_option hygiene false in
-scoped[ContextTypes] infixr:25 (name := formulaImpl) " ⇒ " =>
+scoped[ContextTypes] infixr:25 (name := formulaImpl) " ⇒ᶜ " =>
   ContextTypes.Formula.impl
 
 set_option hygiene false in
@@ -264,10 +264,10 @@ theorem freeAtomSet_supportAt (P : Formula) (d : Nat) :
     ContextTypes.LogicVar.freeAtomSet (P.supportAt d) = P.freeAtoms :=
   freeAtomSet_supportAt_eq P d 0
 
-@[simp] theorem freeAtoms_top : (⊤ : Formula).freeAtoms = ∅ := by
+@[simp] theorem freeAtoms_top : (⊤ᶜ : Formula).freeAtoms = ∅ := by
   simp [freeAtoms, support, supportAt]
 
-@[simp] theorem freeAtoms_bot : (⊥ : Formula).freeAtoms = ∅ := by
+@[simp] theorem freeAtoms_bot : (⊥ᶜ : Formula).freeAtoms = ∅ := by
   simp [freeAtoms, support, supportAt]
 
 @[simp] theorem freeAtoms_atom (q : Qualifier) :
@@ -276,15 +276,15 @@ theorem freeAtomSet_supportAt (P : Formula) (d : Nat) :
     ContextTypes.LogicVar.freeAtomSet]
 
 @[simp] theorem freeAtoms_and (P Q : Formula) :
-    (P ∧ Q).freeAtoms = P.freeAtoms ∪ Q.freeAtoms := by
+    (P ∧ᶜ Q).freeAtoms = P.freeAtoms ∪ Q.freeAtoms := by
   simp [freeAtoms, support, supportAt]
 
 @[simp] theorem freeAtoms_or (P Q : Formula) :
-    (P ∨ Q).freeAtoms = P.freeAtoms ∪ Q.freeAtoms := by
+    (P ∨ᶜ Q).freeAtoms = P.freeAtoms ∪ Q.freeAtoms := by
   simp [freeAtoms, support, supportAt]
 
 @[simp] theorem freeAtoms_impl (P Q : Formula) :
-    (P ⇒ Q).freeAtoms = P.freeAtoms ∪ Q.freeAtoms := by
+    (P ⇒ᶜ Q).freeAtoms = P.freeAtoms ∪ Q.freeAtoms := by
   simp [freeAtoms, support, supportAt]
 
 @[simp] theorem freeAtoms_star (P Q : Formula) :
@@ -662,12 +662,12 @@ theorem Equiv.trans {P Q R : Formula} (hPQ : P ⊣⊢ Q)
     (hQR : Q ⊣⊢ R) : P ⊣⊢ R :=
   ⟨entails_trans hPQ.1 hQR.1, entails_trans hQR.2 hPQ.2⟩
 
-@[simp] theorem models_top (m : Capability) : m ⊨ (⊤ : Formula) := by
-  rw [Models.eq_def m ⊤]
+@[simp] theorem models_top (m : Capability) : m ⊨ (⊤ᶜ : Formula) := by
+  rw [Models.eq_def m ⊤ᶜ]
   simp
 
-@[simp] theorem not_models_bot (m : Capability) : ¬m ⊨ (⊥ : Formula) := by
-  rw [Models.eq_def m ⊥]
+@[simp] theorem not_models_bot (m : Capability) : ¬m ⊨ (⊥ᶜ : Formula) := by
+  rw [Models.eq_def m ⊥ᶜ]
   simp
 
 theorem models_atom_iff (m : Capability) (q : Qualifier) :
@@ -678,9 +678,9 @@ theorem models_atom_iff (m : Capability) (q : Qualifier) :
   simp only [freeAtoms_atom]
 
 theorem models_and_iff (m : Capability) (P Q : Formula) :
-    m ⊨ (P ∧ Q) ↔ (m ⊨ P) ∧ (m ⊨ Q) := by
-  rw [Models.eq_def m (P ∧ Q)]
-  let r := m.restrict (P ∧ Q).freeAtoms
+    m ⊨ (P ∧ᶜ Q) ↔ (m ⊨ P) ∧ (m ⊨ Q) := by
+  rw [Models.eq_def m (P ∧ᶜ Q)]
+  let r := m.restrict (P ∧ᶜ Q).freeAtoms
   constructor
   · rintro ⟨_, hP, hQ⟩
     constructor
@@ -701,21 +701,21 @@ theorem models_and_iff (m : Capability) (P Q : Formula) :
         (X := P.freeAtoms ∪ Q.freeAtoms) Finset.subset_union_right).1 hQ
 
 theorem models_and_elim_left {m : Capability} {P Q : Formula}
-    (h : m ⊨ (P ∧ Q)) : m ⊨ P :=
+    (h : m ⊨ (P ∧ᶜ Q)) : m ⊨ P :=
   (models_and_iff m P Q).1 h |>.1
 
 theorem models_and_elim_right {m : Capability} {P Q : Formula}
-    (h : m ⊨ (P ∧ Q)) : m ⊨ Q :=
+    (h : m ⊨ (P ∧ᶜ Q)) : m ⊨ Q :=
   (models_and_iff m P Q).1 h |>.2
 
 theorem models_and_intro {m : Capability} {P Q : Formula}
-    (hP : m ⊨ P) (hQ : m ⊨ Q) : m ⊨ (P ∧ Q) :=
+    (hP : m ⊨ P) (hQ : m ⊨ Q) : m ⊨ (P ∧ᶜ Q) :=
   (models_and_iff m P Q).2 ⟨hP, hQ⟩
 
 theorem models_or_iff (m : Capability) (P Q : Formula)
-    (scope : (P ∨ Q).freeAtoms ⊆ m.domain) :
-    m ⊨ (P ∨ Q) ↔ (m ⊨ P) ∨ (m ⊨ Q) := by
-  rw [Models.eq_def m (P ∨ Q)]
+    (scope : (P ∨ᶜ Q).freeAtoms ⊆ m.domain) :
+    m ⊨ (P ∨ᶜ Q) ↔ (m ⊨ P) ∨ (m ⊨ Q) := by
+  rw [Models.eq_def m (P ∨ᶜ Q)]
   constructor
   · rintro ⟨_, hP | hQ⟩
     · left
@@ -739,7 +739,7 @@ theorem models_or_iff (m : Capability) (P Q : Formula)
 
 theorem models_or_intro_left {m : Capability} {P Q : Formula}
     (hP : m ⊨ P) (scopeQ : Q.freeAtoms ⊆ m.domain) :
-    m ⊨ (P ∨ Q) := by
+    m ⊨ (P ∨ᶜ Q) := by
   apply (models_or_iff m P Q ?_).2
   · exact Or.inl hP
   · simp only [freeAtoms_or]
@@ -747,29 +747,29 @@ theorem models_or_intro_left {m : Capability} {P Q : Formula}
 
 theorem models_or_intro_right {m : Capability} {P Q : Formula}
     (scopeP : P.freeAtoms ⊆ m.domain) (hQ : m ⊨ Q) :
-    m ⊨ (P ∨ Q) := by
+    m ⊨ (P ∨ᶜ Q) := by
   apply (models_or_iff m P Q ?_).2
   · exact Or.inr hQ
   · simp only [freeAtoms_or]
     exact Finset.union_subset scopeP (models_scope hQ)
 
 theorem models_impl_iff (m : Capability) (P Q : Formula) :
-    m ⊨ (P ⇒ Q) ↔
-      let r := m.restrict (P ⇒ Q).freeAtoms
-      r.domain = (P ⇒ Q).freeAtoms ∧
+    m ⊨ (P ⇒ᶜ Q) ↔
+      let r := m.restrict (P ⇒ᶜ Q).freeAtoms
+      r.domain = (P ⇒ᶜ Q).freeAtoms ∧
         ∀ n, r ⊑ n → n ⊨ P → n ⊨ Q := by
-  rw [Models.eq_def m (P ⇒ Q)]
+  rw [Models.eq_def m (P ⇒ᶜ Q)]
 
 theorem models_impl_elim {m : Capability} {P Q : Formula}
-    (hPQ : m ⊨ (P ⇒ Q)) (hP : m ⊨ P) : m ⊨ Q := by
+    (hPQ : m ⊨ (P ⇒ᶜ Q)) (hP : m ⊨ P) : m ⊨ Q := by
   rw [models_impl_iff] at hPQ
   exact hPQ.2 m (Capability.restrict_refines _ _) hP
 
 theorem models_impl_intro {m : Capability} {P Q : Formula}
-    (scope : (P ⇒ Q).freeAtoms ⊆ m.domain)
-    (h : ∀ n, m.restrict (P ⇒ Q).freeAtoms ⊑ n →
+    (scope : (P ⇒ᶜ Q).freeAtoms ⊆ m.domain)
+    (h : ∀ n, m.restrict (P ⇒ᶜ Q).freeAtoms ⊑ n →
       n ⊨ P → n ⊨ Q) :
-    m ⊨ (P ⇒ Q) := by
+    m ⊨ (P ⇒ᶜ Q) := by
   rw [models_impl_iff]
   refine ⟨?_, h⟩
   rw [Capability.restrict_domain, Finset.inter_eq_right]
@@ -955,12 +955,12 @@ theorem models_fiber_intro {m : Capability} {X : Finset LogicVar}
   exact scope
 
 theorem and_mono {P P' Q Q' : Formula} (hP : P ⊫ P')
-    (hQ : Q ⊫ Q') : P ∧ Q ⊫ P' ∧ Q' := by
+    (hQ : Q ⊫ Q') : P ∧ᶜ Q ⊫ P' ∧ᶜ Q' := by
   intro m h
   obtain ⟨hmP, hmQ⟩ := (models_and_iff m P Q).1 h
   exact models_and_intro (hP m hmP) (hQ m hmQ)
 
-theorem and_comm (P Q : Formula) : P ∧ Q ⊣⊢ Q ∧ P := by
+theorem and_comm (P Q : Formula) : P ∧ᶜ Q ⊣⊢ Q ∧ᶜ P := by
   constructor <;> intro m h
   · obtain ⟨hP, hQ⟩ := (models_and_iff m P Q).1 h
     exact models_and_intro hQ hP
@@ -968,16 +968,16 @@ theorem and_comm (P Q : Formula) : P ∧ Q ⊣⊢ Q ∧ P := by
     exact models_and_intro hP hQ
 
 theorem and_assoc (P Q R : Formula) :
-    (P ∧ Q) ∧ R ⊣⊢ P ∧ (Q ∧ R) := by
+    (P ∧ᶜ Q) ∧ᶜ R ⊣⊢ P ∧ᶜ (Q ∧ᶜ R) := by
   constructor <;> intro m h
-  · obtain ⟨hPQ, hR⟩ := (models_and_iff m (P ∧ Q) R).1 h
+  · obtain ⟨hPQ, hR⟩ := (models_and_iff m (P ∧ᶜ Q) R).1 h
     obtain ⟨hP, hQ⟩ := (models_and_iff m P Q).1 hPQ
     exact models_and_intro hP (models_and_intro hQ hR)
-  · obtain ⟨hP, hQR⟩ := (models_and_iff m P (Q ∧ R)).1 h
+  · obtain ⟨hP, hQR⟩ := (models_and_iff m P (Q ∧ᶜ R)).1 h
     obtain ⟨hQ, hR⟩ := (models_and_iff m Q R).1 hQR
     exact models_and_intro (models_and_intro hP hQ) hR
 
-theorem and_top (P : Formula) : P ∧ ⊤ ⊣⊢ P := by
+theorem and_top (P : Formula) : P ∧ᶜ ⊤ᶜ ⊣⊢ P := by
   constructor
   · intro m h
     exact models_and_elim_left h

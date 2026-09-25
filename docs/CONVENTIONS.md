@@ -159,11 +159,11 @@ Use the following notation consistently:
 | `□ τ` | Persistent type |
 | `{ν : b \| q}` | Overapproximate/demonic context type |
 | `[ν : b \| q]` | Underapproximate/angelic context type |
-| `⊤`, `⊥` | True and false formulas |
+| `⊤ᶜ`, `⊥ᶜ` | True and false formulas |
 | `Atom(q)` | Exact qualifier atom |
-| `P ∧ Q` | Additive conjunction |
-| `P ∨ Q` | Additive disjunction |
-| `P ⇒ Q` | Additive implication |
+| `P ∧ᶜ Q` | Additive conjunction |
+| `P ∨ᶜ Q` | Additive disjunction |
+| `P ⇒ᶜ Q` | Additive implication |
 | `P ∗ Q` | Separating conjunction |
 | `P -∗ Q` | Magic wand (paper-facing form) |
 | `P -∗[d] Q` | Magic wand with explicit binder depth |
