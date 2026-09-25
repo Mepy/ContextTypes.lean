@@ -1,3 +1,5 @@
+import ContextTypes.Syntax
+
 /-!
 This module is the public root of the `ContextTypes` library.
 
