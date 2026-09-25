@@ -91,8 +91,8 @@ relations distinct in definitions, theorem names, and prose.
 | --- | --- |
 | `x`, `y`, `z` | Free atoms |
 | `k` | Bound-variable index |
-| `d` | Binder depth |
-| `D`, `X`, `Y` | Variable supports or domains |
+| `d` | Locally nameless binder depth/arity |
+| `X`, `Y` | Finite variable supports or domains |
 | `σ`, `ρ` | Stores or substitutions |
 | `m`, `n`, `m₁`, `m₂` | Capabilities |
 | `F` | Fiber extension |
@@ -127,17 +127,25 @@ Use the following notation consistently:
 | `τ₁ → τ₂` | Ordinary/entangled function type |
 | `τ₁ -∗ τ₂` | Separating function type |
 | `□ τ` | Persistent type |
-| `{ν : b | q}` | Overapproximate/demonic context type |
-| `[ν : b | q]` | Underapproximate/angelic context type |
+| `{ν : b \| q}` | Overapproximate/demonic context type |
+| `[ν : b \| q]` | Underapproximate/angelic context type |
 | `P ∗ Q` | Separating conjunction |
-| `P -∗[d] Q` | Binder-aware magic wand |
+| `P -∗ Q` | Magic wand (paper-facing form) |
+| `P -∗[d] Q` | Magic wand with explicit binder depth |
 | `🄾 P` | Overapproximate/demonic modality |
 | `🅄 P` | Underapproximate/angelic modality |
 | `□ P` | Persistent formula |
-| `fib D |> P` | Fiber quantification over `D` |
+| `X ▷ P` | Binding reference over the finite variable set `X` |
 
-Keep the binder depth explicit in magic wand.  Do not provide a second wand
-whose binder accounting is implicit.
+Use `P -∗ Q` in paper-facing statements.  The explicit form `P -∗[d] Q` is
+available in definitions and proofs whose locally nameless binder accounting
+matters.  The ordinary value-level form has depth one; the pretty printer may
+omit `[1]`, but it must retain any nondefault depth.
+
+For one variable, `x ▷ P` fixes each possible binding of `x` and checks `P` on
+the corresponding fiber.  The paper extends this operation to a finite set
+`X` by iteration, written `X ▷ P`; in particular, `dom(Σ) ▷ P` fixes all
+variables in the ambient typing environment before checking `P`.
 
 Qualifier top observes the result binder.  It must not be represented by an
 empty-support predicate.
