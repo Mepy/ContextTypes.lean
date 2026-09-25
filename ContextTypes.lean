@@ -1,6 +1,7 @@
 import ContextTypes.Syntax
 import ContextTypes.Subst
 import ContextTypes.OperSem
+import ContextTypes.Capability
 
 /-!
 This module is the public root of the `ContextTypes` library.
