@@ -319,6 +319,16 @@ def singleton (x : Atom) (T : SimpleType) : BasicEnv :=
 def merge (Δ₁ Δ₂ : BasicEnv) : BasicEnv :=
   Finmap.union Δ₁ Δ₂
 
+/-- Restrict an erased environment to a finite atom set. -/
+def restrict (Δ : BasicEnv) (X : Finset Atom) : BasicEnv :=
+  Finmap.keysLookupEquiv.symm
+    ⟨(Δ.domain ∩ X, fun x => if x ∈ X then Δ.lookup x else none), by
+      intro x
+      by_cases hx : x ∈ X
+      · simp only [hx, if_pos, Finset.mem_inter, and_true]
+        exact Finmap.lookup_isSome.trans Finmap.mem_keys.symm
+      · simp [hx]⟩
+
 @[simp] theorem domain_empty : domain (∅ : BasicEnv) = ∅ :=
   rfl
 
@@ -330,12 +340,52 @@ def merge (Δ₁ Δ₂ : BasicEnv) : BasicEnv :=
     (Δ₁.merge Δ₂).domain = Δ₁.domain ∪ Δ₂.domain :=
   Finmap.keys_union
 
+@[simp] theorem domain_restrict (Δ : BasicEnv) (X : Finset Atom) :
+    (Δ.restrict X).domain = Δ.domain ∩ X :=
+  Finmap.keysLookupEquiv_symm_apply_keys _
+
 @[simp] theorem lookup_empty (x : Atom) : lookup (∅ : BasicEnv) x = none :=
   Finmap.lookup_empty x
 
 @[simp] theorem lookup_singleton (x : Atom) (T : SimpleType) :
     (singleton x T).lookup x = some T :=
   Finmap.lookup_singleton_eq
+
+@[simp] theorem lookup_restrict (Δ : BasicEnv) (X : Finset Atom) (x : Atom) :
+    (Δ.restrict X).lookup x = if x ∈ X then Δ.lookup x else none :=
+  Finmap.keysLookupEquiv_symm_apply_lookup _ _
+
+theorem restrict_restrict (Δ : BasicEnv) (X Y : Finset Atom) :
+    (Δ.restrict X).restrict Y = Δ.restrict (X ∩ Y) := by
+  apply Finmap.ext_lookup
+  intro x
+  change ((Δ.restrict X).restrict Y).lookup x =
+    (Δ.restrict (X ∩ Y)).lookup x
+  simp only [lookup_restrict]
+  by_cases hx : x ∈ X <;> by_cases hy : x ∈ Y <;> simp [hx, hy]
+
+@[simp] theorem restrict_empty (Δ : BasicEnv) : Δ.restrict ∅ = ∅ := by
+  apply Finmap.ext_lookup
+  intro x
+  change (Δ.restrict ∅).lookup x = (∅ : BasicEnv).lookup x
+  simp
+
+theorem restrict_eq_self (Δ : BasicEnv) {X : Finset Atom}
+    (h : Δ.domain ⊆ X) : Δ.restrict X = Δ := by
+  apply Finmap.ext_lookup
+  intro x
+  change (Δ.restrict X).lookup x = Δ.lookup x
+  rw [lookup_restrict]
+  by_cases hx : x ∈ X
+  · simp [hx]
+  · have absent : Δ.lookup x = none := by
+      apply Finmap.lookup_eq_none.2
+      exact fun hdom => hx (h hdom)
+    simp [hx, absent]
+
+@[simp] theorem restrict_domain_self (Δ : BasicEnv) :
+    Δ.restrict Δ.domain = Δ :=
+  restrict_eq_self Δ Finset.Subset.rfl
 
 end BasicEnv
 
