@@ -177,6 +177,10 @@ def precise (b : BaseType) (q : Qualifier) : ContextType :=
     (τ.shiftFrom k).erase = τ.erase := by
   induction τ generalizing k <;> simp_all [shiftFrom, erase]
 
+@[simp] theorem freeAtoms_shiftFrom (τ : ContextType) (k : Nat) :
+    (τ.shiftFrom k).freeAtoms = τ.freeAtoms := by
+  induction τ generalizing k <;> simp_all [shiftFrom, freeAtoms]
+
 @[simp] theorem erase_substitute (τ : ContextType) (ρ : Assignment) :
     (τ.substitute ρ).erase = τ.erase := by
   induction τ <;> simp_all [substitute, erase]

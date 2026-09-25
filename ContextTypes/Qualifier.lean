@@ -438,6 +438,24 @@ theorem mem_freeAtoms_iff (q : Qualifier) (x : Atom) :
     apply Finset.mem_biUnion.2
     exact ⟨.free x, hx, by simp [LogicVar.freeAtoms]⟩
 
+@[simp] theorem freeAtoms_shiftFrom (q : Qualifier) (k : Nat) :
+    (q.shiftFrom k).freeAtoms = q.freeAtoms := by
+  ext x
+  rw [mem_freeAtoms_iff, mem_freeAtoms_iff, support_shiftFrom]
+  constructor
+  · intro hx
+    rw [Finset.mem_image] at hx
+    obtain ⟨ξ, hξ, same⟩ := hx
+    cases ξ with
+    | bound n =>
+        by_cases h : k ≤ n <;> simp [LogicVar.shiftFrom, h] at same
+    | free y =>
+        have : y = x := by simpa [LogicVar.shiftFrom] using same
+        simpa [this] using hξ
+  · intro hx
+    exact Finset.mem_image.2
+      ⟨.free x, hx, by simp [LogicVar.shiftFrom]⟩
+
 theorem locallyClosedAt_mono (q : Qualifier) {d d' : Nat}
     (closed : q.locallyClosedAt d) (le : d ≤ d') : q.locallyClosedAt d' := by
   intro k hk
