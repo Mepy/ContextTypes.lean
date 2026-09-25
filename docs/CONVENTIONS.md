@@ -115,6 +115,31 @@ distinct from `m ⊑ n` in definitions, theorem names, and prose.
 Do not use `φ` for both qualifiers and formulas.  Lean declarations use `q`
 for qualifiers and `P`/`Q` for formulas even where the paper uses `φ`.
 
+## Lean binder names
+
+Use the mathematical names in the table above for Lean binders whenever the
+type and surrounding declaration already determine their role.  In
+particular, use `v`, `u`, and `w` for values; `e`, `e₁`, and `e₂` for terms;
+`T` and `U` for simple types; `τ`, `τ₁`, and `τ₂` for context types; `x`, `y`,
+and `z` for atoms; and `k` and `d` for bound indices and binder depths.
+Indexed variants and primes distinguish objects playing the same role.
+
+This convention applies to syntax-constructor fields and recursive equations,
+not only to theorem statements.  Prefer:
+
+```lean
+| app (v₁ v₂ : Value)
+def Value.openAt (v : Value) (k : Nat) (u : Value) : Value
+```
+
+over binders such as `function`, `argument`, `value`, and `replacement` whose
+long names obscure the mathematical shape without adding information.
+
+Descriptive lower-camel names remain appropriate for proof evidence and for
+implementation objects with no established mathematical symbol, for example
+`typed`, `fresh`, `support`, or `result`.  Do not shorten those mechanically
+when doing so would hide their role.
+
 ## Connective notation
 
 Use the following notation consistently:
