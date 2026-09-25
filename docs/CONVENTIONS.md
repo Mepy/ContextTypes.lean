@@ -133,12 +133,20 @@ Use the following notation consistently:
 | `□ τ` | Persistent type |
 | `{ν : b \| q}` | Overapproximate/demonic context type |
 | `[ν : b \| q]` | Underapproximate/angelic context type |
+| `⊤`, `⊥` | True and false formulas |
+| `Atom(q)` | Exact qualifier atom |
+| `P ∧ Q` | Additive conjunction |
+| `P ∨ Q` | Additive disjunction |
+| `P ⇒ Q` | Additive implication |
 | `P ∗ Q` | Separating conjunction |
 | `P -∗ Q` | Magic wand (paper-facing form) |
 | `P -∗[d] Q` | Magic wand with explicit binder depth |
+| `∀ x, P` | Universal formula |
 | `🄾 P` | Overapproximate/demonic modality |
 | `🅄 P` | Underapproximate/angelic modality |
+| `P ⊕ Q` | Capability-splitting sum |
 | `□ P` | Persistent formula |
+| `x ▷ P` | Binding reference for one variable |
 | `X ▷ P` | Binding reference over the finite variable set `X` |
 
 Use `P -∗ Q` in paper-facing statements.  The explicit form `P -∗[d] Q` is
@@ -150,6 +158,10 @@ For one variable, `x ▷ P` fixes each possible binding of `x` and checks `P` on
 the corresponding fiber.  The paper extends this operation to a finite set
 `X` by iteration, written `X ▷ P`; in particular, `dom(Σ) ▷ P` fixes all
 variables in the ambient typing environment before checking `P`.
+
+The paper also has the existential formula `∃ x, P`.  The notation is
+reserved, but the first port does not define it because the checked
+formalization has no existential formula constructor.
 
 Qualifier top observes the result binder.  It must not be represented by an
 empty-support predicate.
@@ -181,8 +193,10 @@ to the `ContextTypes` scope.
 and contexts.  Judgment notation stays with the declaration it presents.
 
 `Pretty.lean` uses `Lean.PrettyPrinter.Delaborator` and `@[app_delab ...]` to
-render core terms, context types, formulas, interpretations, and principal
-judgments.  Delaborators must contain the usual guards:
+render core terms, context types, formulas, and interpretations.  Syntactic
+and semantic judgment notation remains with `SynTyp` and `SemTyp`; it is not
+owned by the earlier `Pretty` module.  Delaborators must contain the usual
+guards:
 
 ```lean
 guard !(← getPPOption getPPAll)

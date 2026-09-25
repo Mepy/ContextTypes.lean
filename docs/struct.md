@@ -141,6 +141,19 @@ Owns the interpretation of context types and contexts from paper Section 4.4:
 - semantic type and context subtyping;
 - result, fiber, and persistence transport lemmas.
 
+The guard is the formula containing the static obligations suppressed in the
+paper's displayed denotations: totality of the term, its basic typing, and
+well-formedness of the context type.  The relevant environment restricts the
+ambient basic environment to variables actually used by the term and type, so
+irrelevant bindings do not become part of their denotation.
+
+“Result-first” refers to the nondeterministic interpretation from paper
+Section 5.2.  The interpretation first ranges over a fresh logical variable
+representing each possible result of the term, then interprets the context
+type at that result in the extended environment.  This exposes choices
+introduced by evaluating the term to the surrounding capability logic instead
+of treating every result as determined solely by the input environment.
+
 Basic-denotation atoms are not a separate public mathematical layer.  They
 are implementation support for `Interp`.  If `Interp.lean` becomes too large,
 it may be split physically as follows without changing the public
@@ -160,9 +173,10 @@ Interp.lean
 ### `Pretty.lean`
 
 Owns custom Lean delaborators for readable InfoView output.  It renders core
-terms, context types, formulas, interpretations, and principal judgments using
-the established notation.  Pretty printing is presentational only and must
-always fall back safely to ordinary Lean output.
+terms, context types, formulas, and interpretations using the established
+notation.  Judgment notation is declared later by `SynTyp.lean` and
+`SemTyp.lean`, next to the declarations it presents.  Pretty printing is
+presentational only and must always fall back safely to ordinary Lean output.
 
 ### `SynTyp.lean`
 
@@ -224,7 +238,7 @@ paper Sections 5.1--5.2.  It does not initially add the following extensions:
 - n-ary primitive operations;
 - existential context-logic formulas;
 - `FixD`;
-- the paper's Section 5 case-study programs.
+- the paper's Section 6 case-study programs.
 
 Mathlib will provide finite data structures, set reasoning, relations,
 well-founded recursion, and routine proof automation.  Concrete Mathlib data
