@@ -1774,6 +1774,22 @@ theorem models_resultAt_compose_ret {m : Capability}
         rw [Store.restrict_restrict, Finset.inter_eq_right.2 hAB]
       _ = σ.restrict A := hρX
 
+/-- Compose a result graph after moving its source along the projection order.
+This is the form used when a fresh result binder extends a source fiber. -/
+theorem models_resultAt_compose_ret_of_refines {m n : Capability}
+    {X : Finset LogicVar} {e : Term} {y z : Atom}
+    (closedX : LogicVar.LocallyClosed X)
+    (support : e.logicSupport ⊆ X)
+    (freshY : LogicVar.free y ∉ X)
+    (freshZ : LogicVar.free z ∉ insert (.free y) X)
+    (refines : m ⊑ n)
+    (hxy : m ⊨ resultAt X e (.free y))
+    (hyz : n ⊨ resultAt (insert (.free y) X)
+      (.ret (.free y)) (.free z)) :
+    n ⊨ resultAt X e (.free z) := by
+  exact models_resultAt_compose_ret closedX support freshY freshZ
+    (Formula.models_kripke refines hxy) hyz
+
 theorem models_resultAt_ret_free_lookup {m : Capability}
     {X : Finset LogicVar} {y z : Atom}
     (closedX : LogicVar.LocallyClosed X)
