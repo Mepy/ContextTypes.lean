@@ -50,6 +50,34 @@ private theorem observed_subset {«Σ» : BasicEnv} {Γ : Context}
     (Finset.Subset.trans wf.2.2.support_subset
       (Finset.Subset.trans hΓdom herasure))
 
+/-- A singleton binding semantically types its variable. -/
+theorem var {Φ : PrimitiveContext} {«Σ» : BasicEnv}
+    (x : Atom) (τ : ContextType)
+    (wf : SynTyp.WellFormed «Σ» (.bind x τ) (.ret (.free x)) τ) :
+    Φ ; «Σ» ; (.bind x τ) ⊨ (.ret (.free x)) ⋮ τ := by
+  intro m hΓ
+  have hden := Formula.models_and_elim_right hΓ
+  change m ⊨ ContextType.interp
+    ((«Σ».restrict τ.freeAtoms).insert x τ.erase) τ (.ret (.free x)) at hden
+  have hagree : BasicEnv.AgreeOn
+      (τ.freeAtoms ∪ (.ret (.free x) : Term).support)
+      ((«Σ».restrict τ.freeAtoms).insert x τ.erase)
+      (BasicEnv.singleton x τ.erase) := by
+    intro y hy
+    have hyx : y = x := by
+      rcases Finset.mem_union.1 hy with hy | hy
+      · exact Finset.mem_singleton.1
+          (wf.2.1.freeAtoms_subset (by simpa [Context.erase] using hy))
+      · change y ∈ ({x} : Finset Atom) at hy
+        exact Finset.mem_singleton.1 hy
+    subst y
+    rw [BasicEnv.lookup_insert]
+    exact (BasicEnv.lookup_singleton x τ.erase).symm
+  change m ⊨ ContextType.interp (BasicEnv.singleton x τ.erase)
+    τ (.ret (.free x))
+  rw [← ContextType.interp_eq_of_agreeOn hagree]
+  exact hden
+
 /-- Semantic type subsumption is compatible with semantic typing. -/
 theorem sub {Φ : PrimitiveContext} {«Σ» : BasicEnv} {Γ : Context}
     {e : Term} {τ₁ τ₂ : ContextType}
