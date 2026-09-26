@@ -845,6 +845,108 @@ scoped[ContextTypes] notation:40 (name := semanticSubtype)
 def BasicEnv.AgreeOn (X : Finset Atom) (Δ₁ Δ₂ : BasicEnv) : Prop :=
   ∀ x, x ∈ X → Δ₁.lookup x = Δ₂.lookup x
 
+namespace BasicEnv
+
+theorem AgreeOn.mono {X Y : Finset Atom} {Δ₁ Δ₂ : BasicEnv}
+    (h : AgreeOn X Δ₁ Δ₂) (hYX : Y ⊆ X) : AgreeOn Y Δ₁ Δ₂ :=
+  fun x hx => h x (hYX hx)
+
+theorem restrict_eq_of_agreeOn {X : Finset Atom} {Δ₁ Δ₂ : BasicEnv}
+    (h : AgreeOn X Δ₁ Δ₂) : Δ₁.restrict X = Δ₂.restrict X := by
+  apply Finmap.ext_lookup
+  intro x
+  change (Δ₁.restrict X).lookup x = (Δ₂.restrict X).lookup x
+  simp only [lookup_restrict]
+  by_cases hx : x ∈ X
+  · simp only [if_pos hx]
+    exact h x hx
+  · simp [hx]
+
+end BasicEnv
+
+namespace Interp
+
+theorem relevantEnv_eq_of_agreeOn {Δ₁ Δ₂ : BasicEnv}
+    {τ : ContextType} {e : Term}
+    (h : BasicEnv.AgreeOn (τ.freeAtoms ∪ e.support) Δ₁ Δ₂) :
+    relevantEnv Δ₁ τ e = relevantEnv Δ₂ τ e :=
+  BasicEnv.restrict_eq_of_agreeOn h
+
+end Interp
+
+namespace ContextType
+
+theorem interpFuel_eq_of_agreeOn (gas d : Nat) {Δ₁ Δ₂ : BasicEnv}
+    {τ : ContextType} {e : Term}
+    (h : BasicEnv.AgreeOn (τ.freeAtoms ∪ e.support) Δ₁ Δ₂) :
+    interpFuel gas d Δ₁ τ e = interpFuel gas d Δ₂ τ e := by
+  induction gas generalizing d Δ₁ Δ₂ τ e with
+  | zero =>
+      simp only [interpFuel]
+      rw [Interp.relevantEnv_eq_of_agreeOn h]
+  | succ gas ih =>
+      cases τ with
+      | «over» b q =>
+          simp only [interpFuel]
+          rw [Interp.relevantEnv_eq_of_agreeOn h]
+      | under b q =>
+          simp only [interpFuel]
+          rw [Interp.relevantEnv_eq_of_agreeOn h]
+      | sum τ₁ τ₂ =>
+          simp only [interpFuel]
+          rw [Interp.relevantEnv_eq_of_agreeOn h]
+      | arrow τ₁ τ₂ =>
+          simp only [interpFuel]
+          rw [Interp.relevantEnv_eq_of_agreeOn h]
+      | wand τ₁ τ₂ =>
+          simp only [interpFuel]
+          rw [Interp.relevantEnv_eq_of_agreeOn h]
+      | persist τ =>
+          simp only [interpFuel]
+          rw [Interp.relevantEnv_eq_of_agreeOn h]
+      | inter τ₁ τ₂ =>
+          have h₁ : BasicEnv.AgreeOn (τ₁.freeAtoms ∪ e.support) Δ₁ Δ₂ :=
+            h.mono (by
+              intro x hx
+              rcases Finset.mem_union.1 hx with hx | hx
+              · exact Finset.mem_union_left _ (Finset.mem_union_left _ hx)
+              · exact Finset.mem_union_right _ hx)
+          have h₂ : BasicEnv.AgreeOn (τ₂.freeAtoms ∪ e.support) Δ₁ Δ₂ :=
+            h.mono (by
+              intro x hx
+              rcases Finset.mem_union.1 hx with hx | hx
+              · exact Finset.mem_union_left _ (Finset.mem_union_right _ hx)
+              · exact Finset.mem_union_right _ hx)
+          simp only [interpFuel]
+          rw [Interp.relevantEnv_eq_of_agreeOn h]
+          rw [ih _ h₁]
+          rw [ih _ h₂]
+      | union τ₁ τ₂ =>
+          have h₁ : BasicEnv.AgreeOn (τ₁.freeAtoms ∪ e.support) Δ₁ Δ₂ :=
+            h.mono (by
+              intro x hx
+              rcases Finset.mem_union.1 hx with hx | hx
+              · exact Finset.mem_union_left _ (Finset.mem_union_left _ hx)
+              · exact Finset.mem_union_right _ hx)
+          have h₂ : BasicEnv.AgreeOn (τ₂.freeAtoms ∪ e.support) Δ₁ Δ₂ :=
+            h.mono (by
+              intro x hx
+              rcases Finset.mem_union.1 hx with hx | hx
+              · exact Finset.mem_union_left _ (Finset.mem_union_right _ hx)
+              · exact Finset.mem_union_right _ hx)
+          simp only [interpFuel]
+          rw [Interp.relevantEnv_eq_of_agreeOn h]
+          rw [ih _ h₁]
+          rw [ih _ h₂]
+
+theorem interp_eq_of_agreeOn {Δ₁ Δ₂ : BasicEnv} {τ : ContextType}
+    {e : Term}
+    (h : BasicEnv.AgreeOn (τ.freeAtoms ∪ e.support) Δ₁ Δ₂) :
+    interp Δ₁ τ e = interp Δ₂ τ e :=
+  interpFuel_eq_of_agreeOn τ.measure 0 h
+
+end ContextType
+
 def SubCtxUnder («Σ» : BasicEnv) (X : Finset Atom) (Γ₁ Γ₂ : Context) : Prop :=
   Γ₁.WellFormedUnder («Σ»).domain ∧
   Γ₂.WellFormedUnder («Σ»).domain ∧
