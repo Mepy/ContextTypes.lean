@@ -50,6 +50,126 @@ private theorem observed_subset {«Σ» : BasicEnv} {Γ : Context}
     (Finset.Subset.trans wf.2.2.support_subset
       (Finset.Subset.trans hΓdom herasure))
 
+private theorem models_constOver (m : Capability) (c : Constant)
+    (hτ : (ContextType.over c.baseType
+      (Qualifier.equal (.bound 0) (.const c))).WellFormed ∅) :
+    m ⊨ ContextType.interp ∅
+      (.over c.baseType (Qualifier.equal (.bound 0) (.const c)))
+      (.ret (.const c)) := by
+  unfold ContextType.interp
+  simp only [ContextType.measure]
+  apply Formula.models_and_intro
+  · apply Interp.models_guard_ret_const
+    · exact hτ
+    · rfl
+  · apply Formula.models_all_intro
+    · simp only [Formula.freeAtoms_impl, Interp.freeAtoms_resultFirst,
+        Interp.freeAtoms_overResultFiber, Interp.relevantEnv_idem]
+      simp [Interp.relevantEnv_domain, Interp.relevantAtoms,
+        ContextType.freeAtoms, Qualifier.freeAtoms, Qualifier.equal,
+        Value.logicalSupport, Term.support, Value.support,
+        LogicVar.freeAtoms]
+    · refine ⟨∅, ?_⟩
+      intro y _ F _ hFout n hExt
+      let P :=
+        Interp.resultFirst
+            (Interp.relevantEnv ∅
+              (.over c.baseType (Qualifier.equal (.bound 0) (.const c)))
+              (.ret (.const c)))
+            (.over c.baseType (Qualifier.equal (.bound 0) (.const c)))
+            (.ret (.const c)) ⇒ᶜ
+          Formula.fiber
+            ((Qualifier.equal (.bound 0) (.const c)).support \ {.bound 0})
+            (Interp.overResult c.baseType
+              (Qualifier.equal (.bound 0) (.const c)))
+      have hP : P.freeAtoms = ∅ := by
+        simp only [P, Formula.freeAtoms_impl, Interp.freeAtoms_resultFirst,
+          Interp.freeAtoms_overResultFiber, Interp.relevantEnv_idem]
+        simp [Interp.relevantEnv_domain, Interp.relevantAtoms,
+          ContextType.freeAtoms, Qualifier.freeAtoms, Qualifier.equal,
+          Value.logicalSupport, Term.support, Value.support,
+          LogicVar.freeAtoms]
+      have hn : n.domain = {y} := by
+        rw [hExt.domain_eq, hFout, Capability.restrict_domain, hP]
+        simp
+      change n ⊨ P.openAt 0 y
+      simp only [P, Formula.openAt]
+      apply Formula.models_impl_intro
+      · intro x hx
+        have hx' := Formula.freeAtoms_openAt_subset P 0 y hx
+        rw [hP] at hx'
+        rw [hn]
+        simpa using hx'
+      · intro p _ hres
+        exact Interp.models_overResult_ret_const_openAt p c y hres
+
+private theorem models_constUnder (m : Capability) (c : Constant)
+    (hτ : (ContextType.under c.baseType
+      (Qualifier.equal (.bound 0) (.const c))).WellFormed ∅) :
+    m ⊨ ContextType.interp ∅
+      (.under c.baseType (Qualifier.equal (.bound 0) (.const c)))
+      (.ret (.const c)) := by
+  unfold ContextType.interp
+  simp only [ContextType.measure, ContextType.interpFuel]
+  apply Formula.models_and_intro
+  · apply Interp.models_guard_ret_const
+    · exact hτ
+    · rfl
+  · apply Formula.models_all_intro
+    · simp only [Formula.freeAtoms_impl, Interp.freeAtoms_resultFirst,
+        Interp.freeAtoms_underResultFiber, Interp.relevantEnv_idem]
+      simp [Interp.relevantEnv_domain, Interp.relevantAtoms,
+        ContextType.freeAtoms, Qualifier.freeAtoms, Qualifier.equal,
+        Value.logicalSupport, Term.support, Value.support,
+        LogicVar.freeAtoms]
+    · refine ⟨∅, ?_⟩
+      intro y _ F _ hFout n hExt
+      let P :=
+        Interp.resultFirst
+            (Interp.relevantEnv ∅
+              (.under c.baseType (Qualifier.equal (.bound 0) (.const c)))
+              (.ret (.const c)))
+            (.under c.baseType (Qualifier.equal (.bound 0) (.const c)))
+            (.ret (.const c)) ⇒ᶜ
+          Formula.fiber
+            ((Qualifier.equal (.bound 0) (.const c)).support \ {.bound 0})
+            (Interp.underResult c.baseType
+              (Qualifier.equal (.bound 0) (.const c)))
+      have hP : P.freeAtoms = ∅ := by
+        simp only [P, Formula.freeAtoms_impl, Interp.freeAtoms_resultFirst,
+          Interp.freeAtoms_underResultFiber, Interp.relevantEnv_idem]
+        simp [Interp.relevantEnv_domain, Interp.relevantAtoms,
+          ContextType.freeAtoms, Qualifier.freeAtoms, Qualifier.equal,
+          Value.logicalSupport, Term.support, Value.support,
+          LogicVar.freeAtoms]
+      have hn : n.domain = {y} := by
+        rw [hExt.domain_eq, hFout, Capability.restrict_domain, hP]
+        simp
+      change n ⊨ P.openAt 0 y
+      simp only [P, Formula.openAt]
+      apply Formula.models_impl_intro
+      · intro x hx
+        have hx' := Formula.freeAtoms_openAt_subset P 0 y hx
+        rw [hP] at hx'
+        rw [hn]
+        simpa using hx'
+      · intro p _ hres
+        exact Interp.models_underResult_ret_const_openAt p c y hres
+
+private theorem models_constantPrecise (m : Capability) (c : Constant)
+    (hτ : (ContextType.constantPrecise c).WellFormed ∅) :
+    m ⊨ ContextType.interp ∅ (ContextType.constantPrecise c)
+      (.ret (.const c)) := by
+  unfold ContextType.interp ContextType.constantPrecise ContextType.precise
+  simp only [ContextType.measure]
+  apply Formula.models_and_intro
+  · apply Interp.models_guard_ret_const
+    · exact hτ
+    · rfl
+  · apply Formula.models_and_intro
+    · exact models_constOver m c hτ.1
+    · exact models_constUnder m c hτ.2.1
+
 /-- A singleton binding semantically types its variable. -/
 theorem var {Φ : PrimitiveContext} {«Σ» : BasicEnv}
     (x : Atom) (τ : ContextType)
@@ -77,6 +197,16 @@ theorem var {Φ : PrimitiveContext} {«Σ» : BasicEnv}
     τ (.ret (.free x))
   rw [← ContextType.interp_eq_of_agreeOn hagree]
   exact hden
+
+/-- Every constant has its precise singleton context type. -/
+theorem const {Φ : PrimitiveContext} {«Σ» : BasicEnv} (c : Constant)
+    (wf : SynTyp.WellFormed «Σ» .empty (.ret (.const c))
+      (ContextType.constantPrecise c)) :
+    Φ ; «Σ» ; .empty ⊨ (.ret (.const c)) ⋮ ContextType.constantPrecise c := by
+  intro m _
+  change m ⊨ ContextType.interp ∅ (ContextType.constantPrecise c)
+    (.ret (.const c))
+  exact models_constantPrecise m c wf.2.1
 
 /-- Semantic type subsumption is compatible with semantic typing. -/
 theorem sub {Φ : PrimitiveContext} {«Σ» : BasicEnv} {Γ : Context}
