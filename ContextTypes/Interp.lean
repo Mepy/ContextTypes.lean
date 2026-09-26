@@ -674,6 +674,49 @@ theorem models_basicWorld_iff (m : Capability) (Δ : BasicEnv) :
         simp [ρ, basicWorldQualifier, Qualifier.freeAtoms,
           LogicVar.freeAtoms]
 
+theorem models_basicTyping_term {m : Capability} {Δ : BasicEnv}
+    {e : Term} {T : SimpleType} (closed : e.locallyClosed)
+    (h : m ⊨ basicTyping Δ e T) {σ : Store} (hσ : σ ∈ m) :
+    BasicTermTyp ∅ (instantiateTerm e σ.toAssignment) T := by
+  have hf := (Formula.models_fiberAtom_iff m
+    (basicTypingQualifier Δ e T)).1 h
+  have hs := hf.2.2 σ hσ
+  obtain ⟨_, a, ha, hlook⟩ := hs
+  have hagree : ∀ ξ, ξ ∈ e.logicSupport →
+      a.assignment.lookup ξ = σ.toAssignment.lookup ξ := by
+    intro ξ hξ
+    cases ξ with
+    | bound k => exact (termLogicSupport_locallyClosed e closed k hξ).elim
+    | free x =>
+        rw [hlook x, Store.lookup_restrict,
+          if_pos (by
+            rw [Qualifier.mem_freeAtoms_iff]
+            exact Finset.mem_union_right _ hξ),
+          Store.toAssignment_lookup_free]
+  rw [← instantiateTerm_eq_of_agreeOn e hagree]
+  exact ha.2.2
+
+theorem models_total_term {m : Capability} {e : Term}
+    (closed : e.locallyClosed) (h : m ⊨ total e)
+    {σ : Store} (hσ : σ ∈ m) :
+    (instantiateTerm e σ.toAssignment).MustTerminate := by
+  have hf := (Formula.models_fiberAtom_iff m (totalQualifier e)).1 h
+  have hs := hf.2.2 σ hσ
+  obtain ⟨_, a, ha, hlook⟩ := hs
+  have hagree : ∀ ξ, ξ ∈ e.logicSupport →
+      a.assignment.lookup ξ = σ.toAssignment.lookup ξ := by
+    intro ξ hξ
+    cases ξ with
+    | bound k => exact (termLogicSupport_locallyClosed e closed k hξ).elim
+    | free x =>
+        rw [hlook x, Store.lookup_restrict,
+          if_pos (by
+            rw [Qualifier.mem_freeAtoms_iff]
+            exact hξ),
+          Store.toAssignment_lookup_free]
+  rw [← instantiateTerm_eq_of_agreeOn e hagree]
+  exact ha
+
 @[simp] theorem freeAtoms_wellFormed (d : Nat) (Δ : BasicEnv)
     (τ : ContextType) :
     (wellFormed d Δ τ).freeAtoms = Δ.domain := by
