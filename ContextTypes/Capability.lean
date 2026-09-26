@@ -991,6 +991,49 @@ theorem Extends.restrict_base {F : FiberExtension} {m n : Capability}
         · rw [output_store_domain (projection_domain h.applicable hτ) hrel hρ]
           exact h.applicable.2
 
+theorem Extends.singleton_of_output_lookup {F : FiberExtension}
+    {σ : Store} {n : Capability} {y : Atom}
+    (h : F.Extends (Capability.singleton σ) n)
+    (hout : F.output = {y})
+    (same : ∀ τ, τ ∈ n → ∀ ρ, ρ ∈ n → τ.lookup y = ρ.lookup y) :
+    ∃ ρ, ρ ∈ n ∧ n = Capability.singleton ρ := by
+  have base : ∀ {τ}, τ ∈ n → τ.restrict σ.domain = σ := by
+    intro τ hτ
+    have hmem : τ.restrict (Capability.singleton σ).domain ∈
+        n.restrict (Capability.singleton σ).domain := ⟨τ, hτ, rfl⟩
+    rw [h.restrict_base] at hmem
+    exact hmem
+  have unique : ∀ {τ}, τ ∈ n → ∀ {ρ}, ρ ∈ n → τ = ρ := by
+    intro τ hτ ρ hρ
+    apply Store.ext
+    intro x
+    by_cases hxσ : x ∈ σ.domain
+    · have hτx := congrArg (fun s => s.lookup x) (base hτ)
+      have hρx := congrArg (fun s => s.lookup x) (base hρ)
+      simpa [Store.lookup_restrict, hxσ] using hτx.trans hρx.symm
+    · by_cases hxy : x = y
+      · subst x
+        exact same τ hτ ρ hρ
+      · have hxτ : x ∉ τ.domain := by
+          rw [n.mem_domain hτ, h.domain_eq, hout]
+          simp [hxσ, hxy]
+        have hxρ : x ∉ ρ.domain := by
+          rw [n.mem_domain hρ, h.domain_eq, hout]
+          simp [hxσ, hxy]
+        rw [(Store.lookup_eq_none_iff τ x).2 hxτ,
+          (Store.lookup_eq_none_iff ρ x).2 hxρ]
+  obtain ⟨ρ, hρ⟩ := n.nonempty
+  refine ⟨ρ, hρ, ?_⟩
+  apply Capability.ext
+  · exact (n.mem_domain hρ).symm
+  · intro τ
+    constructor
+    · intro hτ
+      exact unique hτ hρ
+    · intro hτ
+      subst τ
+      exact hρ
+
 theorem Extends.refines {F : FiberExtension} {m n : Capability}
     (h : F.Extends m n) : Capability.Refines m n := by
   rw [Capability.Refines, h.restrict_base]
