@@ -501,6 +501,56 @@ theorem freeAtoms_resultFirst_relevant_subset (Δ : BasicEnv)
     exact Finset.mem_union.2 (Finset.mem_union.1 hx'.2)
   · exact Finset.mem_union_right _ hx
 
+/-! ## Closed static atoms -/
+
+theorem models_basicWorld_empty (m : Capability) :
+    m ⊨ basicWorld ∅ := by
+  apply Formula.models_fiberAtom_of_support_empty
+  · simp [basicWorldQualifier]
+  · intro ρ ξ T h
+    cases ξ <;> simp at h
+
+theorem models_wellFormed_empty (m : Capability) (d : Nat)
+    (τ : ContextType) (hτ : τ.WellFormedAt d ∅) :
+    m ⊨ wellFormed d ∅ τ := by
+  apply Formula.models_fiberAtom_of_support_empty
+  · simp [wellFormedQualifier]
+  · intro ρ
+    exact hτ
+
+theorem models_basicTyping_ret_const (m : Capability) (c : Constant) :
+    m ⊨ basicTyping ∅ (.ret (.const c)) (.base c.baseType) := by
+  apply Formula.models_fiberAtom_of_support_empty
+  · simp [basicTypingQualifier, Term.logicSupportAt,
+      Value.logicSupportAt]
+  · intro ρ
+    refine ⟨by simp [Term.support, Value.support], ?_, ?_⟩
+    · intro ξ T h
+      cases ξ <;> simp at h
+    · simpa [instantiateTerm, instantiateTermAt, instantiateValueAt] using
+        BasicTermTyp.ret (BasicValTyp.const ∅ c)
+
+theorem models_total_ret_const (m : Capability) (c : Constant) :
+    m ⊨ total (.ret (.const c)) := by
+  apply Formula.models_fiberAtom_of_support_empty
+  · simp [totalQualifier, Term.logicSupportAt, Value.logicSupportAt]
+  · intro ρ
+    apply Term.MustTerminate.ret
+    trivial
+
+theorem models_guard_ret_const (m : Capability) (d : Nat)
+    (τ : ContextType) (c : Constant) (hτ : τ.WellFormedAt d ∅)
+    (erase : τ.erase = .base c.baseType) :
+    m ⊨ guard d ∅ τ (.ret (.const c)) := by
+  apply Formula.models_and_intro
+  · exact models_wellFormed_empty m d τ hτ
+  · apply Formula.models_and_intro
+    · exact models_basicWorld_empty m
+    · apply Formula.models_and_intro
+      · rw [erase]
+        exact models_basicTyping_ret_const m c
+      · exact models_total_ret_const m c
+
 end Interp
 
 namespace ContextType
