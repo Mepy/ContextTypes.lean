@@ -1,0 +1,861 @@
+import ContextTypes.BasicTyp
+import ContextTypes.CtxLogic
+import ContextTypes.Notation
+import Mathlib.Tactic
+
+set_option autoImplicit false
+
+namespace ContextTypes
+
+/-!
+# Interpretation of context types
+
+The basic operational predicates below are packaged as supported qualifiers;
+they are implementation support for the type and context interpretations, not
+a separate public denotational layer.
+-/
+
+section
+
+open scoped ContextTypes
+
+namespace Interp
+
+/-! ## Logical instantiation used by atomic formulas -/
+
+mutual
+
+  /-- Instantiate logical variables visible outside `d` core binders. -/
+  def instantiateValueAt (v : Value) (d : Nat) (ρ : Assignment) : Value :=
+    match v with
+    | .const c => .const c
+    | .free x => (ρ.lookup (.free x)).getD (.free x)
+    | .bound k =>
+        if k < d then .bound k
+        else (ρ.lookup (.bound (k - d))).getD (.bound k)
+    | .lam T e => .lam T (instantiateTermAt e (d + 1) ρ)
+    | .fix T v => .fix T (instantiateValueAt v (d + 1) ρ)
+
+  /-- Instantiate logical variables visible outside `d` core binders. -/
+  def instantiateTermAt (e : Term) (d : Nat) (ρ : Assignment) : Term :=
+    match e with
+    | .ret v => .ret (instantiateValueAt v d ρ)
+    | .letE e₁ e₂ =>
+        .letE (instantiateTermAt e₁ d ρ) (instantiateTermAt e₂ (d + 1) ρ)
+    | .primitive op v => .primitive op (instantiateValueAt v d ρ)
+    | .app v₁ v₂ => .app (instantiateValueAt v₁ d ρ) (instantiateValueAt v₂ d ρ)
+    | .matchBool v e₁ e₂ =>
+        .matchBool (instantiateValueAt v d ρ) (instantiateTermAt e₁ d ρ)
+          (instantiateTermAt e₂ d ρ)
+
+end
+
+abbrev instantiateTerm (e : Term) (ρ : Assignment) : Term :=
+  instantiateTermAt e 0 ρ
+
+mutual
+
+  @[simp] theorem instantiateValueAt_empty (v : Value) (d : Nat) :
+      instantiateValueAt v d ∅ = v := by
+    cases v with
+    | const c => rfl
+    | free x => simp [instantiateValueAt]
+    | bound k => simp [instantiateValueAt]
+    | lam T e => simp [instantiateValueAt, instantiateTermAt_empty]
+    | fix T v => simp [instantiateValueAt, instantiateValueAt_empty]
+
+  @[simp] theorem instantiateTermAt_empty (e : Term) (d : Nat) :
+      instantiateTermAt e d ∅ = e := by
+    cases e with
+    | ret v => simp [instantiateTermAt, instantiateValueAt_empty]
+    | letE e₁ e₂ => simp [instantiateTermAt, instantiateTermAt_empty]
+    | primitive op v => simp [instantiateTermAt, instantiateValueAt_empty]
+    | app v₁ v₂ => simp [instantiateTermAt, instantiateValueAt_empty]
+    | matchBool v e₁ e₂ =>
+        simp [instantiateTermAt, instantiateValueAt_empty,
+          instantiateTermAt_empty]
+
+end
+
+@[simp] theorem instantiateTerm_empty (e : Term) :
+    instantiateTerm e ∅ = e :=
+  instantiateTermAt_empty e 0
+
+/-! ## Binder insertion for result-first formulas -/
+
+mutual
+
+  /-- Insert one external logical binder at cutoff `d` in a value. -/
+  def shiftValueAt (v : Value) (d : Nat) : Value :=
+    match v with
+    | .const c => .const c
+    | .free x => .free x
+    | .bound k => if d ≤ k then .bound (k + 1) else .bound k
+    | .lam T e => .lam T (shiftTermAt e (d + 1))
+    | .fix T v => .fix T (shiftValueAt v (d + 1))
+
+  /-- Insert one external logical binder at cutoff `d` in a term. -/
+  def shiftTermAt (e : Term) (d : Nat) : Term :=
+    match e with
+    | .ret v => .ret (shiftValueAt v d)
+    | .letE e₁ e₂ => .letE (shiftTermAt e₁ d) (shiftTermAt e₂ (d + 1))
+    | .primitive op v => .primitive op (shiftValueAt v d)
+    | .app v₁ v₂ => .app (shiftValueAt v₁ d) (shiftValueAt v₂ d)
+    | .matchBool v e₁ e₂ =>
+        .matchBool (shiftValueAt v d) (shiftTermAt e₁ d) (shiftTermAt e₂ d)
+
+end
+
+abbrev shiftTerm (e : Term) : Term :=
+  shiftTermAt e 0
+
+mutual
+
+  @[simp] theorem shiftValueAt_support (v : Value) (d : Nat) :
+      (shiftValueAt v d).support = v.support := by
+    cases v with
+    | const c => rfl
+    | free x => rfl
+    | bound k =>
+        by_cases h : d ≤ k <;> simp [shiftValueAt, Value.support, h]
+    | lam T e => simp [shiftValueAt, Value.support, shiftTermAt_support]
+    | fix T v => simp [shiftValueAt, Value.support, shiftValueAt_support]
+
+  @[simp] theorem shiftTermAt_support (e : Term) (d : Nat) :
+      (shiftTermAt e d).support = e.support := by
+    cases e with
+    | ret v => simp [shiftTermAt, Term.support, shiftValueAt_support]
+    | letE e₁ e₂ => simp [shiftTermAt, Term.support, shiftTermAt_support]
+    | primitive op v => simp [shiftTermAt, Term.support, shiftValueAt_support]
+    | app v₁ v₂ => simp [shiftTermAt, Term.support, shiftValueAt_support]
+    | matchBool v e₁ e₂ =>
+        simp [shiftTermAt, Term.support, shiftValueAt_support,
+          shiftTermAt_support]
+
+end
+
+
+@[simp] theorem shiftTerm_support (e : Term) :
+    (shiftTerm e).support = e.support :=
+  shiftTermAt_support e 0
+
+mutual
+
+  @[simp] theorem freeAtomSet_value_logicSupportAt (v : Value) (d : Nat) :
+      LogicVar.freeAtomSet (v.logicSupportAt d) = v.support := by
+    cases v with
+    | const c => rfl
+    | free x => simp [Value.logicSupportAt, Value.support]
+    | bound k =>
+        by_cases h : d ≤ k <;>
+          simp [Value.logicSupportAt, Value.support, boundLogicSupportAt,
+            LogicVar.freeAtomSet, LogicVar.freeAtoms, h]
+    | lam T e =>
+        simpa [Value.logicSupportAt, Value.support] using
+          freeAtomSet_term_logicSupportAt e (d + 1)
+    | fix T v =>
+        simpa [Value.logicSupportAt, Value.support] using
+          freeAtomSet_value_logicSupportAt v (d + 1)
+
+  @[simp] theorem freeAtomSet_term_logicSupportAt (e : Term) (d : Nat) :
+      LogicVar.freeAtomSet (e.logicSupportAt d) = e.support := by
+    cases e with
+    | ret v =>
+        simpa [Term.logicSupportAt, Term.support] using
+          freeAtomSet_value_logicSupportAt v d
+    | letE e₁ e₂ =>
+        simp [Term.logicSupportAt, Term.support,
+          freeAtomSet_term_logicSupportAt]
+    | primitive op v =>
+        simpa [Term.logicSupportAt, Term.support] using
+          freeAtomSet_value_logicSupportAt v d
+    | app v₁ v₂ =>
+        simp [Term.logicSupportAt, Term.support,
+          freeAtomSet_value_logicSupportAt]
+    | matchBool v e₁ e₂ =>
+        simp [Term.logicSupportAt, Term.support,
+          freeAtomSet_value_logicSupportAt, freeAtomSet_term_logicSupportAt]
+
+end
+
+@[simp] theorem freeAtomSet_term_logicSupport (e : Term) :
+    LogicVar.freeAtomSet e.logicSupport = e.support :=
+  freeAtomSet_term_logicSupportAt e 0
+
+mutual
+
+  theorem shiftValueAt_logicSupportAt (v : Value) (d : Nat) :
+      (shiftValueAt v d).logicSupportAt d =
+        (v.logicSupportAt d).image (LogicVar.shiftFrom 0) := by
+    cases v with
+    | const c => rfl
+    | free x => simp [shiftValueAt, Value.logicSupportAt, LogicVar.shiftFrom]
+    | bound k =>
+        by_cases h : d ≤ k
+        · have h' : d ≤ k + 1 := Nat.le_trans h (Nat.le_succ k)
+          simp [shiftValueAt, Value.logicSupportAt, boundLogicSupportAt,
+            LogicVar.shiftFrom, h, h']
+          all_goals omega
+        · simp [shiftValueAt, Value.logicSupportAt, boundLogicSupportAt,
+            h]
+    | lam T e =>
+        simpa [shiftValueAt, Value.logicSupportAt] using
+          shiftTermAt_logicSupportAt e (d + 1)
+    | fix T v =>
+        simpa [shiftValueAt, Value.logicSupportAt] using
+          shiftValueAt_logicSupportAt v (d + 1)
+
+  theorem shiftTermAt_logicSupportAt (e : Term) (d : Nat) :
+      (shiftTermAt e d).logicSupportAt d =
+        (e.logicSupportAt d).image (LogicVar.shiftFrom 0) := by
+    cases e with
+    | ret v =>
+        simpa [shiftTermAt, Term.logicSupportAt] using
+          shiftValueAt_logicSupportAt v d
+    | letE e₁ e₂ =>
+        simp [shiftTermAt, Term.logicSupportAt, shiftTermAt_logicSupportAt,
+          Finset.image_union]
+    | primitive op v =>
+        simpa [shiftTermAt, Term.logicSupportAt] using
+          shiftValueAt_logicSupportAt v d
+    | app v₁ v₂ =>
+        simp [shiftTermAt, Term.logicSupportAt, shiftValueAt_logicSupportAt,
+          Finset.image_union]
+    | matchBool v e₁ e₂ =>
+        simp [shiftTermAt, Term.logicSupportAt, shiftValueAt_logicSupportAt,
+          shiftTermAt_logicSupportAt, Finset.image_union]
+
+end
+
+@[simp] theorem shiftTerm_logicSupport (e : Term) :
+    (shiftTerm e).logicSupport =
+      e.logicSupport.image (LogicVar.shiftFrom 0) :=
+  shiftTermAt_logicSupportAt e 0
+
+/-! ## Supported atomic predicates -/
+
+def storeTyped («Σ» : LogicVar → Option SimpleType) (ρ : Assignment) : Prop :=
+  ∀ ξ T, «Σ» ξ = some T →
+    ∃ v, ρ.lookup ξ = some v ∧ BasicValTyp ∅ v T
+
+def basicWorldQualifier (Δ : BasicEnv) : Qualifier where
+  support := Δ.domain.image LogicVar.free
+  holds := fun ρ =>
+    storeTyped
+      (fun ξ => match ξ with
+        | .bound _ => none
+        | .free x => Δ.lookup x)
+      ρ.assignment
+
+def basicWorld (Δ : BasicEnv) : Formula :=
+  Formula.fiberAtom (basicWorldQualifier Δ)
+
+def wellFormedQualifier (d : Nat) (Δ : BasicEnv)
+    (τ : ContextType) : Qualifier where
+  support := Δ.domain.image LogicVar.free
+  holds := fun _ => τ.WellFormedAt d Δ.domain
+
+def wellFormed (d : Nat) (Δ : BasicEnv) (τ : ContextType) : Formula :=
+  Formula.fiberAtom (wellFormedQualifier d Δ τ)
+
+def basicTypingQualifier (Δ : BasicEnv) (e : Term)
+    (T : SimpleType) : Qualifier where
+  support := Δ.domain.image LogicVar.free ∪ e.logicSupport
+  holds := fun ρ =>
+    e.support ⊆ Δ.domain ∧
+    storeTyped
+      (fun ξ => match ξ with
+        | .bound _ => none
+        | .free x => Δ.lookup x)
+      ρ.assignment ∧
+    BasicTermTyp ∅ (instantiateTerm e ρ.assignment) T
+
+def basicTyping (Δ : BasicEnv) (e : Term) (T : SimpleType) : Formula :=
+  Formula.fiberAtom (basicTypingQualifier Δ e T)
+
+def totalQualifier (e : Term) : Qualifier where
+  support := e.logicSupport
+  holds := fun ρ => (instantiateTerm e ρ.assignment).MustTerminate
+
+def total (e : Term) : Formula :=
+  Formula.fiberAtom (totalQualifier e)
+
+def resultQualifier (e : Term) (ξ : LogicVar) : Qualifier where
+  support := e.logicSupport ∪ {ξ}
+  holds := fun ρ =>
+    ξ ∉ e.logicSupport ∧
+    ∃ v, ρ.assignment.lookup ξ = some v ∧
+      (instantiateTerm e ρ.assignment).reaches v
+
+def resultAt (X : Finset LogicVar) (e : Term) (ξ : LogicVar) : Formula :=
+  .fiber X (.atom (resultQualifier e ξ))
+
+def result (e : Term) (ξ : LogicVar) : Formula :=
+  resultAt e.logicSupport e ξ
+
+def resultBasicTyping (b : BaseType) : Formula :=
+  basicTyping ∅ (.ret (.bound 0)) (.base b)
+
+def overResult (b : BaseType) (q : Qualifier) : Formula :=
+  🄾 (Atom(q) ∧ᶜ resultBasicTyping b)
+
+def underResult (b : BaseType) (q : Qualifier) : Formula :=
+  🅄 (Atom(q) ∧ᶜ resultBasicTyping b)
+
+/-! ## Relevant environments and guards -/
+
+def relevantAtoms (τ : ContextType) (e : Term) : Finset Atom :=
+  τ.freeAtoms ∪ e.support
+
+def relevantEnv (Δ : BasicEnv) (τ : ContextType) (e : Term) : BasicEnv :=
+  Δ.restrict (relevantAtoms τ e)
+
+@[simp] theorem relevantEnv_domain (Δ : BasicEnv) (τ : ContextType)
+    (e : Term) :
+    (relevantEnv Δ τ e).domain = Δ.domain ∩ relevantAtoms τ e := by
+  simp [relevantEnv]
+
+@[simp] theorem relevantEnv_idem (Δ : BasicEnv) (τ : ContextType)
+    (e : Term) :
+    relevantEnv (relevantEnv Δ τ e) τ e = relevantEnv Δ τ e := by
+  simp [relevantEnv, BasicEnv.restrict_restrict]
+
+theorem relevantEnv_minimal (Δ : BasicEnv) (τ : ContextType) (e : Term) :
+    relevantEnv Δ τ e = relevantEnv (Δ.restrict (relevantAtoms τ e)) τ e := by
+  simpa [relevantEnv] using (relevantEnv_idem Δ τ e).symm
+
+/-- Logical variables retained by the relevant environment.  Free variables
+come from the restricted basic environment; ambient bound variables are
+tracked directly because `BasicEnv` is atom-keyed. -/
+def relevantSupport (Δ : BasicEnv) (τ : ContextType)
+    (e : Term) : Finset LogicVar :=
+  (relevantEnv Δ τ e).domain.image LogicVar.free ∪
+    (τ.support ∪ e.logicSupport).biUnion fun ξ =>
+      match ξ with
+      | .bound k => {.bound k}
+      | .free _ => ∅
+
+/-- Result formula under a fresh outer logical binder. -/
+def resultFirst (Δ : BasicEnv) (τ : ContextType) (e : Term) : Formula :=
+  resultAt ((relevantSupport Δ τ e).image (LogicVar.shiftFrom 0))
+    (shiftTerm e) (.bound 0)
+
+def guard (d : Nat) (Δ : BasicEnv) (τ : ContextType) (e : Term) : Formula :=
+  wellFormed d Δ τ ∧ᶜ
+    (basicWorld Δ ∧ᶜ (basicTyping Δ e τ.erase ∧ᶜ total e))
+
+@[simp] theorem freeAtoms_basicWorld (Δ : BasicEnv) :
+    (basicWorld Δ).freeAtoms = Δ.domain := by
+  rw [basicWorld, Formula.freeAtoms_fiberAtom]
+  change LogicVar.freeAtomSet (Δ.domain.image LogicVar.free) = Δ.domain
+  exact Formula.LogicVar.freeAtomSet_image_free Δ.domain
+
+@[simp] theorem freeAtoms_wellFormed (d : Nat) (Δ : BasicEnv)
+    (τ : ContextType) :
+    (wellFormed d Δ τ).freeAtoms = Δ.domain := by
+  rw [wellFormed, Formula.freeAtoms_fiberAtom]
+  change LogicVar.freeAtomSet (Δ.domain.image LogicVar.free) = Δ.domain
+  exact Formula.LogicVar.freeAtomSet_image_free Δ.domain
+
+@[simp] theorem freeAtoms_basicTyping (Δ : BasicEnv) (e : Term)
+    (T : SimpleType) :
+    (basicTyping Δ e T).freeAtoms =
+      Δ.domain ∪ LogicVar.freeAtomSet e.logicSupport := by
+  rw [basicTyping, Formula.freeAtoms_fiberAtom]
+  change LogicVar.freeAtomSet
+      (Δ.domain.image LogicVar.free ∪ e.logicSupport) = _
+  rw [Formula.LogicVar.freeAtomSet_union,
+    Formula.LogicVar.freeAtomSet_image_free]
+
+@[simp] theorem freeAtoms_total (e : Term) :
+    (total e).freeAtoms = LogicVar.freeAtomSet e.logicSupport := by
+  rw [total, Formula.freeAtoms_fiberAtom]
+  rfl
+
+@[simp] theorem freeAtoms_guard (d : Nat) (Δ : BasicEnv)
+    (τ : ContextType) (e : Term) :
+    (guard d Δ τ e).freeAtoms =
+      Δ.domain ∪ LogicVar.freeAtomSet e.logicSupport := by
+  simp [guard]
+
+@[simp] theorem freeAtoms_resultAt (X : Finset LogicVar) (e : Term)
+    (ξ : LogicVar) :
+    (resultAt X e ξ).freeAtoms =
+      LogicVar.freeAtomSet X ∪ e.support ∪ ξ.freeAtoms := by
+  rw [resultAt, Formula.freeAtoms_fiber, Formula.freeAtoms_atom]
+  change LogicVar.freeAtomSet X ∪
+      LogicVar.freeAtomSet (e.logicSupport ∪ {ξ}) = _
+  rw [Formula.LogicVar.freeAtomSet_union, freeAtomSet_term_logicSupport]
+  simp [LogicVar.freeAtomSet, Finset.union_comm,
+    Finset.union_left_comm]
+
+@[simp] theorem freeAtoms_result (e : Term) (ξ : LogicVar) :
+    (result e ξ).freeAtoms = e.support ∪ ξ.freeAtoms := by
+  simp [result]
+
+@[simp] theorem freeAtoms_resultBasicTyping (b : BaseType) :
+    (resultBasicTyping b).freeAtoms = ∅ := by
+  simp [resultBasicTyping, Value.logicSupportAt, Term.logicSupportAt,
+    boundLogicSupportAt, LogicVar.freeAtomSet, LogicVar.freeAtoms]
+
+@[simp] theorem freeAtoms_overResult (b : BaseType) (q : Qualifier) :
+    (overResult b q).freeAtoms = q.freeAtoms := by
+  simp [overResult]
+
+@[simp] theorem freeAtoms_underResult (b : BaseType) (q : Qualifier) :
+    (underResult b q).freeAtoms = q.freeAtoms := by
+  simp [underResult]
+
+@[simp] theorem freeAtoms_overResultFiber (b : BaseType) (q : Qualifier) :
+    (Formula.fiber (q.support \ {.bound 0}) (overResult b q)).freeAtoms =
+      q.freeAtoms := by
+  ext x
+  simp only [Formula.freeAtoms_fiber, freeAtoms_overResult,
+    Finset.mem_union]
+  constructor
+  · rintro (hx | hx)
+    · rw [LogicVar.mem_freeAtomSet_iff] at hx
+      exact (Qualifier.mem_freeAtoms_iff q x).2 (Finset.mem_sdiff.1 hx).1
+    · exact hx
+  · exact fun hx => Or.inr hx
+
+@[simp] theorem freeAtoms_underResultFiber (b : BaseType) (q : Qualifier) :
+    (Formula.fiber (q.support \ {.bound 0}) (underResult b q)).freeAtoms =
+      q.freeAtoms := by
+  ext x
+  simp only [Formula.freeAtoms_fiber, freeAtoms_underResult,
+    Finset.mem_union]
+  constructor
+  · rintro (hx | hx)
+    · rw [LogicVar.mem_freeAtomSet_iff] at hx
+      exact (Qualifier.mem_freeAtoms_iff q x).2 (Finset.mem_sdiff.1 hx).1
+    · exact hx
+  · exact fun hx => Or.inr hx
+
+@[simp] theorem freeAtomSet_relevantSupport (Δ : BasicEnv)
+    (τ : ContextType) (e : Term) :
+    LogicVar.freeAtomSet (relevantSupport Δ τ e) =
+      (relevantEnv Δ τ e).domain := by
+  ext x
+  rw [LogicVar.mem_freeAtomSet_iff]
+  simp only [relevantSupport, Finset.mem_union, Finset.mem_image,
+    Finset.mem_biUnion]
+  constructor
+  · rintro (⟨y, hy, same⟩ | ⟨ξ, hξ, h⟩)
+    · cases same
+      exact hy
+    · cases ξ with
+      | bound k => simp at h
+      | free y => simp at h
+  · intro hx
+    exact Or.inl ⟨x, hx, rfl⟩
+
+theorem freeAtomSet_image_shiftFrom (X : Finset LogicVar) (k : Nat) :
+    LogicVar.freeAtomSet (X.image (LogicVar.shiftFrom k)) =
+      LogicVar.freeAtomSet X := by
+  ext x
+  rw [LogicVar.mem_freeAtomSet_iff, LogicVar.mem_freeAtomSet_iff]
+  constructor
+  · intro hx
+    rw [Finset.mem_image] at hx
+    obtain ⟨ξ, hξ, same⟩ := hx
+    cases ξ with
+    | bound n =>
+        by_cases h : k ≤ n <;> simp [LogicVar.shiftFrom, h] at same
+    | free y =>
+        have : y = x := by simpa [LogicVar.shiftFrom] using same
+        simpa [this] using hξ
+  · intro hx
+    exact Finset.mem_image.2
+      ⟨.free x, hx, by simp [LogicVar.shiftFrom]⟩
+
+@[simp] theorem freeAtoms_resultFirst (Δ : BasicEnv) (τ : ContextType)
+    (e : Term) :
+    (resultFirst Δ τ e).freeAtoms =
+      (relevantEnv Δ τ e).domain ∪ e.support := by
+  simp [resultFirst, freeAtomSet_image_shiftFrom,
+    LogicVar.freeAtoms]
+
+theorem freeAtoms_guard_relevant_subset (d : Nat) (Δ : BasicEnv)
+    (τ : ContextType) (e : Term) :
+    (guard d (relevantEnv Δ τ e) τ e).freeAtoms ⊆
+      τ.freeAtoms ∪ e.support := by
+  intro x hx
+  simp only [freeAtoms_guard, freeAtomSet_term_logicSupport,
+    Finset.mem_union] at hx ⊢
+  rcases hx with hx | hx
+  · have hx' := Finset.mem_inter.1
+      (by simpa only [relevantEnv_domain] using hx)
+    exact (Finset.mem_union.1 hx'.2)
+  · exact Or.inr hx
+
+theorem freeAtoms_resultFirst_relevant_subset (Δ : BasicEnv)
+    (τ : ContextType) (e : Term) :
+    (resultFirst (relevantEnv Δ τ e) τ e).freeAtoms ⊆
+      τ.freeAtoms ∪ e.support := by
+  intro x hx
+  rw [freeAtoms_resultFirst, relevantEnv_idem] at hx
+  rcases Finset.mem_union.1 hx with hx | hx
+  · have hx' := Finset.mem_inter.1
+      (by simpa only [relevantEnv_domain] using hx)
+    exact Finset.mem_union.2 (Finset.mem_union.1 hx'.2)
+  · exact Finset.mem_union_right _ hx
+
+end Interp
+
+namespace ContextType
+
+/-! ## Result-first context-type interpretation -/
+
+def measure : ContextType → Nat
+  | .over _ _ | .under _ _ => 1
+  | .inter τ₁ τ₂ | .union τ₁ τ₂ | .sum τ₁ τ₂
+  | .arrow τ₁ τ₂ | .wand τ₁ τ₂ =>
+      1 + max τ₁.measure τ₂.measure
+  | .persist τ => 1 + τ.measure
+
+@[simp] theorem measure_shiftFrom (τ : ContextType) (k : Nat) :
+    (τ.shiftFrom k).measure = τ.measure := by
+  induction τ generalizing k <;> simp_all [shiftFrom, measure]
+
+def interpFuel : Nat → Nat → BasicEnv → ContextType → Term → Formula
+  | 0, d, Δ, τ, e =>
+      let Δ' := Interp.relevantEnv Δ τ e
+      Interp.guard d Δ' τ e ∧ᶜ ⊤ᶜ
+  | gas + 1, d, Δ, τ, e =>
+      let Δ' := Interp.relevantEnv Δ τ e
+      let G := Interp.guard d Δ' τ e
+      G ∧ᶜ
+        match τ with
+        | .over b q =>
+            .all (Interp.resultFirst Δ' τ e ⇒ᶜ
+              .fiber (q.support \ {.bound 0}) (Interp.overResult b q))
+        | .under b q =>
+            .all (Interp.resultFirst Δ' τ e ⇒ᶜ
+              .fiber (q.support \ {.bound 0}) (Interp.underResult b q))
+        | .inter τ₁ τ₂ =>
+            interpFuel gas d Δ τ₁ e ∧ᶜ interpFuel gas d Δ τ₂ e
+        | .union τ₁ τ₂ =>
+            interpFuel gas d Δ τ₁ e ∨ᶜ interpFuel gas d Δ τ₂ e
+        | .sum τ₁ τ₂ =>
+            .all (Interp.resultFirst Δ' τ e ⇒ᶜ
+              (interpFuel gas (d + 1) Δ' (τ₁.shiftFrom 0) (.ret (.bound 0)) ⊕
+               interpFuel gas (d + 1) Δ' (τ₂.shiftFrom 0) (.ret (.bound 0))))
+        | .arrow τ₁ τ₂ =>
+            let τ₁' := (τ₁.shiftFrom 0).shiftFrom 0
+            let τ₂' := τ₂.shiftFrom 1
+            .all (Interp.resultFirst Δ' τ e ⇒ᶜ
+              .all (interpFuel gas (d + 2) Δ' τ₁' (.ret (.bound 0)) ⇒ᶜ
+                interpFuel gas (d + 2) Δ' τ₂'
+                  (.app (.bound 1) (.bound 0))))
+        | .wand τ₁ τ₂ =>
+            let τ₁' := (τ₁.shiftFrom 0).shiftFrom 0
+            let τ₂' := τ₂.shiftFrom 1
+            .all (Interp.resultFirst Δ' τ e ⇒ᶜ
+              (interpFuel gas (d + 2) Δ' τ₁' (.ret (.bound 0)) -∗[1]
+                interpFuel gas (d + 2) Δ' τ₂'
+                  (.app (.bound 1) (.bound 0))))
+        | .persist τ =>
+            .all (Interp.resultFirst Δ' (.persist τ) e ⇒ᶜ
+              □ interpFuel gas (d + 1) Δ' (τ.shiftFrom 0) (.ret (.bound 0)))
+
+/-- Interpretation of a context type at a core term. -/
+def interp (Δ : BasicEnv) (τ : ContextType) (e : Term) : Formula :=
+  interpFuel τ.measure 0 Δ τ e
+
+theorem freeAtoms_interpFuel_subset (gas d : Nat) (Δ : BasicEnv)
+    (τ : ContextType) (e : Term) :
+    (interpFuel gas d Δ τ e).freeAtoms ⊆ τ.freeAtoms ∪ e.support := by
+  induction gas generalizing d Δ τ e with
+  | zero =>
+      simpa [interpFuel] using
+        Interp.freeAtoms_guard_relevant_subset d Δ τ e
+  | succ gas ih =>
+      cases τ with
+      | «over» b q =>
+          simp only [interpFuel, Formula.freeAtoms_and,
+            Formula.freeAtoms_all, Formula.freeAtoms_impl,
+            Interp.freeAtoms_overResultFiber, ContextType.freeAtoms]
+          exact Finset.union_subset
+            (Interp.freeAtoms_guard_relevant_subset d Δ (.over b q) e)
+            (Finset.union_subset
+              (Interp.freeAtoms_resultFirst_relevant_subset Δ (.over b q) e)
+              Finset.subset_union_left)
+      | under b q =>
+          simp only [interpFuel, Formula.freeAtoms_and,
+            Formula.freeAtoms_all, Formula.freeAtoms_impl,
+            Interp.freeAtoms_underResultFiber, ContextType.freeAtoms]
+          exact Finset.union_subset
+            (Interp.freeAtoms_guard_relevant_subset d Δ (.under b q) e)
+            (Finset.union_subset
+              (Interp.freeAtoms_resultFirst_relevant_subset Δ (.under b q) e)
+              Finset.subset_union_left)
+      | inter τ₁ τ₂ =>
+          simp only [interpFuel, Formula.freeAtoms_and, ContextType.freeAtoms]
+          refine Finset.union_subset
+            (Interp.freeAtoms_guard_relevant_subset d Δ (.inter τ₁ τ₂) e)
+            (Finset.union_subset ?_ ?_)
+          · intro x hx
+            rcases Finset.mem_union.1 (ih d Δ τ₁ e hx) with hx | hx
+            · exact Finset.mem_union_left _ (Finset.mem_union_left _ hx)
+            · exact Finset.mem_union_right _ hx
+          · intro x hx
+            rcases Finset.mem_union.1 (ih d Δ τ₂ e hx) with hx | hx
+            · exact Finset.mem_union_left _ (Finset.mem_union_right _ hx)
+            · exact Finset.mem_union_right _ hx
+      | union τ₁ τ₂ =>
+          simp only [interpFuel, Formula.freeAtoms_and, Formula.freeAtoms_or,
+            ContextType.freeAtoms]
+          refine Finset.union_subset
+            (Interp.freeAtoms_guard_relevant_subset d Δ (.union τ₁ τ₂) e)
+            (Finset.union_subset ?_ ?_)
+          · intro x hx
+            rcases Finset.mem_union.1 (ih d Δ τ₁ e hx) with hx | hx
+            · exact Finset.mem_union_left _ (Finset.mem_union_left _ hx)
+            · exact Finset.mem_union_right _ hx
+          · intro x hx
+            rcases Finset.mem_union.1 (ih d Δ τ₂ e hx) with hx | hx
+            · exact Finset.mem_union_left _ (Finset.mem_union_right _ hx)
+            · exact Finset.mem_union_right _ hx
+      | sum τ₁ τ₂ =>
+          simp only [interpFuel, Formula.freeAtoms_and,
+            Formula.freeAtoms_all, Formula.freeAtoms_impl,
+            Formula.freeAtoms_sum, ContextType.freeAtoms]
+          refine Finset.union_subset
+            (Interp.freeAtoms_guard_relevant_subset d Δ (.sum τ₁ τ₂) e)
+            (Finset.union_subset
+              (Interp.freeAtoms_resultFirst_relevant_subset Δ (.sum τ₁ τ₂) e)
+              (Finset.union_subset ?_ ?_))
+          · intro x hx
+            have h := ih (d + 1) (Interp.relevantEnv Δ (.sum τ₁ τ₂) e)
+              (τ₁.shiftFrom 0) (.ret (.bound 0)) hx
+            simp [Term.support, Value.support] at h
+            exact Finset.mem_union_left _ (Finset.mem_union_left _ h)
+          · intro x hx
+            have h := ih (d + 1) (Interp.relevantEnv Δ (.sum τ₁ τ₂) e)
+              (τ₂.shiftFrom 0) (.ret (.bound 0)) hx
+            simp [Term.support, Value.support] at h
+            exact Finset.mem_union_left _ (Finset.mem_union_right _ h)
+      | arrow τ₁ τ₂ =>
+          simp only [interpFuel, Formula.freeAtoms_and,
+            Formula.freeAtoms_all, Formula.freeAtoms_impl,
+            ContextType.freeAtoms]
+          refine Finset.union_subset
+            (Interp.freeAtoms_guard_relevant_subset d Δ (.arrow τ₁ τ₂) e)
+            (Finset.union_subset
+              (Interp.freeAtoms_resultFirst_relevant_subset Δ (.arrow τ₁ τ₂) e)
+              (Finset.union_subset ?_ ?_))
+          · intro x hx
+            have h := ih (d + 2) (Interp.relevantEnv Δ (.arrow τ₁ τ₂) e)
+              ((τ₁.shiftFrom 0).shiftFrom 0) (.ret (.bound 0)) hx
+            simp [Term.support, Value.support] at h
+            exact Finset.mem_union_left _ (Finset.mem_union_left _ h)
+          · intro x hx
+            have h := ih (d + 2) (Interp.relevantEnv Δ (.arrow τ₁ τ₂) e)
+              (τ₂.shiftFrom 1) (.app (.bound 1) (.bound 0)) hx
+            simp [Term.support, Value.support] at h
+            exact Finset.mem_union_left _ (Finset.mem_union_right _ h)
+      | wand τ₁ τ₂ =>
+          simp only [interpFuel, Formula.freeAtoms_and,
+            Formula.freeAtoms_all, Formula.freeAtoms_impl,
+            Formula.freeAtoms_wand, ContextType.freeAtoms]
+          refine Finset.union_subset
+            (Interp.freeAtoms_guard_relevant_subset d Δ (.wand τ₁ τ₂) e)
+            (Finset.union_subset
+              (Interp.freeAtoms_resultFirst_relevant_subset Δ (.wand τ₁ τ₂) e)
+              (Finset.union_subset ?_ ?_))
+          · intro x hx
+            have h := ih (d + 2) (Interp.relevantEnv Δ (.wand τ₁ τ₂) e)
+              ((τ₁.shiftFrom 0).shiftFrom 0) (.ret (.bound 0)) hx
+            simp [Term.support, Value.support] at h
+            exact Finset.mem_union_left _ (Finset.mem_union_left _ h)
+          · intro x hx
+            have h := ih (d + 2) (Interp.relevantEnv Δ (.wand τ₁ τ₂) e)
+              (τ₂.shiftFrom 1) (.app (.bound 1) (.bound 0)) hx
+            simp [Term.support, Value.support] at h
+            exact Finset.mem_union_left _ (Finset.mem_union_right _ h)
+      | persist τ =>
+          simp only [interpFuel, Formula.freeAtoms_and,
+            Formula.freeAtoms_all, Formula.freeAtoms_impl,
+            Formula.freeAtoms_persist, ContextType.freeAtoms]
+          refine Finset.union_subset
+            (Interp.freeAtoms_guard_relevant_subset d Δ (.persist τ) e)
+            (Finset.union_subset
+              (Interp.freeAtoms_resultFirst_relevant_subset Δ (.persist τ) e)
+              ?_)
+          intro x hx
+          have h := ih (d + 1) (Interp.relevantEnv Δ (.persist τ) e)
+            (τ.shiftFrom 0) (.ret (.bound 0)) hx
+          simp [Term.support, Value.support] at h
+          exact Finset.mem_union_left _ h
+
+theorem freeAtoms_interp_subset (Δ : BasicEnv) (τ : ContextType)
+    (e : Term) : (interp Δ τ e).freeAtoms ⊆ τ.freeAtoms ∪ e.support :=
+  freeAtoms_interpFuel_subset τ.measure 0 Δ τ e
+
+theorem interpFuel_eq_guard_and (gas d : Nat) (Δ : BasicEnv)
+    (τ : ContextType) (e : Term) :
+    ∃ P, interpFuel gas d Δ τ e =
+      (Interp.guard d (Interp.relevantEnv Δ τ e) τ e ∧ᶜ P) := by
+  cases gas with
+  | zero => exact ⟨⊤ᶜ, rfl⟩
+  | succ gas => exact ⟨_, rfl⟩
+
+theorem models_interpFuel_guard {m : Capability} {gas d : Nat}
+    {Δ : BasicEnv} {τ : ContextType} {e : Term}
+    (h : m ⊨ interpFuel gas d Δ τ e) :
+    m ⊨ Interp.guard d (Interp.relevantEnv Δ τ e) τ e := by
+  obtain ⟨P, eq⟩ := interpFuel_eq_guard_and gas d Δ τ e
+  rw [eq] at h
+  exact Formula.models_and_elim_left h
+
+theorem models_interp_guard {m : Capability} {Δ : BasicEnv}
+    {τ : ContextType} {e : Term} (h : m ⊨ interp Δ τ e) :
+    m ⊨ Interp.guard 0 (Interp.relevantEnv Δ τ e) τ e :=
+  models_interpFuel_guard h
+
+theorem models_interp_basicWorld {m : Capability} {Δ : BasicEnv}
+    {τ : ContextType} {e : Term} (h : m ⊨ interp Δ τ e) :
+    m ⊨ Interp.basicWorld (Interp.relevantEnv Δ τ e) := by
+  have hg := models_interp_guard h
+  exact Formula.models_and_elim_left (Formula.models_and_elim_right hg)
+
+theorem models_interp_basicTyping {m : Capability} {Δ : BasicEnv}
+    {τ : ContextType} {e : Term} (h : m ⊨ interp Δ τ e) :
+    m ⊨ Interp.basicTyping (Interp.relevantEnv Δ τ e) e τ.erase := by
+  have hg := models_interp_guard h
+  exact Formula.models_and_elim_left
+    (Formula.models_and_elim_right (Formula.models_and_elim_right hg))
+
+theorem models_interp_total {m : Capability} {Δ : BasicEnv}
+    {τ : ContextType} {e : Term} (h : m ⊨ interp Δ τ e) :
+    m ⊨ Interp.total e := by
+  have hg := models_interp_guard h
+  exact Formula.models_and_elim_right
+    (Formula.models_and_elim_right (Formula.models_and_elim_right hg))
+
+theorem models_interp_restrict {m : Capability} {Δ : BasicEnv}
+    {τ : ContextType} {e : Term} {X : Finset Atom}
+    (hX : τ.freeAtoms ∪ e.support ⊆ X) :
+    m ⊨ interp Δ τ e ↔ m.restrict X ⊨ interp Δ τ e :=
+  Formula.models_restrict_superset m (interp Δ τ e)
+    (Finset.Subset.trans (freeAtoms_interp_subset Δ τ e) hX)
+
+theorem models_interp_projection {m n : Capability} {Δ : BasicEnv}
+    {τ : ContextType} {e : Term} (X : Finset Atom)
+    (hX : τ.freeAtoms ∪ e.support ⊆ X)
+    (same : m.restrict X = n.restrict X) :
+    m ⊨ interp Δ τ e ↔ n ⊨ interp Δ τ e :=
+  Formula.models_projection X
+    (Finset.Subset.trans (freeAtoms_interp_subset Δ τ e) hX) same
+
+set_option hygiene false in
+scoped[ContextTypes] notation:20 (name := contextTypeInterp)
+    "⟦" τ "⟧[" Δ "] " e:20 =>
+  ContextTypes.ContextType.interp Δ τ e
+
+end ContextType
+
+namespace Context
+
+/-! ## Bunched-context interpretation -/
+
+def erasureUnder («Σ» : BasicEnv) (Γ : Context) : BasicEnv :=
+  ((«Σ»).restrict Γ.freeAtoms).merge Γ.erase
+
+def interpUnder («Σ» : BasicEnv) : Context → Formula
+  | .empty =>
+      Interp.basicWorld ((«Σ»).restrict ∅) ∧ᶜ ⊤ᶜ
+  | .bind x τ =>
+      let «Σ'» := («Σ»).restrict τ.freeAtoms
+      Interp.basicWorld ((«Σ'»).merge (BasicEnv.singleton x τ.erase)) ∧ᶜ
+        ContextType.interp ((«Σ'»).insert x τ.erase) τ (.ret (.free x))
+  | .comma Γ₁ Γ₂ =>
+      let Γ := Context.comma Γ₁ Γ₂
+      let «Σ'» := («Σ»).restrict Γ.freeAtoms
+      Interp.basicWorld ((«Σ'»).merge Γ.erase) ∧ᶜ
+        (interpUnder «Σ'» Γ₁ ∧ᶜ
+          interpUnder ((«Σ'»).merge Γ₁.erase) Γ₂)
+  | .star Γ₁ Γ₂ =>
+      let Γ := Context.star Γ₁ Γ₂
+      let «Σ'» := («Σ»).restrict Γ.freeAtoms
+      Interp.basicWorld ((«Σ'»).merge Γ.erase) ∧ᶜ
+        (interpUnder «Σ'» Γ₁ ∗ interpUnder «Σ'» Γ₂)
+  | .sum Γ₁ Γ₂ =>
+      let Γ := Context.sum Γ₁ Γ₂
+      let «Σ'» := («Σ»).restrict Γ.freeAtoms
+      Interp.basicWorld ((«Σ'»).merge Γ.erase) ∧ᶜ
+        (interpUnder «Σ'» Γ₁ ⊕ interpUnder «Σ'» Γ₂)
+
+def interp (Γ : Context) : Formula :=
+  interpUnder ∅ Γ
+
+theorem erasureUnder_domain_subset_support («Σ» : BasicEnv) (Γ : Context) :
+    (erasureUnder «Σ» Γ).domain ⊆ Γ.support := by
+  rw [Context.support_eq_freeAtoms_union_domain]
+  simp only [erasureUnder, BasicEnv.domain_merge, BasicEnv.domain_restrict]
+  exact Finset.union_subset
+    (Finset.Subset.trans Finset.inter_subset_right Finset.subset_union_left)
+    (Finset.Subset.trans (Context.erase_domain_subset_domain Γ)
+      Finset.subset_union_right)
+
+theorem erasureUnder_minimal («Σ» : BasicEnv) (Γ : Context) :
+    erasureUnder «Σ» Γ = erasureUnder ((«Σ»).restrict Γ.freeAtoms) Γ := by
+  simp [erasureUnder, BasicEnv.restrict_restrict]
+
+theorem interpUnder_minimal («Σ» : BasicEnv) (Γ : Context) :
+    interpUnder «Σ» Γ = interpUnder ((«Σ»).restrict Γ.freeAtoms) Γ := by
+  cases Γ <;>
+    simp [interpUnder, Context.freeAtoms, BasicEnv.restrict_restrict]
+
+theorem models_interpUnder_basicWorld {m : Capability} {«Σ» : BasicEnv}
+    {Γ : Context} (h : m ⊨ interpUnder «Σ» Γ) :
+    m ⊨ Interp.basicWorld (erasureUnder «Σ» Γ) := by
+  cases Γ <;>
+    simpa [interpUnder, erasureUnder, Context.freeAtoms, Context.erase] using
+      (Formula.models_and_elim_left h)
+
+set_option hygiene false in
+scoped[ContextTypes] notation:20 (name := contextInterpUnder)
+    "⟦" Γ "⟧[" «Σ» "]" => ContextTypes.Context.interpUnder «Σ» Γ
+
+end Context
+
+end
+
+/-! ## Semantic subtyping -/
+
+def SubTypeUnder («Σ» : BasicEnv) (Γ : Context)
+    (τ₁ τ₂ : ContextType) : Prop :=
+  Γ.WellFormedUnder («Σ»).domain ∧
+  τ₁.WellFormed Γ.erase.domain ∧
+  τ₂.WellFormed Γ.erase.domain ∧
+  τ₁.erase = τ₂.erase ∧
+  ∀ e, BasicTermTyp Γ.erase e τ₁.erase →
+    Formula.Entails (Context.interpUnder «Σ» Γ)
+      (Formula.impl
+        (ContextType.interp Γ.erase τ₁ e)
+        (ContextType.interp Γ.erase τ₂ e))
+
+set_option hygiene false in
+scoped[ContextTypes] notation:40 (name := semanticSubtype)
+    «Σ» " , " Γ " ⊢ " τ₁ " <: " τ₂ =>
+  ContextTypes.SubTypeUnder «Σ» Γ τ₁ τ₂
+
+def BasicEnv.AgreeOn (X : Finset Atom) (Δ₁ Δ₂ : BasicEnv) : Prop :=
+  ∀ x, x ∈ X → Δ₁.lookup x = Δ₂.lookup x
+
+def SubCtxUnder («Σ» : BasicEnv) (X : Finset Atom) (Γ₁ Γ₂ : Context) : Prop :=
+  Γ₁.WellFormedUnder («Σ»).domain ∧
+  Γ₂.WellFormedUnder («Σ»).domain ∧
+  BasicEnv.AgreeOn X Γ₁.erase Γ₂.erase ∧
+  ∀ m, Formula.Models m (Context.interpUnder «Σ» Γ₁) →
+    ∃ n, Capability.Refines (m.restrict X) n ∧
+      Formula.Models n (Context.interpUnder «Σ» Γ₂)
+
+set_option hygiene false in
+scoped[ContextTypes] notation:40 (name := semanticContextSubtype)
+    «Σ» " ⊢ " Γ₁ " ≤[" X "] " Γ₂ =>
+  ContextTypes.SubCtxUnder «Σ» X Γ₁ Γ₂
+
+end ContextTypes

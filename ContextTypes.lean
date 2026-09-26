@@ -7,6 +7,7 @@ import ContextTypes.ContextType
 import ContextTypes.Notation
 import ContextTypes.BasicTyp
 import ContextTypes.CtxLogic
+import ContextTypes.Interp
 
 /-!
 This module is the public root of the `ContextTypes` library.
