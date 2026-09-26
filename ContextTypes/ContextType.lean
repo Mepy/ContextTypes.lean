@@ -105,6 +105,18 @@ theorem free_mem_support_iff (τ : ContextType) (x : Atom) :
     LogicVar.free x ∈ τ.support ↔ x ∈ τ.freeAtoms :=
   free_mem_supportAt_iff τ 0 x
 
+private theorem union_subset_singleton_union {A B A' B' : Finset Atom}
+    {y : Atom} (hA : A' ⊆ {y} ∪ A) (hB : B' ⊆ {y} ∪ B) :
+    A' ∪ B' ⊆ {y} ∪ (A ∪ B) := by
+  intro x hx
+  rcases Finset.mem_union.1 hx with hx | hx
+  · rcases Finset.mem_union.1 (hA hx) with hx | hx
+    · exact Finset.mem_union_left _ hx
+    · exact Finset.mem_union_right _ (Finset.mem_union_left _ hx)
+  · rcases Finset.mem_union.1 (hB hx) with hx | hx
+    · exact Finset.mem_union_left _ hx
+    · exact Finset.mem_union_right _ (Finset.mem_union_right _ hx)
+
 /-- Open context-type binder `k` with atom `x`. -/
 def openAt : ContextType → Nat → Atom → ContextType
   | .over b q, k, x => .over b (q.openAt (k + 1) x)
@@ -115,6 +127,31 @@ def openAt : ContextType → Nat → Atom → ContextType
   | .arrow τ₁ τ₂, k, x => .arrow (τ₁.openAt k x) (τ₂.openAt (k + 1) x)
   | .wand τ₁ τ₂, k, x => .wand (τ₁.openAt k x) (τ₂.openAt (k + 1) x)
   | .persist τ, k, x => .persist (τ.openAt k x)
+
+theorem freeAtoms_openAt_subset (τ : ContextType) (k : Nat) (y : Atom) :
+    (τ.openAt k y).freeAtoms ⊆ {y} ∪ τ.freeAtoms := by
+  induction τ generalizing k with
+  | «over» b q =>
+      simpa [openAt, freeAtoms] using q.freeAtoms_openAt_subset (k + 1) y
+  | under b q =>
+      simpa [openAt, freeAtoms] using q.freeAtoms_openAt_subset (k + 1) y
+  | inter τ₁ τ₂ ih₁ ih₂ =>
+      simpa [openAt, freeAtoms] using
+        union_subset_singleton_union (ih₁ k) (ih₂ k)
+  | union τ₁ τ₂ ih₁ ih₂ =>
+      simpa [openAt, freeAtoms] using
+        union_subset_singleton_union (ih₁ k) (ih₂ k)
+  | sum τ₁ τ₂ ih₁ ih₂ =>
+      simpa [openAt, freeAtoms] using
+        union_subset_singleton_union (ih₁ k) (ih₂ k)
+  | arrow τ₁ τ₂ ih₁ ih₂ =>
+      simpa [openAt, freeAtoms] using
+        union_subset_singleton_union (ih₁ k) (ih₂ (k + 1))
+  | wand τ₁ τ₂ ih₁ ih₂ =>
+      simpa [openAt, freeAtoms] using
+        union_subset_singleton_union (ih₁ k) (ih₂ (k + 1))
+  | persist τ ih =>
+      simpa [openAt, freeAtoms] using ih k
 
 /-- Open the outermost context-type binder. -/
 abbrev openOuter (τ : ContextType) (x : Atom) : ContextType :=

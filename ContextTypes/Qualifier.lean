@@ -438,6 +438,16 @@ theorem mem_freeAtoms_iff (q : Qualifier) (x : Atom) :
     apply Finset.mem_biUnion.2
     exact ⟨.free x, hx, by simp [LogicVar.freeAtoms]⟩
 
+theorem freeAtoms_openAt_subset (q : Qualifier) (k : Nat) (y : Atom) :
+    (q.openAt k y).freeAtoms ⊆ {y} ∪ q.freeAtoms := by
+  intro x hx
+  rw [mem_freeAtoms_iff, support_openAt, LogicVar.mem_openSupport] at hx
+  by_cases hxy : x = y
+  · exact Finset.mem_union_left _ (Finset.mem_singleton.2 hxy)
+  · apply Finset.mem_union_right
+    rw [mem_freeAtoms_iff]
+    simpa [LogicVar.openBinder, LogicVar.swap, hxy] using hx
+
 @[simp] theorem freeAtoms_shiftFrom (q : Qualifier) (k : Nat) :
     (q.shiftFrom k).freeAtoms = q.freeAtoms := by
   ext x
