@@ -964,6 +964,52 @@ theorem extends_exists (F : FiberExtension) (m : Capability)
       fixedDomain := fixed }
   exact ⟨n, happ, rfl, fun _ => Iff.rfl⟩
 
+/-- A fiber extension that returns the same output store for every input. -/
+def constant (I : Finset Atom) (o : Store)
+    (disjoint : Disjoint I o.domain) : FiberExtension where
+  input := I
+  output := o.domain
+  disjoint := disjoint
+  rel := fun _ m => m = Capability.singleton o
+  rel_domain := by
+    intro _ m _ hm
+    subst m
+    simp
+  rel_nonempty := by
+    intro _ _
+    exact ⟨Capability.singleton o, o, rfl, rfl⟩
+  rel_extensional := by
+    intro _ m n ρ _ hm hn
+    subst m
+    subst n
+    rfl
+
+/-- A constant extension of a singleton capability is the singleton obtained
+by merging its input and output stores. -/
+theorem constant_extends_singleton {I : Finset Atom} {o σ : Store}
+    {disjoint : Disjoint I o.domain}
+    (input : I ⊆ σ.domain) (output : Disjoint o.domain σ.domain) :
+    (constant I o disjoint).Extends (Capability.singleton σ)
+      (Capability.singleton (σ.merge o)) := by
+  refine ⟨⟨?_, ?_⟩, ?_, ?_⟩
+  · simpa using input
+  · simpa [constant] using output
+  · simp [constant, Store.domain_merge]
+  · intro τ
+    constructor
+    · intro hτ
+      rw [Capability.mem_singleton_iff] at hτ
+      subst τ
+      exact ⟨σ, Capability.singleton o, o, rfl, rfl, rfl, rfl⟩
+    · rintro ⟨σ', w, ρ, hσ', hw, hρ, rfl⟩
+      rw [Capability.mem_singleton_iff] at hσ'
+      subst σ'
+      change w = Capability.singleton o at hw
+      subst w
+      rw [Capability.mem_singleton_iff] at hρ
+      subst ρ
+      rfl
+
 theorem Extends.restrict_base {F : FiberExtension} {m n : Capability}
     (h : F.Extends m n) : n.restrict m.domain = m := by
   apply Capability.ext
