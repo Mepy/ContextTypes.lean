@@ -586,6 +586,71 @@ theorem openAt_fresh (q : Qualifier) (k : Nat) (x : Atom)
       · rwa [σ.domain_eq]
     rw [back]
 
+theorem shiftFrom_eq_of_locallyClosedAt (q : Qualifier) (k : Nat)
+    (closed : q.locallyClosedAt k) : q.shiftFrom k = q := by
+  have fixed : ∀ {ξ}, ξ ∈ q.support → LogicVar.shiftFrom k ξ = ξ := by
+    intro ξ hξ
+    cases ξ with
+    | free x => rfl
+    | bound n =>
+        have hn := closed n hξ
+        simp [LogicVar.shiftFrom, Nat.not_le_of_lt hn]
+  have support : (q.shiftFrom k).support = q.support := by
+    rw [support_shiftFrom]
+    apply Finset.Subset.antisymm
+    · intro ξ hξ
+      obtain ⟨ζ, hζ, same⟩ := Finset.mem_image.1 hξ
+      rw [fixed hζ] at same
+      exact same ▸ hζ
+    · intro ξ hξ
+      exact Finset.mem_image.2 ⟨ξ, hξ, fixed hξ⟩
+  apply Qualifier.ext support
+  intro ρ σ same
+  change (∃ a : AssignmentOn q.support,
+      q.holds a ∧ ∀ ξ,
+        a.assignment.lookup ξ =
+          ρ.assignment.lookup (LogicVar.shiftFrom k ξ)) ↔ q.holds σ
+  constructor
+  · rintro ⟨a, ha, hlook⟩
+    have haσ : a = σ := by
+      apply AssignmentOn.ext
+      apply Assignment.ext
+      intro ξ
+      by_cases hξ : ξ ∈ q.support
+      · rw [hlook ξ, fixed hξ, same]
+      · rw [(Assignment.lookup_eq_none_iff a.assignment ξ).2,
+          (Assignment.lookup_eq_none_iff σ.assignment ξ).2]
+        · rwa [σ.domain_eq]
+        · rwa [a.domain_eq]
+    rwa [haσ] at ha
+  · intro hq
+    refine ⟨σ, hq, ?_⟩
+    intro ξ
+    by_cases hξ : ξ ∈ q.support
+    · rw [fixed hξ, same]
+    · have hshift : LogicVar.shiftFrom k ξ ∉ q.support := by
+        intro hmem
+        have hfixed := fixed hmem
+        have heq : LogicVar.shiftFrom k ξ = ξ :=
+          LogicVar.shiftFrom_injective k (hfixed.trans rfl)
+        exact hξ (heq ▸ hmem)
+      rw [(Assignment.lookup_eq_none_iff σ.assignment ξ).2,
+        (Assignment.lookup_eq_none_iff ρ.assignment
+          (LogicVar.shiftFrom k ξ)).2]
+      · rw [ρ.domain_eq, support]
+        exact hshift
+      · rwa [σ.domain_eq]
+
+theorem openAt_shiftFrom_eq (q : Qualifier) (k : Nat) (x : Atom)
+    (closed : q.locallyClosedAt k)
+    (fresh : LogicVar.free x ∉ q.support) :
+    (q.shiftFrom k).openAt k x = q := by
+  rw [q.shiftFrom_eq_of_locallyClosedAt k closed]
+  apply q.openAt_fresh
+  · intro h
+    exact (Nat.lt_irrefl k (closed k h)).elim
+  · exact fresh
+
 theorem substitute_fresh (q : Qualifier) (ρ : Assignment)
     (h : Disjoint q.support ρ.domain) : q.substitute ρ = q := by
   apply ext

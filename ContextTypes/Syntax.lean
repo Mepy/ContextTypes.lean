@@ -97,6 +97,23 @@ def openSupport (k : Nat) (x : Atom) (X : Finset LogicVar) : Finset LogicVar :=
   ext ξ
   simp
 
+theorem openSupport_eq_self_of_fresh (X : Finset LogicVar) (k : Nat)
+    (x : Atom) (bound : LogicVar.bound k ∉ X)
+    (free : LogicVar.free x ∉ X) : openSupport k x X = X := by
+  ext ξ
+  rw [mem_openSupport]
+  cases ξ with
+  | bound n =>
+      by_cases h : n = k
+      · subst n
+        simp [openBinder, swap, bound, free]
+      · simp [openBinder, swap, h]
+  | free y =>
+      by_cases h : y = x
+      · subst y
+        simp [openBinder, swap, bound, free]
+      · simp [openBinder, swap, h]
+
 end LogicVar
 
 /-- Base types of constants. -/
