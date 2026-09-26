@@ -1088,6 +1088,137 @@ theorem models_resultAt_lookup {m : Capability} {X : Finset LogicVar}
           if_pos ((LogicVar.mem_freeAtomSet_iff X x).2 hξX)])]
   exact heval
 
+theorem models_resultAt_typed {m : Capability} {X : Finset LogicVar}
+    {Δ : BasicEnv} {e : Term} {T : SimpleType} {y : Atom}
+    (closedX : LogicVar.LocallyClosed X) (closedE : e.locallyClosed)
+    (support : e.logicSupport ⊆ X) (fresh : LogicVar.free y ∉ X)
+    (hres : m ⊨ resultAt X e (.free y))
+    (htyped : m ⊨ basicTyping Δ e T) :
+    ∀ σ, σ ∈ m → ∃ v, σ.lookup y = some v ∧ BasicValTyp ∅ v T := by
+  intro σ hσ
+  obtain ⟨v, hv, reaches⟩ :=
+    models_resultAt_lookup closedX support fresh hres σ hσ
+  exact ⟨v, hv, (models_basicTyping_term closedE htyped hσ).reaches reaches⟩
+
+theorem models_resultBasicTyping_openAt {m : Capability}
+    {X : Finset LogicVar} {Δ : BasicEnv} {e : Term} {b : BaseType}
+    {y : Atom} (closedX : LogicVar.LocallyClosed X)
+    (closedE : e.locallyClosed) (support : e.logicSupport ⊆ X)
+    (fresh : LogicVar.free y ∉ X)
+    (hres : m ⊨ resultAt X e (.free y))
+    (htyped : m ⊨ basicTyping Δ e (.base b)) :
+    m ⊨ (resultBasicTyping b).openAt 0 y := by
+  unfold resultBasicTyping basicTyping Formula.fiberAtom
+  simp only [Formula.openAt]
+  let q := (basicTypingQualifier ∅ (.ret (.bound 0)) (.base b)).openAt 0 y
+  change m ⊨ Formula.fiberAtom q
+  have hqsupp : q.support = {.free y} := by
+    simp [q, basicTypingQualifier, Term.logicSupportAt,
+      Value.logicSupportAt, boundLogicSupportAt, LogicVar.openSupport,
+      LogicVar.openBinder, LogicVar.swap]
+  have hqfree : q.freeAtoms = {y} := by
+    change LogicVar.freeAtomSet q.support = {y}
+    rw [hqsupp]
+    simp
+  apply (Formula.models_fiberAtom_iff m q).2
+  refine ⟨?_, ?_, ?_⟩
+  · intro k hk
+    rw [hqsupp] at hk
+    simp at hk
+  · have hy : y ∈ m.domain := by
+      apply Formula.models_scope hres
+      simp [LogicVar.freeAtoms]
+    simpa [hqfree] using hy
+  · intro σ hσ
+    obtain ⟨v, hv, hvT⟩ :=
+      models_resultAt_typed closedX closedE support fresh hres htyped σ hσ
+    let s := σ.restrict q.freeAtoms
+    have hsdom : s.domain = q.freeAtoms := by
+      simp only [s]
+      rw [Store.domain_restrict, m.mem_domain hσ,
+        Finset.inter_eq_right]
+      rw [hqfree]
+      intro x hx
+      have hxy : x = y := Finset.mem_singleton.1 hx
+      subst x
+      exact Formula.models_scope hres (by simp [LogicVar.freeAtoms])
+    let a : AssignmentOn q.support :=
+      { assignment := s.toAssignment
+        domain_eq := by
+          rw [Store.toAssignment_domain, hsdom, hqfree]
+          simp [hqsupp] }
+    refine ⟨hsdom, a, ?_, ?_⟩
+    · change (basicTypingQualifier ∅ (.ret (.bound 0)) (.base b)).holds
+        (a.swapBack (.bound 0) (.free y))
+      refine ⟨by simp [Term.support, Value.support], ?_, ?_⟩
+      · intro ξ T hT
+        cases ξ <;> simp at hT
+      · simpa [a, s, hqfree, Store.lookup_restrict, hv,
+          AssignmentOn.swapBack, Assignment.lookup_swap,
+          LogicVar.swap, instantiateTerm, instantiateTermAt,
+          instantiateValueAt] using BasicTermTyp.ret hvT
+    · intro x
+      simp [a, s]
+
+theorem models_resultTotal_openAt {m : Capability}
+    {X : Finset LogicVar} {Δ : BasicEnv} {e : Term} {T : SimpleType}
+    {y : Atom} (closedX : LogicVar.LocallyClosed X)
+    (closedE : e.locallyClosed) (support : e.logicSupport ⊆ X)
+    (fresh : LogicVar.free y ∉ X)
+    (hres : m ⊨ resultAt X e (.free y))
+    (htyped : m ⊨ basicTyping Δ e T) :
+    m ⊨ (total (.ret (.bound 0))).openAt 0 y := by
+  unfold total Formula.fiberAtom
+  simp only [Formula.openAt]
+  let q := (totalQualifier (.ret (.bound 0))).openAt 0 y
+  change m ⊨ Formula.fiberAtom q
+  have hqsupp : q.support = {.free y} := by
+    simp [q, totalQualifier, Term.logicSupportAt,
+      Value.logicSupportAt, boundLogicSupportAt, LogicVar.openSupport,
+      LogicVar.openBinder, LogicVar.swap]
+  have hqfree : q.freeAtoms = {y} := by
+    change LogicVar.freeAtomSet q.support = {y}
+    rw [hqsupp]
+    simp
+  apply (Formula.models_fiberAtom_iff m q).2
+  refine ⟨?_, ?_, ?_⟩
+  · intro k hk
+    rw [hqsupp] at hk
+    simp at hk
+  · have hy : y ∈ m.domain := by
+      apply Formula.models_scope hres
+      simp [LogicVar.freeAtoms]
+    simpa [hqfree] using hy
+  · intro σ hσ
+    obtain ⟨v, hv, hvT⟩ :=
+      models_resultAt_typed closedX closedE support fresh hres htyped σ hσ
+    let s := σ.restrict q.freeAtoms
+    have hsdom : s.domain = q.freeAtoms := by
+      simp only [s]
+      rw [Store.domain_restrict, m.mem_domain hσ,
+        Finset.inter_eq_right]
+      rw [hqfree]
+      intro x hx
+      have hxy : x = y := Finset.mem_singleton.1 hx
+      subst x
+      exact Formula.models_scope hres (by simp [LogicVar.freeAtoms])
+    let a : AssignmentOn q.support :=
+      { assignment := s.toAssignment
+        domain_eq := by
+          rw [Store.toAssignment_domain, hsdom, hqfree]
+          simp [hqsupp] }
+    refine ⟨hsdom, a, ?_, ?_⟩
+    · change (totalQualifier (.ret (.bound 0))).holds
+        (a.swapBack (.bound 0) (.free y))
+      change (instantiateTerm (.ret (.bound 0))
+        (a.swapBack (.bound 0) (.free y)).assignment).MustTerminate
+      simpa [a, s, hqfree, Store.lookup_restrict, hv,
+        AssignmentOn.swapBack, Assignment.lookup_swap,
+        LogicVar.swap, instantiateTerm, instantiateTermAt,
+        instantiateValueAt] using Term.MustTerminate.ret v hvT.locallyClosed
+    · intro x
+      simp [a, s]
+
 /-! ## Closed static atoms -/
 
 theorem models_basicWorld_empty (m : Capability) :
