@@ -1292,6 +1292,41 @@ theorem models_resultAt_ret_free_lookup {m : Capability}
     exact Term.ret.inj this.ret_eq
   rw [hz, hy, heq]
 
+theorem models_resultAt_ret_lookup_eq_of_restrict_eq {m : Capability}
+    {X : Finset LogicVar} {v : Value} {y : Atom}
+    (closedX : LogicVar.LocallyClosed X)
+    (support : (.ret v : Term).logicSupport ⊆ X)
+    (fresh : LogicVar.free y ∉ X)
+    (h : m ⊨ resultAt X (.ret v) (.free y))
+    {σ ρ : Store} (hσ : σ ∈ m) (hρ : ρ ∈ m)
+    (same : σ.restrict (LogicVar.freeAtomSet X) =
+      ρ.restrict (LogicVar.freeAtomSet X)) :
+    σ.lookup y = ρ.lookup y := by
+  obtain ⟨u, hyσ, hu⟩ :=
+    models_resultAt_lookup closedX support fresh h σ hσ
+  obtain ⟨w, hyρ, hw⟩ :=
+    models_resultAt_lookup closedX support fresh h ρ hρ
+  have hagree : ∀ ξ, ξ ∈ v.logicSupport →
+      σ.toAssignment.lookup ξ = ρ.toAssignment.lookup ξ := by
+    intro ξ hξ
+    have hξX := support (by simpa [Term.logicSupportAt] using hξ)
+    cases ξ with
+    | bound k => exact (closedX k hξX).elim
+    | free x =>
+        simp only [Store.toAssignment_lookup_free]
+        have hs := congrArg (fun s => s.lookup x) same
+        have hx : x ∈ LogicVar.freeAtomSet X :=
+          (LogicVar.mem_freeAtomSet_iff X x).2 hξX
+        simpa [Store.lookup_restrict, hx] using hs
+  have hv : instantiateValueAt v 0 σ.toAssignment =
+      instantiateValueAt v 0 ρ.toAssignment :=
+    instantiateValueAt_eq_of_agreeOn v 0 hagree
+  have hu' : u = instantiateValueAt v 0 σ.toAssignment := by
+    exact Term.ret.inj hu.ret_eq
+  have hw' : w = instantiateValueAt v 0 ρ.toAssignment := by
+    exact Term.ret.inj hw.ret_eq
+  rw [hyσ, hyρ, hu', hw', hv]
+
 theorem models_resultFirst_openAt_lookup {m : Capability}
     {Δ : BasicEnv} {τ : ContextType} {e : Term} {y : Atom}
     (closed : LogicVar.LocallyClosed (relevantSupport Δ τ e))
@@ -1317,6 +1352,45 @@ theorem models_resultFirst_ret_free_openAt_lookup {m : Capability}
   rw [resultFirst_openAt Δ τ (.ret (.free y)) z closed
     (by trivial) support fresh] at h
   exact models_resultAt_ret_free_lookup closed support fresh h
+
+theorem models_resultFirst_ret_openAt_singleton
+    {F : Capability.FiberExtension} {σ : Store} {m : Capability}
+    {Δ : BasicEnv} {τ : ContextType} {v : Value} {y : Atom}
+    (hExt : F.Extends (Capability.singleton σ) m)
+    (hout : F.output = {y})
+    (hX : LogicVar.freeAtomSet (relevantSupport Δ τ (.ret v)) ⊆ σ.domain)
+    (closed : LogicVar.LocallyClosed (relevantSupport Δ τ (.ret v)))
+    (closedV : v.locallyClosed)
+    (support : (.ret v : Term).logicSupport ⊆
+      relevantSupport Δ τ (.ret v))
+    (fresh : LogicVar.free y ∉ relevantSupport Δ τ (.ret v))
+    (h : m ⊨ (resultFirst Δ τ (.ret v)).openAt 0 y) :
+    ∃ ρ, ρ ∈ m ∧ m = Capability.singleton ρ := by
+  rw [resultFirst_openAt Δ τ (.ret v) y closed closedV support fresh] at h
+  apply hExt.singleton_of_output_lookup hout
+  intro ρ hρ υ hυ
+  apply models_resultAt_ret_lookup_eq_of_restrict_eq closed support fresh h hρ hυ
+  calc
+    ρ.restrict (LogicVar.freeAtomSet (relevantSupport Δ τ (.ret v))) =
+        (ρ.restrict σ.domain).restrict
+          (LogicVar.freeAtomSet (relevantSupport Δ τ (.ret v))) := by
+      rw [Store.restrict_restrict, Finset.inter_eq_right.2 hX]
+    _ = (υ.restrict σ.domain).restrict
+          (LogicVar.freeAtomSet (relevantSupport Δ τ (.ret v))) := by
+      have hρbase : ρ.restrict σ.domain = σ := by
+        have hmem : ρ.restrict (Capability.singleton σ).domain ∈
+            m.restrict (Capability.singleton σ).domain := ⟨ρ, hρ, rfl⟩
+        rw [hExt.restrict_base] at hmem
+        exact hmem
+      have hυbase : υ.restrict σ.domain = σ := by
+        have hmem : υ.restrict (Capability.singleton σ).domain ∈
+            m.restrict (Capability.singleton σ).domain := ⟨υ, hυ, rfl⟩
+        rw [hExt.restrict_base] at hmem
+        exact hmem
+      rw [hρbase, hυbase]
+    _ = υ.restrict
+          (LogicVar.freeAtomSet (relevantSupport Δ τ (.ret v))) := by
+      rw [Store.restrict_restrict, Finset.inter_eq_right.2 hX]
 
 theorem models_resultAt_typed {m : Capability} {X : Finset LogicVar}
     {Δ : BasicEnv} {e : Term} {T : SimpleType} {y : Atom}
