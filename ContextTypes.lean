@@ -9,6 +9,7 @@ import ContextTypes.BasicTyp
 import ContextTypes.CtxLogic
 import ContextTypes.Interp
 import ContextTypes.Pretty
+import ContextTypes.SynTyp
 
 /-!
 This module is the public root of the `ContextTypes` library.
