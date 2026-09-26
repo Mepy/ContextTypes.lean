@@ -551,6 +551,222 @@ theorem models_guard_ret_const (m : Capability) (d : Nat)
         exact models_basicTyping_ret_const m c
       · exact models_total_ret_const m c
 
+/-! ## Constant result formulas -/
+
+theorem resultQualifier_ret_const_openAt (c : Constant) (y : Atom) :
+    (resultQualifier (.ret (.const c)) (.bound 0)).openAt 0 y =
+      (Qualifier.equal (.bound 0) (.const c)).openAt 0 y := by
+  apply Qualifier.ext
+  · simp [resultQualifier, Qualifier.equal, Term.logicSupport,
+      Term.logicSupportAt, Value.logicalSupport, Value.logicSupportAt]
+  · intro ρ σ same
+    simp only [Qualifier.openAt, resultQualifier, Qualifier.equal,
+      Value.denoteAssignment, AssignmentOn.swapBack,
+      Assignment.lookup_swap]
+    rw [same]
+    simp only [Term.logicSupport, Term.logicSupportAt,
+      Value.logicSupportAt, Finset.notMem_empty, not_false_eq_true,
+      true_and]
+    constructor
+    · rintro ⟨v, hv, reaches⟩
+      have samev : v = .const c :=
+        (Term.ret_reaches_iff (.const c) v
+          (by simp [Value.locallyClosedAt])).1 reaches
+      simpa [samev] using hv
+    · intro hv
+      exact ⟨.const c, hv,
+        (Term.ret_reaches_iff (.const c) (.const c)
+          (by simp [Value.locallyClosedAt])).2 rfl⟩
+
+theorem resultFirst_ret_const_openAt (τ : ContextType) (c : Constant)
+    (y : Atom) (hsupp : τ.support = ∅) :
+    (resultFirst (relevantEnv ∅ τ (.ret (.const c))) τ
+      (.ret (.const c))).openAt 0 y =
+        Formula.fiber ∅
+          (.atom ((Qualifier.equal (.bound 0) (.const c)).openAt 0 y)) := by
+  simp [resultFirst, relevantEnv, relevantAtoms, relevantSupport, resultAt,
+    LogicVar.openSupport, Qualifier.equal, Value.logicalSupport,
+    Term.support, Value.support, Term.logicSupport, Term.logicSupportAt,
+    Value.logicSupportAt, shiftTerm, shiftTermAt, shiftValueAt,
+    Formula.openAt, resultQualifier_ret_const_openAt, hsupp]
+
+theorem models_resultBasicTyping_ret_const_openAt
+    (m : Capability) (c : Constant) (y : Atom)
+    (h : m ⊨ Atom((Qualifier.equal (.bound 0) (.const c)).openAt 0 y)) :
+    m ⊨ (resultBasicTyping c.baseType).openAt 0 y := by
+  unfold resultBasicTyping basicTyping Formula.fiberAtom
+  simp only [Formula.openAt]
+  apply Formula.models_fiber_intro
+  · simpa [basicTypingQualifier, Qualifier.equal, Qualifier.freeAtoms,
+      Term.logicSupport, Term.logicSupportAt, Value.logicSupportAt,
+      boundLogicSupportAt, LogicVar.freeAtomSet, LogicVar.openSupport,
+      LogicVar.openBinder, LogicVar.swap, Value.logicalSupport] using
+      Formula.models_scope h
+  · intro k hk
+    simp [basicTypingQualifier, Term.logicSupportAt,
+      Value.logicSupportAt, boundLogicSupportAt, LogicVar.openSupport,
+      LogicVar.openBinder, LogicVar.swap] at hk
+  · intro σ f hf
+    have hq :
+        ((Qualifier.equal (.bound 0) (.const c)).openAt 0 y).freeAtoms =
+          {y} := by
+      simp [Qualifier.equal, Qualifier.freeAtoms, LogicVar.freeAtoms,
+        LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap,
+        Value.logicalSupport]
+    have hy : y ∈ m.domain := by
+      apply Formula.models_scope h
+      simp [hq]
+    have hσdom : σ.domain = {y} := by
+      have hdom := (m.restrict
+          (Formula.fiber
+            (LogicVar.openSupport 0 y
+              (basicTypingQualifier ∅ (.ret (.bound 0))
+                (.base c.baseType)).support)
+            (.atom ((basicTypingQualifier ∅ (.ret (.bound 0))
+              (.base c.baseType)).openAt 0 y))).freeAtoms).restrict
+          (LogicVar.freeAtomSet
+            (LogicVar.openSupport 0 y
+              (basicTypingQualifier ∅ (.ret (.bound 0))
+                (.base c.baseType)).support))
+        |>.mem_domain hf.projection_mem
+      simpa [basicTypingQualifier, Qualifier.freeAtoms,
+        Term.logicSupport, Term.logicSupportAt, Value.logicSupportAt,
+        boundLogicSupportAt, LogicVar.freeAtomSet, LogicVar.freeAtoms,
+        LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap, hy] using
+        hdom
+    have he := (Formula.models_atom_iff m
+      ((Qualifier.equal (.bound 0) (.const c)).openAt 0 y)).1 h |>.2
+    have hσ : σ ∈
+        Capability.restrict
+          (m.restrict
+            ((Qualifier.equal (.bound 0) (.const c)).openAt 0 y).freeAtoms)
+          ((Qualifier.equal (.bound 0) (.const c)).openAt 0 y).freeAtoms := by
+      simpa [basicTypingQualifier, Qualifier.equal, Qualifier.freeAtoms,
+        Term.logicSupport, Term.logicSupportAt, Value.logicSupportAt,
+        boundLogicSupportAt, LogicVar.freeAtomSet, LogicVar.openSupport,
+        LogicVar.openBinder, LogicVar.swap, Value.logicalSupport] using
+        hf.projection_mem
+    have hs := (he.2.2 σ (by
+      simpa [Qualifier.equal, Qualifier.freeAtoms,
+        LogicVar.freeAtomSet, LogicVar.openSupport,
+        LogicVar.openBinder, LogicVar.swap,
+        Value.logicalSupport] using hσdom)).2 hσ
+    obtain ⟨_, ρ, hρ, look⟩ := hs
+    have hlookup : σ.lookup y = some (.const c) := by
+      rw [← look y]
+      simpa [Qualifier.openAt, Qualifier.equal, Value.denoteAssignment,
+        AssignmentOn.swapBack, Assignment.lookup_swap,
+        LogicVar.swap] using hρ
+    apply Formula.models_atom_of_support_empty
+    · simp [Qualifier.substitute, Qualifier.openAt,
+        basicTypingQualifier, Term.logicSupportAt,
+        Value.logicSupportAt, boundLogicSupportAt,
+        LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap, hσdom]
+    · intro a
+      have hX :
+          (((basicTypingQualifier ∅ (.ret (.bound 0))
+            (.base c.baseType)).openAt 0 y).substitute
+              σ.toAssignment).support = ∅ := by
+        simp [Qualifier.substitute, Qualifier.openAt,
+          basicTypingQualifier, Term.logicSupportAt,
+          Value.logicSupportAt, boundLogicSupportAt,
+          LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap, hσdom]
+      have hadom : a.assignment.domain = ∅ :=
+        a.domain_eq.trans hX
+      have ha : a.assignment = ∅ := by
+        apply Assignment.ext
+        intro ξ
+        rw [Assignment.lookup_empty]
+        apply (Assignment.lookup_eq_none_iff a.assignment ξ).2
+        rw [hadom]
+        exact Finset.notMem_empty ξ
+      simp [Qualifier.substitute, Qualifier.openAt,
+        basicTypingQualifier, AssignmentOn.substituteBack,
+        AssignmentOn.swapBack, Assignment.lookup_swap,
+        instantiateTermAt, instantiateValueAt, Term.logicSupportAt,
+        Value.logicSupportAt, boundLogicSupportAt, LogicVar.openSupport,
+        LogicVar.openBinder, LogicVar.swap, ha, hlookup,
+        Term.support, Value.support]
+      constructor
+      · intro ξ T hT
+        cases ξ <;> simp at hT
+      · exact BasicTermTyp.ret (BasicValTyp.const ∅ c)
+
+theorem models_resultBody_ret_const_openAt
+    (m : Capability) (τ : ContextType) (c : Constant) (y : Atom)
+    (hsupp : τ.support = ∅)
+    (h : m ⊨
+      (resultFirst (relevantEnv ∅ τ (.ret (.const c))) τ
+        (.ret (.const c))).openAt 0 y) :
+    m ⊨
+      (Atom(Qualifier.equal (.bound 0) (.const c)) ∧ᶜ
+        resultBasicTyping c.baseType).openAt 0 y := by
+  rw [resultFirst_ret_const_openAt τ c y hsupp] at h
+  have hq := (Formula.models_fiber_empty_iff m
+    (.atom ((Qualifier.equal (.bound 0) (.const c)).openAt 0 y))).1 h
+  have hb := models_resultBasicTyping_ret_const_openAt m c y hq
+  exact Formula.models_and_intro hq hb
+
+theorem models_overResult_ret_const_openAt
+    (m : Capability) (c : Constant) (y : Atom)
+    (h : m ⊨
+      (resultFirst
+        (relevantEnv ∅
+          (.over c.baseType (Qualifier.equal (.bound 0) (.const c)))
+          (.ret (.const c)))
+        (.over c.baseType (Qualifier.equal (.bound 0) (.const c)))
+        (.ret (.const c))).openAt 0 y) :
+    m ⊨
+      (Formula.fiber
+        ((Qualifier.equal (.bound 0) (.const c)).support \ {.bound 0})
+        (overResult c.baseType
+          (Qualifier.equal (.bound 0) (.const c)))).openAt 0 y := by
+  have hsupp :
+      (ContextType.over c.baseType
+        (Qualifier.equal (.bound 0) (.const c))).support = ∅ := by
+    simp [ContextType.support, ContextType.supportAt,
+      LogicVar.supportAtDepth, LogicVar.atDepth,
+      Qualifier.equal, Value.logicalSupport]
+  have hbody := models_resultBody_ret_const_openAt m _ c y hsupp h
+  simp only [Formula.openAt]
+  have hempty : LogicVar.openSupport 0 y
+      ((Qualifier.equal (.bound 0) (.const c)).support \ {.bound 0}) = ∅ := by
+    simp [Qualifier.equal, Value.logicalSupport, LogicVar.openSupport]
+  rw [hempty]
+  apply (Formula.models_fiber_empty_iff m _).2
+  apply Formula.models_over_intro
+  exact hbody
+
+theorem models_underResult_ret_const_openAt
+    (m : Capability) (c : Constant) (y : Atom)
+    (h : m ⊨
+      (resultFirst
+        (relevantEnv ∅
+          (.under c.baseType (Qualifier.equal (.bound 0) (.const c)))
+          (.ret (.const c)))
+        (.under c.baseType (Qualifier.equal (.bound 0) (.const c)))
+        (.ret (.const c))).openAt 0 y) :
+    m ⊨
+      (Formula.fiber
+        ((Qualifier.equal (.bound 0) (.const c)).support \ {.bound 0})
+        (underResult c.baseType
+          (Qualifier.equal (.bound 0) (.const c)))).openAt 0 y := by
+  have hsupp :
+      (ContextType.under c.baseType
+        (Qualifier.equal (.bound 0) (.const c))).support = ∅ := by
+    simp [ContextType.support, ContextType.supportAt,
+      LogicVar.supportAtDepth, LogicVar.atDepth,
+      Qualifier.equal, Value.logicalSupport]
+  have hbody := models_resultBody_ret_const_openAt m _ c y hsupp h
+  simp only [Formula.openAt]
+  have hempty : LogicVar.openSupport 0 y
+      ((Qualifier.equal (.bound 0) (.const c)).support \ {.bound 0}) = ∅ := by
+    simp [Qualifier.equal, Value.logicalSupport, LogicVar.openSupport]
+  rw [hempty]
+  apply (Formula.models_fiber_empty_iff m _).2
+  apply Formula.models_under_intro
+  exact hbody
+
 end Interp
 
 namespace ContextType
