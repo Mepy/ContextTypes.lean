@@ -350,6 +350,64 @@ def guard (d : Nat) (Δ : BasicEnv) (τ : ContextType) (e : Term) : Formula :=
   change LogicVar.freeAtomSet (Δ.domain.image LogicVar.free) = Δ.domain
   exact Formula.LogicVar.freeAtomSet_image_free Δ.domain
 
+theorem models_basicWorld_iff (m : Capability) (Δ : BasicEnv) :
+    m ⊨ basicWorld Δ ↔
+      Δ.domain ⊆ m.domain ∧
+        ∀ σ, σ ∈ m → ∀ x T, Δ.lookup x = some T →
+          ∃ v, σ.lookup x = some v ∧ BasicValTyp ∅ v T := by
+  rw [basicWorld]
+  constructor
+  · intro h
+    obtain ⟨_, scope, holds⟩ :=
+      (Formula.models_fiberAtom_iff m (basicWorldQualifier Δ)).1 h
+    refine ⟨?_, ?_⟩
+    · simpa [basicWorldQualifier, Qualifier.freeAtoms,
+        LogicVar.freeAtoms] using scope
+    · intro σ hσ x T hx
+      have hs := holds σ hσ
+      obtain ⟨_, ρ, hρ, look⟩ := hs
+      obtain ⟨v, hv, typed⟩ := hρ (.free x) T (by simpa using hx)
+      refine ⟨v, ?_, typed⟩
+      rw [← hv, look x]
+      rw [show (basicWorldQualifier Δ).freeAtoms = Δ.domain by
+        change LogicVar.freeAtomSet (Δ.domain.image LogicVar.free) = Δ.domain
+        exact Formula.LogicVar.freeAtomSet_image_free Δ.domain]
+      rw [Store.lookup_restrict, if_pos]
+      change x ∈ Δ.domain
+      exact Finmap.mem_iff.mpr ⟨T, hx⟩
+  · rintro ⟨scope, typed⟩
+    apply (Formula.models_fiberAtom_iff m (basicWorldQualifier Δ)).2
+    refine ⟨?_, ?_, ?_⟩
+    · intro k hk
+      simp [basicWorldQualifier] at hk
+    · simpa [basicWorldQualifier, Qualifier.freeAtoms,
+        LogicVar.freeAtoms] using scope
+    · intro σ hσ
+      have hdom : (σ.restrict (basicWorldQualifier Δ).freeAtoms).domain =
+          (basicWorldQualifier Δ).freeAtoms := by
+        rw [Store.domain_restrict, m.mem_domain hσ,
+          Finset.inter_eq_right.2]
+        simpa [basicWorldQualifier, Qualifier.freeAtoms,
+          LogicVar.freeAtoms] using scope
+      let ρ : AssignmentOn (basicWorldQualifier Δ).support :=
+        { assignment := (σ.restrict Δ.domain).toAssignment
+          domain_eq := by
+            rw [Store.toAssignment_domain, Store.domain_restrict,
+              m.mem_domain hσ, Finset.inter_eq_right.2 scope]
+            rfl }
+      refine ⟨hdom, ρ, ?_, ?_⟩
+      · intro ξ T hT
+        cases ξ with
+        | bound k => simp at hT
+        | free x =>
+            obtain ⟨v, hv, hvT⟩ := typed σ hσ x T hT
+            refine ⟨v, ?_, hvT⟩
+            have hx : x ∈ Δ.domain := Finmap.mem_iff.mpr ⟨T, hT⟩
+            simp [ρ, Store.lookup_restrict, hx, hv]
+      · intro x
+        simp [ρ, basicWorldQualifier, Qualifier.freeAtoms,
+          LogicVar.freeAtoms]
+
 @[simp] theorem freeAtoms_wellFormed (d : Nat) (Δ : BasicEnv)
     (τ : ContextType) :
     (wellFormed d Δ τ).freeAtoms = Δ.domain := by
