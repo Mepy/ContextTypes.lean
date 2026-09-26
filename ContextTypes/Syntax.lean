@@ -393,6 +393,41 @@ mutual
 
 end
 
+mutual
+
+  /-- Opening a value never removes any free atom already present in it. -/
+  theorem Value.support_subset_openAt (v : Value) (d : Nat) (u : Value) :
+      v.support ⊆ (v.openAt d u).support := by
+    cases v with
+    | const c => simp [Value.support, Value.openAt]
+    | free x => simp [Value.support, Value.openAt]
+    | bound k => simp [Value.support]
+    | lam T e => exact Term.support_subset_openAt e (d + 1) u
+    | fix T v => exact Value.support_subset_openAt v (d + 1) u
+
+  /-- Opening a term never removes any free atom already present in it. -/
+  theorem Term.support_subset_openAt (e : Term) (d : Nat) (u : Value) :
+      e.support ⊆ (e.openAt d u).support := by
+    cases e with
+    | ret v => exact Value.support_subset_openAt v d u
+    | letE e₁ e₂ =>
+        exact Finset.union_subset_union
+          (Term.support_subset_openAt e₁ d u)
+          (Term.support_subset_openAt e₂ (d + 1) u)
+    | primitive op v => exact Value.support_subset_openAt v d u
+    | app v₁ v₂ =>
+        exact Finset.union_subset_union
+          (Value.support_subset_openAt v₁ d u)
+          (Value.support_subset_openAt v₂ d u)
+    | matchBool v e₁ e₂ =>
+        exact Finset.union_subset_union
+          (Finset.union_subset_union
+            (Value.support_subset_openAt v d u)
+            (Term.support_subset_openAt e₁ d u))
+          (Term.support_subset_openAt e₂ d u)
+
+end
+
 
 mutual
 

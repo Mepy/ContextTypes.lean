@@ -28,6 +28,11 @@ def erase (Δ : BasicEnv) (x : Atom) : BasicEnv :=
 def Subset (Δ Δ' : BasicEnv) : Prop :=
   ∀ x T, Δ.lookup x = some T → Δ'.lookup x = some T
 
+@[simp] theorem domain_insert (Δ : BasicEnv) (x : Atom) (T : SimpleType) :
+    (Δ.insert x T).domain = {x} ∪ Δ.domain := by
+  ext y
+  simp [domain, insert, Finmap.mem_keys, Finmap.mem_insert]
+
 @[simp] theorem lookup_insert (Δ : BasicEnv) (x : Atom) (T : SimpleType) :
     (Δ.insert x T).lookup x = some T :=
   Finmap.lookup_insert Δ
@@ -194,6 +199,134 @@ theorem BasicTermTyp.locallyClosed {Δ : BasicEnv} {e : Term}
   | app fn arg ih₁ ih₂ => exact ⟨ih₁, ih₂⟩
   | matchBool scrutinee trueBranch falseBranch ih ih₁ ih₂ =>
       exact ⟨ih, ih₁, ih₂⟩
+
+theorem BasicValTyp.support_subset {Δ : BasicEnv} {v : Value}
+    {T : SimpleType} (h : BasicValTyp Δ v T) : v.support ⊆ Δ.domain := by
+  refine BasicValTyp.rec
+    (motive_1 := fun Δ v _ _ => v.support ⊆ Δ.domain)
+    (motive_2 := fun Δ e _ _ => e.support ⊆ Δ.domain)
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
+  · intro Δ c
+    simp [Value.support]
+  · intro Δ x T typed
+    simp only [Value.support, Finset.singleton_subset_iff]
+    exact Finmap.mem_keys.2 (Finmap.mem_of_lookup_eq_some typed)
+  · intro Δ T U e L typed ih
+    intro y hy
+    obtain ⟨x, hx⟩ := Finset.exists_nat_subset_range (L ∪ {y})
+    have fresh : x ∉ L ∪ {y} := by
+      intro hmem
+      have := hx hmem
+      simp at this
+    have fresh' : x ∉ L ∧ x ≠ y := by
+      simpa only [Finset.mem_union, Finset.mem_singleton, not_or] using fresh
+    have hxy : y ≠ x := Ne.symm fresh'.2
+    have hopen : y ∈ (e.openAt 0 (.free x)).support :=
+      Term.support_subset_openAt e 0 (.free x) hy
+    have hdom := ih x fresh'.1 hopen
+    simpa [BasicEnv.domain_insert, hxy] using hdom
+  · intro Δ T U v L typed ih
+    intro y hy
+    obtain ⟨x, hx⟩ := Finset.exists_nat_subset_range (L ∪ {y})
+    have fresh : x ∉ L ∪ {y} := by
+      intro hmem
+      have := hx hmem
+      simp at this
+    have fresh' : x ∉ L ∧ x ≠ y := by
+      simpa only [Finset.mem_union, Finset.mem_singleton, not_or] using fresh
+    have hxy : y ≠ x := Ne.symm fresh'.2
+    have hopen : y ∈ (v.openAt 0 (.free x)).support :=
+      Value.support_subset_openAt v 0 (.free x) hy
+    have hdom := ih x fresh'.1 hopen
+    simpa [BasicEnv.domain_insert, hxy] using hdom
+  · intro Δ v T typed ih
+    exact ih
+  · intro Δ T U e₁ e₂ L left right ih₁ ih₂
+    intro y hy
+    rcases Finset.mem_union.1 hy with hy | hy
+    · exact ih₁ hy
+    · obtain ⟨x, hx⟩ := Finset.exists_nat_subset_range (L ∪ {y})
+      have fresh : x ∉ L ∪ {y} := by
+        intro hmem
+        have := hx hmem
+        simp at this
+      have fresh' : x ∉ L ∧ x ≠ y := by
+        simpa only [Finset.mem_union, Finset.mem_singleton, not_or] using fresh
+      have hxy : y ≠ x := Ne.symm fresh'.2
+      have hopen : y ∈ (e₂.openAt 0 (.free x)).support :=
+        Term.support_subset_openAt e₂ 0 (.free x) hy
+      have hdom := ih₂ x fresh'.1 hopen
+      simpa [BasicEnv.domain_insert, hxy] using hdom
+  · intro Δ op v b₁ b₂ signature typed ih
+    exact ih
+  · intro Δ T U v₁ v₂ fn arg ih₁ ih₂
+    exact Finset.union_subset ih₁ ih₂
+  · intro Δ v e₁ e₂ T scrutinee trueBranch falseBranch ih ih₁ ih₂
+    exact Finset.union_subset (Finset.union_subset ih ih₁) ih₂
+
+theorem BasicTermTyp.support_subset {Δ : BasicEnv} {e : Term}
+    {T : SimpleType} (h : BasicTermTyp Δ e T) : e.support ⊆ Δ.domain := by
+  refine BasicTermTyp.rec
+    (motive_1 := fun Δ v _ _ => v.support ⊆ Δ.domain)
+    (motive_2 := fun Δ e _ _ => e.support ⊆ Δ.domain)
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
+  · intro Δ c
+    simp [Value.support]
+  · intro Δ x T typed
+    simp only [Value.support, Finset.singleton_subset_iff]
+    exact Finmap.mem_keys.2 (Finmap.mem_of_lookup_eq_some typed)
+  · intro Δ T U e L typed ih
+    intro y hy
+    obtain ⟨x, hx⟩ := Finset.exists_nat_subset_range (L ∪ {y})
+    have fresh : x ∉ L ∪ {y} := by
+      intro hmem
+      have := hx hmem
+      simp at this
+    have fresh' : x ∉ L ∧ x ≠ y := by
+      simpa only [Finset.mem_union, Finset.mem_singleton, not_or] using fresh
+    have hxy : y ≠ x := Ne.symm fresh'.2
+    have hopen : y ∈ (e.openAt 0 (.free x)).support :=
+      Term.support_subset_openAt e 0 (.free x) hy
+    have hdom := ih x fresh'.1 hopen
+    simpa [BasicEnv.domain_insert, hxy] using hdom
+  · intro Δ T U v L typed ih
+    intro y hy
+    obtain ⟨x, hx⟩ := Finset.exists_nat_subset_range (L ∪ {y})
+    have fresh : x ∉ L ∪ {y} := by
+      intro hmem
+      have := hx hmem
+      simp at this
+    have fresh' : x ∉ L ∧ x ≠ y := by
+      simpa only [Finset.mem_union, Finset.mem_singleton, not_or] using fresh
+    have hxy : y ≠ x := Ne.symm fresh'.2
+    have hopen : y ∈ (v.openAt 0 (.free x)).support :=
+      Value.support_subset_openAt v 0 (.free x) hy
+    have hdom := ih x fresh'.1 hopen
+    simpa [BasicEnv.domain_insert, hxy] using hdom
+  · intro Δ v T typed ih
+    exact ih
+  · intro Δ T U e₁ e₂ L left right ih₁ ih₂
+    intro y hy
+    rcases Finset.mem_union.1 hy with hy | hy
+    · exact ih₁ hy
+    · obtain ⟨x, hx⟩ := Finset.exists_nat_subset_range (L ∪ {y})
+      have fresh : x ∉ L ∪ {y} := by
+        intro hmem
+        have := hx hmem
+        simp at this
+      have fresh' : x ∉ L ∧ x ≠ y := by
+        simpa only [Finset.mem_union, Finset.mem_singleton, not_or] using fresh
+      have hxy : y ≠ x := Ne.symm fresh'.2
+      have hopen : y ∈ (e₂.openAt 0 (.free x)).support :=
+        Term.support_subset_openAt e₂ 0 (.free x) hy
+      have hdom := ih₂ x fresh'.1 hopen
+      simpa [BasicEnv.domain_insert, hxy] using hdom
+  · intro Δ op v b₁ b₂ signature typed ih
+    exact ih
+  · intro Δ T U v₁ v₂ fn arg ih₁ ih₂
+    exact Finset.union_subset ih₁ ih₂
+  · intro Δ v e₁ e₂ T scrutinee trueBranch falseBranch ih ih₁ ih₂
+    exact Finset.union_subset (Finset.union_subset ih ih₁) ih₂
 
 theorem BasicValTyp.weaken {Δ Δ' : BasicEnv} {v : Value} {T : SimpleType}
     (h : BasicValTyp Δ v T) (sub : Δ.Subset Δ') :
