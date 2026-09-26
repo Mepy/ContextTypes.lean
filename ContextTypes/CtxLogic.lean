@@ -70,6 +70,18 @@ theorem mem_freeAtomSet_iff (X : Finset LogicVar) (x : Atom) :
   · intro hx
     exact Finset.mem_biUnion.2 ⟨.free x, hx, by simp [LogicVar.freeAtoms]⟩
 
+theorem freeAtomSet_openSupport_subset (X : Finset LogicVar)
+    (k : Nat) (y : Atom) :
+    freeAtomSet (openSupport k y X) ⊆ {y} ∪ freeAtomSet X := by
+  intro x hx
+  rw [mem_freeAtomSet_iff] at hx
+  rw [LogicVar.mem_openSupport] at hx
+  by_cases hxy : x = y
+  · exact Finset.mem_union_left _ (Finset.mem_singleton.2 hxy)
+  · apply Finset.mem_union_right
+    rw [mem_freeAtomSet_iff]
+    simpa [LogicVar.openBinder, LogicVar.swap, hxy] using hx
+
 end LogicVar
 
 /-- Formulas of context logic.  `wand d P Q` binds `d` logical variables in
@@ -359,6 +371,48 @@ def openAt : Formula → Nat → Atom → Formula
 /-- Open the outermost logical binder. -/
 abbrev openOuter (P : Formula) (x : Atom) : Formula :=
   P.openAt 0 x
+
+private theorem union_subset_singleton_union {A B A' B' : Finset Atom}
+    {y : Atom} (hA : A' ⊆ {y} ∪ A) (hB : B' ⊆ {y} ∪ B) :
+    A' ∪ B' ⊆ {y} ∪ (A ∪ B) := by
+  intro x hx
+  rcases Finset.mem_union.1 hx with hx | hx
+  · rcases Finset.mem_union.1 (hA hx) with hx | hx
+    · exact Finset.mem_union_left _ hx
+    · exact Finset.mem_union_right _ (Finset.mem_union_left _ hx)
+  · rcases Finset.mem_union.1 (hB hx) with hx | hx
+    · exact Finset.mem_union_left _ hx
+    · exact Finset.mem_union_right _ (Finset.mem_union_right _ hx)
+
+theorem freeAtoms_openAt_subset (P : Formula) (k : Nat) (y : Atom) :
+    (P.openAt k y).freeAtoms ⊆ {y} ∪ P.freeAtoms := by
+  induction P generalizing k with
+  | top => simp [openAt]
+  | bot => simp [openAt]
+  | atom q =>
+      simpa only [openAt, freeAtoms_atom, Qualifier.freeAtoms,
+        Qualifier.support_openAt] using
+        LogicVar.freeAtomSet_openSupport_subset q.support k y
+  | and P Q ihP ihQ =>
+      simpa [openAt] using union_subset_singleton_union (ihP k) (ihQ k)
+  | or P Q ihP ihQ =>
+      simpa [openAt] using union_subset_singleton_union (ihP k) (ihQ k)
+  | impl P Q ihP ihQ =>
+      simpa [openAt] using union_subset_singleton_union (ihP k) (ihQ k)
+  | star P Q ihP ihQ =>
+      simpa [openAt] using union_subset_singleton_union (ihP k) (ihQ k)
+  | wand d P Q ihP ihQ =>
+      simpa [openAt] using
+        union_subset_singleton_union (ihP (k + d)) (ihQ (k + d))
+  | sum P Q ihP ihQ =>
+      simpa [openAt] using union_subset_singleton_union (ihP k) (ihQ k)
+  | all P ih => simpa [openAt] using ih (k + 1)
+  | «over» P ih => simpa [openAt] using ih k
+  | «under» P ih => simpa [openAt] using ih k
+  | persist P ih => simpa [openAt] using ih k
+  | fiber X P ih =>
+      simpa [openAt] using union_subset_singleton_union
+        (LogicVar.freeAtomSet_openSupport_subset X k y) (ih k)
 
 /-- Swap two free atoms throughout a formula. -/
 def swap : Formula → Atom → Atom → Formula
