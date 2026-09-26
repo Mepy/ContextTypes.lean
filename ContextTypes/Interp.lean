@@ -685,6 +685,24 @@ theorem models_wellFormed_shift_openAt {m : Capability} {d : Nat}
   exact ⟨(models_wellFormed_iff m d Δ τ).1 h |>.1,
     ((models_wellFormed_iff m d Δ τ).1 h |>.2).shiftFrom k⟩
 
+theorem basicWorld_openAt_eq (Δ : BasicEnv) (k : Nat) (y : Atom)
+    (fresh : y ∉ Δ.domain) :
+    (basicWorld Δ).openAt k y = basicWorld Δ := by
+  let q := basicWorldQualifier Δ
+  have hbound : LogicVar.bound k ∉ q.support := by
+    simp [q, basicWorldQualifier]
+  have hfree : LogicVar.free y ∉ q.support := by
+    simpa [q, basicWorldQualifier] using fresh
+  have hq : q.openAt k y = q := q.openAt_fresh k y hbound hfree
+  have hsupp : LogicVar.openSupport k y q.support = q.support := by
+    apply LogicVar.openSupport_eq_self_of_fresh
+    · exact hbound
+    · exact hfree
+  simp only [basicWorld, Formula.fiberAtom, Formula.openAt]
+  change Formula.fiber (LogicVar.openSupport k y q.support)
+      (Formula.atom (q.openAt k y)) = Formula.fiber q.support (Formula.atom q)
+  rw [hsupp, hq]
+
 theorem models_basicWorld_iff (m : Capability) (Δ : BasicEnv) :
     m ⊨ basicWorld Δ ↔
       Δ.domain ⊆ m.domain ∧
@@ -1404,6 +1422,88 @@ theorem models_resultAt_typed {m : Capability} {X : Finset LogicVar}
     models_resultAt_lookup closedX support fresh hres σ hσ
   exact ⟨v, hv, (models_basicTyping_term closedE htyped hσ).reaches reaches⟩
 
+theorem models_basicTyping_ret_bound_openAt {m : Capability}
+    {X : Finset LogicVar} {Δ : BasicEnv} {e : Term} {T : SimpleType}
+    {y : Atom} (closedX : LogicVar.LocallyClosed X)
+    (closedE : e.locallyClosed) (support : e.logicSupport ⊆ X)
+    (fresh : LogicVar.free y ∉ X) (freshΔ : y ∉ Δ.domain)
+    (hres : m ⊨ resultAt X e (.free y))
+    (hworld : m ⊨ basicWorld Δ)
+    (htyped : m ⊨ basicTyping Δ e T) :
+    m ⊨ (basicTyping Δ (.ret (.bound 0)) T).openAt 0 y := by
+  unfold basicTyping Formula.fiberAtom
+  simp only [Formula.openAt]
+  let q := (basicTypingQualifier Δ (.ret (.bound 0)) T).openAt 0 y
+  change m ⊨ Formula.fiberAtom q
+  have hopenΔ : LogicVar.openSupport 0 y
+      (Δ.domain.image LogicVar.free) = Δ.domain.image LogicVar.free := by
+    apply LogicVar.openSupport_eq_self_of_fresh
+    · simp
+    · simpa using freshΔ
+  have hqsupp : q.support = Δ.domain.image LogicVar.free ∪ {.free y} := by
+    change LogicVar.openSupport 0 y
+      (Δ.domain.image LogicVar.free ∪ {.bound 0}) = _
+    rw [show LogicVar.openSupport 0 y
+        (Δ.domain.image LogicVar.free ∪ {.bound 0}) =
+          LogicVar.openSupport 0 y (Δ.domain.image LogicVar.free) ∪
+            LogicVar.openSupport 0 y {.bound 0} by
+      simp [LogicVar.openSupport]]
+    rw [hopenΔ]
+    simp [LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap]
+  have hqfree : q.freeAtoms = Δ.domain ∪ {y} := by
+    change LogicVar.freeAtomSet q.support = Δ.domain ∪ {y}
+    rw [hqsupp, Formula.LogicVar.freeAtomSet_union,
+      Formula.LogicVar.freeAtomSet_image_free]
+    simp
+  have hscopeΔ := (models_basicWorld_iff m Δ).1 hworld |>.1
+  have hyM : y ∈ m.domain := by
+    apply Formula.models_scope hres
+    simp [LogicVar.freeAtoms]
+  apply (Formula.models_fiberAtom_iff m q).2
+  refine ⟨?_, ?_, ?_⟩
+  · intro k hk
+    rw [hqsupp] at hk
+    simp at hk
+  · rw [hqfree]
+    exact Finset.union_subset hscopeΔ (by simpa using hyM)
+  · intro σ hσ
+    obtain ⟨v, hv, hvT⟩ :=
+      models_resultAt_typed closedX closedE support fresh hres htyped σ hσ
+    let s := σ.restrict q.freeAtoms
+    have hsdom : s.domain = q.freeAtoms := by
+      simp only [s]
+      rw [Store.domain_restrict, m.mem_domain hσ,
+        Finset.inter_eq_right.2]
+      rw [hqfree]
+      exact Finset.union_subset hscopeΔ (by simpa using hyM)
+    let a : AssignmentOn q.support :=
+      { assignment := s.toAssignment
+        domain_eq := by
+          rw [Store.toAssignment_domain, hsdom, hqfree, hqsupp]
+          simp }
+    refine ⟨hsdom, a, ?_, ?_⟩
+    · change (basicTypingQualifier Δ (.ret (.bound 0)) T).holds
+        (a.swapBack (.bound 0) (.free y))
+      refine ⟨by simp [Term.support, Value.support], ?_, ?_⟩
+      · intro ξ U hU
+        cases ξ with
+        | bound k => simp at hU
+        | free x =>
+            obtain ⟨w, hw, hwU⟩ :=
+              (models_basicWorld_iff m Δ).1 hworld |>.2 σ hσ x U hU
+            refine ⟨w, ?_, hwU⟩
+            have hxΔ : x ∈ Δ.domain := Finmap.mem_iff.mpr ⟨U, hU⟩
+            have hxy : x ≠ y := fun same => freshΔ (same ▸ hxΔ)
+            simp [a, s, hqfree, AssignmentOn.swapBack,
+              Assignment.lookup_swap, LogicVar.swap, hxy, hxΔ,
+              Store.lookup_restrict, hw]
+      · simpa [a, s, hqfree, Store.lookup_restrict, hv,
+          AssignmentOn.swapBack, Assignment.lookup_swap,
+          LogicVar.swap, instantiateTerm, instantiateTermAt,
+          instantiateValueAt] using BasicTermTyp.ret hvT
+    · intro x
+      simp [a, s]
+
 theorem models_resultBasicTyping_openAt {m : Capability}
     {X : Finset LogicVar} {Δ : BasicEnv} {e : Term} {b : BaseType}
     {y : Atom} (closedX : LogicVar.LocallyClosed X)
@@ -1522,6 +1622,32 @@ theorem models_resultTotal_openAt {m : Capability}
         instantiateValueAt] using Term.MustTerminate.ret v hvT.locallyClosed
     · intro x
       simp [a, s]
+
+theorem models_guard_shift_openAt_result_alias {m : Capability} {d : Nat}
+    {Δ : BasicEnv} {τ : ContextType} {e : Term} {y : Atom}
+    {X : Finset LogicVar}
+    (closedX : LogicVar.LocallyClosed X) (closedE : e.locallyClosed)
+    (support : e.logicSupport ⊆ X) (fresh : LogicVar.free y ∉ X)
+    (freshΔ : y ∉ Δ.domain) (hres : m ⊨ resultAt X e (.free y))
+    (hguard : m ⊨ guard d Δ τ e) :
+    m ⊨ (guard (d + 1) Δ (τ.shiftFrom 0)
+      (.ret (.bound 0))).openAt 0 y := by
+  have hwf := Formula.models_and_elim_left hguard
+  have hrest := Formula.models_and_elim_right hguard
+  have hworld := Formula.models_and_elim_left hrest
+  have hbasic := Formula.models_and_elim_left
+    (Formula.models_and_elim_right hrest)
+  simp only [guard, Formula.openAt]
+  apply Formula.models_and_intro
+  · exact models_wellFormed_shift_openAt freshΔ hwf
+  · apply Formula.models_and_intro
+    · rw [basicWorld_openAt_eq Δ 0 y freshΔ]
+      exact hworld
+    · apply Formula.models_and_intro
+      · simpa using models_basicTyping_ret_bound_openAt closedX closedE
+          support fresh freshΔ hres hworld hbasic
+      · exact models_resultTotal_openAt closedX closedE support fresh
+          hres hbasic
 
 theorem models_guard_result_alias {m : Capability} {d : Nat}
     {Δ : BasicEnv} {τ : ContextType} {e : Term} {y : Atom}
