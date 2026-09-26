@@ -1010,6 +1010,23 @@ theorem persistent_equiv_persist {P : Formula} (h : Persistent P) :
     P ⊣⊢ □ P :=
   ⟨h, fun _ hP => models_persist_elim hP⟩
 
+/-- A persistent formula makes every observed subprojection deterministic. -/
+theorem Persistent.singleton_restrict {m : Capability} {P : Formula}
+    {X : Finset Atom} (persistent : Persistent P) (hP : m ⊨ P)
+    (hX : X ⊆ P.freeAtoms) :
+    ∃ σ, σ.domain = X ∧ m.restrict X = Capability.singleton σ := by
+  obtain ⟨σ, hσ, same, _⟩ :=
+    (models_persist_iff m P).1 (persistent m hP)
+  refine ⟨σ.restrict X, ?_, ?_⟩
+  · rw [Store.domain_restrict, hσ, Finset.inter_eq_right.2 hX]
+  · calc
+      m.restrict X = (m.restrict P.freeAtoms).restrict X := by
+        rw [Capability.restrict_restrict,
+          Finset.inter_eq_right.2 hX]
+      _ = (Capability.singleton σ).restrict X := by rw [same]
+      _ = Capability.singleton (σ.restrict X) :=
+        Capability.restrict_singleton σ X
+
 theorem models_fiber_iff (m : Capability) (X : Finset LogicVar)
     (P : Formula) :
     m ⊨ Formula.fiber X P ↔
@@ -1097,7 +1114,7 @@ theorem models_atom_of_support_empty (m : Capability) (q : Qualifier)
       constructor
       · intro _
         rw [freeAtoms]
-        simpa [σempty]
+        simp [σempty]
       · intro _
         subst σ
         let ρ : AssignmentOn q.support :=
@@ -1146,7 +1163,7 @@ theorem models_fiberAtom_of_support_empty (m : Capability) (q : Qualifier)
         constructor
         · intro _
           rw [freeAtoms]
-          simpa [τempty]
+          simp [τempty]
         · intro _
           subst τ
           let ρ : AssignmentOn q.support :=

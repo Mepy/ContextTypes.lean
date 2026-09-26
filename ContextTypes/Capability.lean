@@ -426,6 +426,19 @@ theorem restrict_restrict (m : Capability) (X Y : Finset Atom) :
       obtain ⟨ρ, hρ⟩ := m.nonempty
       exact ⟨ρ, hρ, Store.restrict_empty ρ⟩
 
+@[simp] theorem restrict_singleton (σ : Store) (X : Finset Atom) :
+    (singleton σ).restrict X = singleton (σ.restrict X) := by
+  apply ext
+  · simp [Store.domain_restrict]
+  · intro ρ
+    constructor
+    · rintro ⟨τ, rfl, rfl⟩
+      rfl
+    · intro h
+      rw [mem_singleton_iff] at h
+      subst ρ
+      exact ⟨σ, rfl, rfl⟩
+
 @[simp] theorem restrict_domain_self (m : Capability) :
     m.restrict m.domain = m := by
   apply ext
