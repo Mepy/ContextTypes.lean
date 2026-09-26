@@ -711,6 +711,22 @@ theorem ScopedAt.freeAtoms_subset {q : Qualifier} {d : Nat}
   rw [Qualifier.mem_freeAtoms_iff] at hx
   exact h (.free x) hx
 
+theorem ScopedAt.shiftFrom {q : Qualifier} {d : Nat} {X : Finset Atom}
+    (h : q.ScopedAt d X) (k : Nat) :
+    (q.shiftFrom k).ScopedAt (d + 1) X := by
+  intro ξ hξ
+  rw [support_shiftFrom, Finset.mem_image] at hξ
+  obtain ⟨ζ, hζ, rfl⟩ := hξ
+  cases ζ with
+  | free x => exact h (.free x) hζ
+  | bound n =>
+      have hn := h (.bound n) hζ
+      by_cases hkn : k ≤ n
+      · simp [LogicVar.shiftFrom, hkn]
+        omega
+      · simp [LogicVar.shiftFrom, hkn]
+        omega
+
 end Qualifier
 
 namespace ContextType
@@ -749,6 +765,34 @@ theorem LocallyClosedAt.mono {τ : ContextType} {d d' : Nat}
       exact ⟨ih₁ h.1 hdd,
         ih₂ h.2 (Nat.add_le_add_right hdd 1)⟩
   | persist τ ih => exact ih h hdd
+
+theorem shiftFrom_eq_of_locallyClosedAt (τ : ContextType) (k : Nat)
+    (closed : τ.LocallyClosedAt k) : τ.shiftFrom k = τ := by
+  induction τ generalizing k with
+  | «over» b q =>
+      simp only [shiftFrom]
+      rw [q.shiftFrom_eq_of_locallyClosedAt (k + 1) closed]
+  | under b q =>
+      simp only [shiftFrom]
+      rw [q.shiftFrom_eq_of_locallyClosedAt (k + 1) closed]
+  | inter τ₁ τ₂ ih₁ ih₂ =>
+      simp only [shiftFrom]
+      rw [ih₁ k closed.1, ih₂ k closed.2]
+  | union τ₁ τ₂ ih₁ ih₂ =>
+      simp only [shiftFrom]
+      rw [ih₁ k closed.1, ih₂ k closed.2]
+  | sum τ₁ τ₂ ih₁ ih₂ =>
+      simp only [shiftFrom]
+      rw [ih₁ k closed.1, ih₂ k closed.2]
+  | arrow τ₁ τ₂ ih₁ ih₂ =>
+      simp only [shiftFrom]
+      rw [ih₁ k closed.1, ih₂ (k + 1) closed.2]
+  | wand τ₁ τ₂ ih₁ ih₂ =>
+      simp only [shiftFrom]
+      rw [ih₁ k closed.1, ih₂ (k + 1) closed.2]
+  | persist τ ih =>
+      simp only [shiftFrom]
+      rw [ih k closed]
 
 theorem openAt_shiftFrom_eq (τ : ContextType) (k : Nat) (x : Atom)
     (closed : τ.LocallyClosedAt k) (fresh : x ∉ τ.freeAtoms) :
@@ -848,6 +892,29 @@ theorem WellFormedAt.locallyClosedAt {τ : ContextType} {d : Nat}
   | wand τ₁ τ₂ ih₁ ih₂ =>
       exact ⟨LocallyClosedAt.mono (ih₁ h.1) (Nat.zero_le d), ih₂ h.2⟩
   | persist τ ih => exact ih h
+
+theorem WellFormedAt.shiftFrom {τ : ContextType} {d : Nat}
+    {X : Finset Atom} (h : τ.WellFormedAt d X) (k : Nat) :
+    (τ.shiftFrom k).WellFormedAt (d + 1) X := by
+  induction τ generalizing d k X with
+  | «over» b q => exact Qualifier.ScopedAt.shiftFrom h (k + 1)
+  | under b q => exact Qualifier.ScopedAt.shiftFrom h (k + 1)
+  | inter τ₁ τ₂ ih₁ ih₂ =>
+      exact ⟨ih₁ h.1 k, ih₂ h.2.1 k, by simpa using h.2.2⟩
+  | union τ₁ τ₂ ih₁ ih₂ =>
+      exact ⟨ih₁ h.1 k, ih₂ h.2.1 k, by simpa using h.2.2⟩
+  | sum τ₁ τ₂ ih₁ ih₂ =>
+      exact ⟨ih₁ h.1 k, ih₂ h.2.1 k, by simpa using h.2.2⟩
+  | arrow τ₁ τ₂ ih₁ ih₂ =>
+      exact ⟨ih₁ h.1 k, ih₂ h.2 (k + 1)⟩
+  | wand τ₁ τ₂ ih₁ ih₂ =>
+      have closed := h.1.locallyClosedAt
+      have same := τ₁.shiftFrom_eq_of_locallyClosedAt k
+        (closed.mono (Nat.zero_le k))
+      simp only [ContextType.shiftFrom, ContextType.WellFormedAt]
+      rw [same]
+      exact ⟨h.1, ih₂ h.2 (k + 1)⟩
+  | persist τ ih => exact ih h k
 
 theorem WellFormedAt.shapeOK {τ : ContextType} {d : Nat}
     {X : Finset Atom} (h : τ.WellFormedAt d X) : τ.ShapeOK := by
