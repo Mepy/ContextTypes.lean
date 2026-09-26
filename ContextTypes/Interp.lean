@@ -185,6 +185,57 @@ abbrev shiftTerm (e : Term) : Term :=
 
 mutual
 
+  theorem shiftValueAt_eq_of_locallyClosedAt (v : Value) (d : Nat)
+      (closed : v.locallyClosedAt d) : shiftValueAt v d = v := by
+    cases v with
+    | const c => rfl
+    | free x => rfl
+    | bound k =>
+        simp only [Value.locallyClosedAt] at closed
+        simp [shiftValueAt, Nat.not_le_of_lt closed]
+    | lam T e =>
+        simp only [Value.locallyClosedAt] at closed
+        simp [shiftValueAt,
+          shiftTermAt_eq_of_locallyClosedAt e (d + 1) closed]
+    | fix T v =>
+        simp only [Value.locallyClosedAt] at closed
+        simp [shiftValueAt,
+          shiftValueAt_eq_of_locallyClosedAt v (d + 1) closed]
+
+  theorem shiftTermAt_eq_of_locallyClosedAt (e : Term) (d : Nat)
+      (closed : e.locallyClosedAt d) : shiftTermAt e d = e := by
+    cases e with
+    | ret v =>
+        simp only [Term.locallyClosedAt] at closed
+        simp [shiftTermAt, shiftValueAt_eq_of_locallyClosedAt v d closed]
+    | letE e₁ e₂ =>
+        simp only [Term.locallyClosedAt] at closed
+        simp [shiftTermAt,
+          shiftTermAt_eq_of_locallyClosedAt e₁ d closed.1,
+          shiftTermAt_eq_of_locallyClosedAt e₂ (d + 1) closed.2]
+    | primitive op v =>
+        simp only [Term.locallyClosedAt] at closed
+        simp [shiftTermAt, shiftValueAt_eq_of_locallyClosedAt v d closed]
+    | app v₁ v₂ =>
+        simp only [Term.locallyClosedAt] at closed
+        simp [shiftTermAt,
+          shiftValueAt_eq_of_locallyClosedAt v₁ d closed.1,
+          shiftValueAt_eq_of_locallyClosedAt v₂ d closed.2]
+    | matchBool v e₁ e₂ =>
+        simp only [Term.locallyClosedAt] at closed
+        simp [shiftTermAt,
+          shiftValueAt_eq_of_locallyClosedAt v d closed.1,
+          shiftTermAt_eq_of_locallyClosedAt e₁ d closed.2.1,
+          shiftTermAt_eq_of_locallyClosedAt e₂ d closed.2.2]
+
+end
+
+theorem shiftTerm_eq_of_locallyClosed (e : Term) (closed : e.locallyClosed) :
+    shiftTerm e = e :=
+  shiftTermAt_eq_of_locallyClosedAt e 0 closed
+
+mutual
+
   @[simp] theorem shiftValueAt_support (v : Value) (d : Nat) :
       (shiftValueAt v d).support = v.support := by
     cases v with
@@ -255,6 +306,53 @@ end
 @[simp] theorem freeAtomSet_term_logicSupport (e : Term) :
     LogicVar.freeAtomSet e.logicSupport = e.support :=
   freeAtomSet_term_logicSupportAt e 0
+
+mutual
+
+  theorem valueLogicSupportAt_locallyClosed (v : Value) (d : Nat)
+      (closed : v.locallyClosedAt d) :
+      LogicVar.LocallyClosed (v.logicSupportAt d) := by
+    intro k hk
+    cases v with
+    | const c => simp [Value.logicSupportAt] at hk
+    | free x => simp [Value.logicSupportAt] at hk
+    | bound j =>
+        simp only [Value.locallyClosedAt] at closed
+        simp [Value.logicSupportAt, boundLogicSupportAt,
+          Nat.not_le_of_lt closed] at hk
+    | lam T e =>
+        exact termLogicSupportAt_locallyClosed e (d + 1) closed k hk
+    | fix T v =>
+        exact valueLogicSupportAt_locallyClosed v (d + 1) closed k hk
+
+  theorem termLogicSupportAt_locallyClosed (e : Term) (d : Nat)
+      (closed : e.locallyClosedAt d) :
+      LogicVar.LocallyClosed (e.logicSupportAt d) := by
+    intro k hk
+    cases e with
+    | ret v => exact valueLogicSupportAt_locallyClosed v d closed k hk
+    | letE e₁ e₂ =>
+        rcases Finset.mem_union.1 hk with hk | hk
+        · exact termLogicSupportAt_locallyClosed e₁ d closed.1 k hk
+        · exact termLogicSupportAt_locallyClosed e₂ (d + 1) closed.2 k hk
+    | primitive op v =>
+        exact valueLogicSupportAt_locallyClosed v d closed k hk
+    | app v₁ v₂ =>
+        rcases Finset.mem_union.1 hk with hk | hk
+        · exact valueLogicSupportAt_locallyClosed v₁ d closed.1 k hk
+        · exact valueLogicSupportAt_locallyClosed v₂ d closed.2 k hk
+    | matchBool v e₁ e₂ =>
+        rcases Finset.mem_union.1 hk with hk | hk
+        · rcases Finset.mem_union.1 hk with hk | hk
+          · exact valueLogicSupportAt_locallyClosed v d closed.1 k hk
+          · exact termLogicSupportAt_locallyClosed e₁ d closed.2.1 k hk
+        · exact termLogicSupportAt_locallyClosed e₂ d closed.2.2 k hk
+
+end
+
+theorem termLogicSupport_locallyClosed (e : Term) (closed : e.locallyClosed) :
+    LogicVar.LocallyClosed e.logicSupport :=
+  termLogicSupportAt_locallyClosed e 0 closed
 
 mutual
 
