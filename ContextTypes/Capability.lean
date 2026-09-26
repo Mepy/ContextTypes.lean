@@ -72,6 +72,15 @@ theorem ext {σ ρ : Store} (h : ∀ x, σ.lookup x = ρ.lookup x) : σ = ρ := 
   change (∀ x, Finmap.lookup x σ = Finmap.lookup x ρ) at h
   exact Finmap.ext_lookup h
 
+theorem eq_empty_of_domain_eq_empty {σ : Store} (h : σ.domain = ∅) :
+    σ = ∅ := by
+  apply ext
+  intro x
+  rw [lookup_empty]
+  apply (lookup_eq_none_iff σ x).2
+  rw [h]
+  exact Finset.notMem_empty x
+
 @[simp] theorem domain_restrict (σ : Store) (X : Finset Atom) :
     (σ.restrict X).domain = σ.domain ∩ X := by
   exact Finmap.keysLookupEquiv_symm_apply_keys _
@@ -344,6 +353,21 @@ def unit : Capability where
 
 @[simp] theorem mem_unit_iff (σ : Store) : σ ∈ unit ↔ σ = ∅ :=
   Iff.rfl
+
+theorem eq_unit_of_domain_eq_empty {m : Capability} (h : m.domain = ∅) :
+    m = unit := by
+  apply ext h
+  intro σ
+  constructor
+  · intro hσ
+    exact (mem_unit_iff σ).2
+      (Store.eq_empty_of_domain_eq_empty (m.mem_domain hσ |>.trans h))
+  · intro hσ
+    obtain rfl := (mem_unit_iff σ).1 hσ
+    obtain ⟨ρ, hρ⟩ := m.nonempty
+    have : ρ = ∅ :=
+      Store.eq_empty_of_domain_eq_empty (m.mem_domain hρ |>.trans h)
+    simpa [this] using hρ
 
 /-- The deterministic capability containing exactly one store. -/
 def singleton (σ : Store) : Capability where
