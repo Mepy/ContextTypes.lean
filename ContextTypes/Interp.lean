@@ -1264,6 +1264,60 @@ theorem models_resultAt_lookup {m : Capability} {X : Finset LogicVar}
           if_pos ((LogicVar.mem_freeAtomSet_iff X x).2 hξX)])]
   exact heval
 
+theorem models_resultAt_ret_free_lookup {m : Capability}
+    {X : Finset LogicVar} {y z : Atom}
+    (closedX : LogicVar.LocallyClosed X)
+    (support : (.ret (.free y) : Term).logicSupport ⊆ X)
+    (fresh : LogicVar.free z ∉ X)
+    (h : m ⊨ resultAt X (.ret (.free y)) (.free z)) :
+    ∀ σ, σ ∈ m → σ.lookup z = σ.lookup y := by
+  intro σ hσ
+  obtain ⟨v, hz, reaches⟩ :=
+    models_resultAt_lookup closedX support fresh h σ hσ
+  have hyX : LogicVar.free y ∈ X := by
+    apply support
+    simp [Term.logicSupportAt, Value.logicSupportAt]
+  have hyM : y ∈ m.domain := by
+    apply Formula.models_scope h
+    rw [freeAtoms_resultAt]
+    apply Finset.mem_union_left
+    apply Finset.mem_union_left
+    exact (LogicVar.mem_freeAtomSet_iff X y).2 hyX
+  obtain ⟨w, hy⟩ := Store.mem_domain_iff σ y |>.1 (by
+    simpa [m.mem_domain hσ] using hyM)
+  have heq : v = w := by
+    have : (Term.ret w).reaches v := by
+      simpa [instantiateTerm, instantiateTermAt, instantiateValueAt,
+        Store.toAssignment_lookup_free, hy] using reaches
+    exact Term.ret.inj this.ret_eq
+  rw [hz, hy, heq]
+
+theorem models_resultFirst_openAt_lookup {m : Capability}
+    {Δ : BasicEnv} {τ : ContextType} {e : Term} {y : Atom}
+    (closed : LogicVar.LocallyClosed (relevantSupport Δ τ e))
+    (closedE : e.locallyClosed)
+    (support : e.logicSupport ⊆ relevantSupport Δ τ e)
+    (fresh : LogicVar.free y ∉ relevantSupport Δ τ e)
+    (h : m ⊨ (resultFirst Δ τ e).openAt 0 y) :
+    ∀ σ, σ ∈ m → ∃ v, σ.lookup y = some v ∧
+      (instantiateTerm e σ.toAssignment).reaches v := by
+  rw [resultFirst_openAt Δ τ e y closed closedE support fresh] at h
+  exact models_resultAt_lookup closed support fresh h
+
+theorem models_resultFirst_ret_free_openAt_lookup {m : Capability}
+    {Δ : BasicEnv} {τ : ContextType} {y z : Atom}
+    (closed : LogicVar.LocallyClosed
+      (relevantSupport Δ τ (.ret (.free y))))
+    (support : (.ret (.free y) : Term).logicSupport ⊆
+      relevantSupport Δ τ (.ret (.free y)))
+    (fresh : LogicVar.free z ∉
+      relevantSupport Δ τ (.ret (.free y)))
+    (h : m ⊨ (resultFirst Δ τ (.ret (.free y))).openAt 0 z) :
+    ∀ σ, σ ∈ m → σ.lookup z = σ.lookup y := by
+  rw [resultFirst_openAt Δ τ (.ret (.free y)) z closed
+    (by trivial) support fresh] at h
+  exact models_resultAt_ret_free_lookup closed support fresh h
+
 theorem models_resultAt_typed {m : Capability} {X : Finset LogicVar}
     {Δ : BasicEnv} {e : Term} {T : SimpleType} {y : Atom}
     (closedX : LogicVar.LocallyClosed X) (closedE : e.locallyClosed)
