@@ -42,6 +42,11 @@ def toAssignment (σ : Store) : Assignment :=
     σ.toAssignment.lookup (.free x) = σ.lookup x := by
   simp [toAssignment, Assignment.lookup]
 
+@[simp] theorem empty_toAssignment : (∅ : Store).toAssignment = ∅ := by
+  apply Assignment.ext
+  intro ξ
+  cases ξ <;> simp
+
 end Store
 
 namespace LogicVar
@@ -1027,6 +1032,80 @@ theorem models_fiber_intro {m : Capability} {X : Finset LogicVar}
   refine ⟨?_, closed, h⟩
   rw [Capability.restrict_domain, Finset.inter_eq_right]
   exact scope
+
+/-- Binding no logical variables does not change satisfaction. -/
+theorem models_fiber_empty_iff (m : Capability) (P : Formula) :
+    m ⊨ Formula.fiber ∅ P ↔ m ⊨ P := by
+  constructor
+  · intro h
+    rw [models_fiber_iff] at h
+    simp only [freeAtoms_fiber, LogicVar.freeAtomSet_empty,
+      Finset.empty_union] at h
+    have hf : Capability.IsFiber (m.restrict P.freeAtoms)
+        (m.restrict P.freeAtoms) ∅ ∅ := by
+      refine ⟨?_, rfl, ?_⟩
+      · simp
+      · intro σ
+        simp
+    have hP := h.2.2 ∅ (m.restrict P.freeAtoms) hf
+    simp only [substituteStore, Store.empty_toAssignment,
+      substitute_empty] at hP
+    exact (models_restrict_iff m P).2 hP
+  · intro hP
+    apply models_fiber_intro
+    · simpa using models_scope hP
+    · intro k hk
+      exact Finset.notMem_empty _ hk
+    · intro σ f hf
+      have σempty : σ = ∅ := by
+        apply Store.eq_empty_of_domain_eq_empty
+        simpa using
+          (m.restrict (Formula.fiber ∅ P).freeAtoms).restrict ∅
+            |>.mem_domain hf.projection_mem
+      have same : f = m.restrict P.freeAtoms := by
+        apply Capability.ext
+        · simpa using hf.domain_eq
+        · intro ρ
+          rw [hf.mem_iff]
+          simp [σempty]
+      subst f
+      simp only [σempty, substituteStore, Store.empty_toAssignment,
+        substitute_empty]
+      exact (models_restrict_iff m P).1 hP
+
+/-- A closed qualifier atom is valid when its predicate holds on the unique
+empty assignment. -/
+theorem models_atom_of_support_empty (m : Capability) (q : Qualifier)
+    (support : q.support = ∅)
+    (holds : ∀ ρ : AssignmentOn q.support, q.holds ρ) :
+    m ⊨ Atom(q) := by
+  have freeAtoms : q.freeAtoms = ∅ := by
+    simp [Qualifier.freeAtoms, support]
+  rw [models_atom_iff]
+  constructor
+  · rw [freeAtoms]
+    simp
+  · refine ⟨?_, ?_, ?_⟩
+    · intro k hk
+      rw [support] at hk
+      exact (Finset.notMem_empty _ hk).elim
+    · rw [freeAtoms]
+      simp
+    · intro σ hσ
+      rw [freeAtoms] at hσ
+      have σempty := Store.eq_empty_of_domain_eq_empty hσ
+      constructor
+      · intro _
+        rw [freeAtoms]
+        simpa [σempty]
+      · intro _
+        subst σ
+        let ρ : AssignmentOn q.support :=
+          { assignment := ∅
+            domain_eq := by rw [support]; rfl }
+        refine ⟨by simp [freeAtoms], ρ, holds ρ, ?_⟩
+        intro x
+        simp [ρ, Assignment.lookup_empty, Store.lookup_empty]
 
 /-- A fiber atom with empty support is valid when its predicate holds on its
 unique empty assignment. -/
