@@ -87,6 +87,23 @@ theorem freeAtomSet_openSupport_subset (X : Finset LogicVar)
     rw [mem_freeAtomSet_iff]
     simpa [LogicVar.openBinder, LogicVar.swap, hxy] using hx
 
+theorem eq_image_free_of_locallyClosed {X : Finset LogicVar}
+    (h : LocallyClosed X) :
+    X = (freeAtomSet X).image LogicVar.free := by
+  ext ξ
+  cases ξ with
+  | bound k =>
+      constructor
+      · intro hk
+        exact (h k hk).elim
+      · intro hk
+        obtain ⟨x, _, same⟩ := Finset.mem_image.1 hk
+        cases same
+  | free x =>
+      rw [Finset.mem_image]
+      simp only [LogicVar.free.injEq, exists_eq_right]
+      exact (mem_freeAtomSet_iff X x).symm
+
 end LogicVar
 
 /-- Formulas of context logic.  `wand d P Q` binds `d` logical variables in
@@ -562,6 +579,80 @@ def HoldsStore (q : Qualifier) (σ : Store) : Prop :=
     q.holds ρ ∧
     ∀ x, ρ.assignment.lookup (.free x) = σ.lookup x
 
+theorem substitute_toAssignment_support_empty {q : Qualifier} {σ : Store}
+    (closed : q.locallyClosed) (hσ : σ.domain = q.freeAtoms) :
+    (q.substitute σ.toAssignment).support = ∅ := by
+  have hclosed : LogicVar.LocallyClosed q.support := by
+    intro k hk
+    exact (Nat.not_lt_zero k (closed k hk)).elim
+  rw [support_substitute, Store.toAssignment_domain, hσ]
+  have heq : q.support = q.freeAtoms.image LogicVar.free := by
+    exact LogicVar.eq_image_free_of_locallyClosed hclosed
+  rw [← heq]
+  exact Finset.sdiff_self q.support
+
+private def emptyOnSubstitute (q : Qualifier) (σ : Store)
+    (support : (q.substitute σ.toAssignment).support = ∅) :
+    AssignmentOn (q.substitute σ.toAssignment).support where
+  assignment := ∅
+  domain_eq := support.symm
+
+theorem holdsStore_iff_substitute_empty {q : Qualifier} {σ : Store}
+    (closed : q.locallyClosed) (hσ : σ.domain = q.freeAtoms) :
+    q.HoldsStore σ ↔
+      (q.substitute σ.toAssignment).holds
+        (emptyOnSubstitute q σ
+          (substitute_toAssignment_support_empty closed hσ)) := by
+  let hsupp := substitute_toAssignment_support_empty closed hσ
+  let a := emptyOnSubstitute q σ hsupp
+  have hdom : σ.toAssignment.domain = q.support := by
+    have hclosed : LogicVar.LocallyClosed q.support := by
+      intro k hk
+      exact (Nat.not_lt_zero k (closed k hk)).elim
+    rw [Store.toAssignment_domain, hσ]
+    exact (show q.support = q.freeAtoms.image LogicVar.free from
+      LogicVar.eq_image_free_of_locallyClosed hclosed).symm
+  have hback :
+      (a.substituteBack q.support σ.toAssignment).assignment =
+        σ.toAssignment := by
+    change (∅ : Assignment).merge
+      (σ.toAssignment.restrict q.support) = σ.toAssignment
+    rw [Assignment.empty_merge]
+    apply Assignment.restrict_eq_self
+    rw [hdom]
+  let ρσ : AssignmentOn q.support :=
+    { assignment := σ.toAssignment
+      domain_eq := hdom }
+  have hbackOn : a.substituteBack q.support σ.toAssignment = ρσ := by
+    apply AssignmentOn.ext
+    exact hback
+  constructor
+  · rintro ⟨_, ρ, hq, hlook⟩
+    have hρ : ρ = ρσ := by
+      apply AssignmentOn.ext
+      apply Assignment.ext
+      intro ξ
+      cases ξ with
+      | bound k =>
+          have hk : LogicVar.bound k ∉ q.support := by
+            intro hk
+            exact Nat.not_lt_zero k (closed k hk)
+          rw [(Assignment.lookup_eq_none_iff ρ.assignment _).2]
+          · exact (Store.toAssignment_lookup_bound σ k).symm
+          · rw [ρ.domain_eq]
+            exact hk
+      | free x =>
+          exact (hlook x).trans (Store.toAssignment_lookup_free σ x).symm
+    change q.holds (a.substituteBack q.support σ.toAssignment)
+    rw [hbackOn, ← hρ]
+    exact hq
+  · intro h
+    refine ⟨hσ, ρσ, ?_, ?_⟩
+    · change q.holds (a.substituteBack q.support σ.toAssignment) at h
+      rwa [hbackOn] at h
+    · intro x
+      exact Store.toAssignment_lookup_free σ x
+
 /-- Exact qualifier atoms identify the accepted stores of a capability
 projection, rather than merely testing each existing store. -/
 def Exactly (q : Qualifier) (m : Capability) : Prop :=
@@ -735,6 +826,18 @@ theorem models_atom_iff (m : Capability) (q : Qualifier) :
         q.Exactly (m.restrict q.freeAtoms) := by
   rw [Models.eq_def m Atom(q)]
   simp only [freeAtoms_atom]
+
+theorem models_atom_holdsStore {m : Capability} {q : Qualifier}
+    (h : m ⊨ Atom(q)) {σ : Store} (hσ : σ ∈ m) :
+    q.HoldsStore (σ.restrict q.freeAtoms) := by
+  have he := (models_atom_iff m q).1 h
+  have hdom : (σ.restrict q.freeAtoms).domain = q.freeAtoms := by
+    rw [Store.domain_restrict, m.mem_domain hσ,
+      Finset.inter_eq_right.2 (by simpa using models_scope h)]
+  apply (he.2.2.2 (σ.restrict q.freeAtoms) hdom).2
+  refine ⟨σ.restrict q.freeAtoms, ?_, ?_⟩
+  · exact ⟨σ, hσ, rfl⟩
+  · exact Store.restrict_eq_self _ (by rw [hdom])
 
 theorem models_and_iff (m : Capability) (P Q : Formula) :
     m ⊨ (P ∧ᶜ Q) ↔ (m ⊨ P) ∧ (m ⊨ Q) := by
@@ -1123,6 +1226,113 @@ theorem models_atom_of_support_empty (m : Capability) (q : Qualifier)
         refine ⟨by simp [freeAtoms], ρ, holds ρ, ?_⟩
         intro x
         simp [ρ, Assignment.lookup_empty, Store.lookup_empty]
+
+theorem holds_of_models_atom_support_empty {m : Capability} {q : Qualifier}
+    (support : q.support = ∅) (h : m ⊨ Atom(q)) :
+    ∀ ρ : AssignmentOn q.support, q.holds ρ := by
+  intro ρ
+  have hfree : q.freeAtoms = ∅ := by
+    simp [Qualifier.freeAtoms, support]
+  have he := (models_atom_iff m q).1 h |>.2
+  have hmem : (∅ : Store) ∈
+      (m.restrict q.freeAtoms).restrict q.freeAtoms := by
+    rw [hfree]
+    simp
+  have hs := (he.2.2 ∅ (by simp [hfree])).2 hmem
+  obtain ⟨_, σ, hq, _⟩ := hs
+  have same : ρ = σ := by
+    apply AssignmentOn.ext
+    apply Assignment.ext
+    intro ξ
+    have hρ : ρ.assignment.domain = ∅ := ρ.domain_eq.trans support
+    have hσ : σ.assignment.domain = ∅ := σ.domain_eq.trans support
+    rw [(Assignment.lookup_eq_none_iff ρ.assignment ξ).2 (by simp [hρ]),
+      (Assignment.lookup_eq_none_iff σ.assignment ξ).2 (by simp [hσ])]
+  rwa [same]
+
+/-- Fiber atoms are the pointwise lifting of supported predicates to every
+store in a capability. -/
+theorem models_fiberAtom_iff (m : Capability) (q : Qualifier) :
+    m ⊨ fiberAtom q ↔
+      q.locallyClosed ∧ q.freeAtoms ⊆ m.domain ∧
+        ∀ σ, σ ∈ m → q.HoldsStore (σ.restrict q.freeAtoms) := by
+  have hfree : LogicVar.freeAtomSet q.support = q.freeAtoms := rfl
+  constructor
+  · intro h
+    rw [fiberAtom, models_fiber_iff] at h
+    simp only [freeAtoms_fiber, freeAtoms_atom] at h
+    rw [hfree, Finset.union_self] at h
+    change
+      (m.restrict q.freeAtoms).domain = q.freeAtoms ∧
+        LogicVar.LocallyClosed q.support ∧
+          ∀ σ f, Capability.IsFiber f (m.restrict q.freeAtoms)
+            q.freeAtoms σ → f ⊨ (Atom(q)).substituteStore σ at h
+    refine ⟨?_, ?_, ?_⟩
+    · intro k hk
+      exact (h.2.1 k hk).elim
+    · exact Finset.inter_eq_right.1 h.1
+    · intro σ hσ
+      have hdom : (σ.restrict q.freeAtoms).domain = q.freeAtoms := by
+        rw [Store.domain_restrict, m.mem_domain hσ,
+          Finset.inter_eq_right.2 (Finset.inter_eq_right.1 h.1)]
+      have hs : σ.restrict q.freeAtoms ∈ m.restrict q.freeAtoms :=
+        ⟨σ, hσ, rfl⟩
+      obtain ⟨f, hf, _⟩ :=
+        Capability.fiber_from_store (m.restrict q.freeAtoms)
+          q.freeAtoms hs
+      have hsame : (σ.restrict q.freeAtoms).restrict q.freeAtoms =
+          σ.restrict q.freeAtoms :=
+        Store.restrict_eq_self _ (by rw [hdom])
+      rw [hsame] at hf
+      have hi := h.2.2 (σ.restrict q.freeAtoms) f hf
+      simp only [substituteStore] at hi
+      have hsupp := q.substitute_toAssignment_support_empty
+        (by
+          intro k hk
+          exact (h.2.1 k hk).elim) hdom
+      have hholds := holds_of_models_atom_support_empty hsupp hi
+      exact (q.holdsStore_iff_substitute_empty
+        (by
+          intro k hk
+          exact (h.2.1 k hk).elim) hdom).2
+        (hholds _)
+  · rintro ⟨closed, scope, holds⟩
+    apply models_fiber_intro
+    · simpa [fiberAtom, Qualifier.freeAtoms,
+        LogicVar.freeAtomSet] using scope
+    · intro k hk
+      exact Nat.not_lt_zero k (closed k hk)
+    · intro σ f hf
+      simp only [substituteStore]
+      have hσdom : σ.domain = q.freeAtoms := by
+        have hdom := (m.restrict (fiberAtom q).freeAtoms).restrict q.freeAtoms
+          |>.mem_domain hf.projection_mem
+        simp only [fiberAtom, freeAtoms_fiber, freeAtoms_atom,
+          hfree, Finset.union_self] at hdom
+        change σ.domain =
+          ((m.restrict q.freeAtoms).restrict q.freeAtoms).domain at hdom
+        rw [Capability.restrict_domain, Capability.restrict_domain,
+          Finset.inter_eq_right.2 scope, Finset.inter_self] at hdom
+        exact hdom
+      have hproj : σ ∈ m.restrict q.freeAtoms := by
+        have hp := hf.projection_mem
+        simpa [fiberAtom, Qualifier.freeAtoms, LogicVar.freeAtomSet,
+          Capability.restrict_restrict] using hp
+      obtain ⟨τ, hτ, same⟩ := hproj
+      have hstore := holds τ hτ
+      rw [same] at hstore
+      have hsupp := q.substitute_toAssignment_support_empty closed hσdom
+      apply models_atom_of_support_empty f _ hsupp
+      intro a
+      have ha : a = Qualifier.emptyOnSubstitute q σ hsupp := by
+        apply AssignmentOn.ext
+        apply Assignment.ext
+        intro ξ
+        have hadom : a.assignment.domain = ∅ := a.domain_eq.trans hsupp
+        rw [(Assignment.lookup_eq_none_iff a.assignment ξ).2 (by simp [hadom])]
+        simp [Qualifier.emptyOnSubstitute]
+      rw [ha]
+      exact (q.holdsStore_iff_substitute_empty closed hσdom).1 hstore
 
 /-- A fiber atom with empty support is valid when its predicate holds on its
 unique empty assignment. -/
