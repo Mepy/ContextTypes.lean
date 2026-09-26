@@ -431,6 +431,17 @@ def erase : Context → BasicEnv
   | .comma Γ₁ Γ₂ | .star Γ₁ Γ₂ => Γ₁.erase.merge Γ₂.erase
   | .sum Γ₁ _ => Γ₁.erase
 
+theorem erase_domain_subset_domain (Γ : Context) :
+    Γ.erase.domain ⊆ Γ.domain := by
+  induction Γ with
+  | empty => simp [erase, domain]
+  | bind x τ => simp [erase, domain]
+  | comma Γ₁ Γ₂ ih₁ ih₂ | star Γ₁ Γ₂ ih₁ ih₂ =>
+      simpa only [erase, domain, BasicEnv.domain_merge] using
+        Finset.union_subset_union ih₁ ih₂
+  | sum Γ₁ Γ₂ ih₁ ih₂ =>
+      exact Finset.Subset.trans ih₁ Finset.subset_union_left
+
 theorem support_eq_freeAtoms_union_domain (Γ : Context) :
     Γ.support = Γ.freeAtoms ∪ Γ.domain := by
   induction Γ with
