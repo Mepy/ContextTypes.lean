@@ -839,7 +839,7 @@ def SubTypeUnder («Σ» : BasicEnv) (Γ : Context)
 
 set_option hygiene false in
 scoped[ContextTypes] notation:40 (name := semanticSubtype)
-    «Σ» " , " Γ " ⊢ " τ₁ " <: " τ₂ =>
+    «Σ»:41 " , " Γ:41 " ⊢ " τ₁:41 " <: " τ₂:41 =>
   ContextTypes.SubTypeUnder «Σ» Γ τ₁ τ₂
 
 def BasicEnv.AgreeOn (X : Finset Atom) (Δ₁ Δ₂ : BasicEnv) : Prop :=
