@@ -68,6 +68,36 @@ theorem Subset.insert {Δ Δ' : BasicEnv} (h : Δ.Subset Δ')
     rw [lookup_insert_of_ne _ T same]
     exact h y U hy
 
+theorem insert_comm (Δ : BasicEnv) {x y : Atom} (T U : SimpleType)
+    (hne : x ≠ y) :
+    (Δ.insert x T).insert y U = (Δ.insert y U).insert x T := by
+  apply Finmap.ext_lookup
+  intro z
+  change ((Δ.insert x T).insert y U).lookup z =
+    ((Δ.insert y U).insert x T).lookup z
+  by_cases hzx : z = x
+  · subst z
+    rw [lookup_insert, lookup_insert_of_ne _ U hne]
+    rw [lookup_insert]
+  · by_cases hzy : z = y
+    · subst z
+      rw [lookup_insert]
+      rw [lookup_insert_of_ne _ T (Ne.symm hne), lookup_insert]
+    · rw [lookup_insert_of_ne _ U hzy,
+        lookup_insert_of_ne _ T hzx,
+        lookup_insert_of_ne _ T hzx,
+        lookup_insert_of_ne _ U hzy]
+
+theorem subset_insert_of_fresh (Δ : BasicEnv) (y : Atom) (U : SimpleType)
+    (fresh : y ∉ Δ.domain) : Δ.Subset (Δ.insert y U) := by
+  intro z T hz
+  have hzy : z ≠ y := by
+    intro same
+    subst z
+    exact fresh (Finmap.mem_keys.2 (Finmap.mem_of_lookup_eq_some hz))
+  rw [lookup_insert_of_ne _ U hzy]
+  exact hz
+
 end BasicEnv
 
 namespace Primitive
@@ -391,6 +421,259 @@ theorem BasicTermTyp.weaken {Δ Δ' : BasicEnv} {e : Term} {T : SimpleType}
     exact BasicTermTyp.app (ih₁ Δ' sub) (ih₂ Δ' sub)
   · intro Δ v e₁ e₂ T scrutinee trueBranch falseBranch ih ih₁ ih₂ Δ' sub
     exact BasicTermTyp.matchBool (ih Δ' sub) (ih₁ Δ' sub) (ih₂ Δ' sub)
+
+mutual
+
+  theorem BasicValTyp.substitute {Δ : BasicEnv} {x : Atom}
+      {T U : SimpleType} {v u : Value}
+      (typed : BasicValTyp (Δ.insert x T) v U)
+      (arg : BasicValTyp Δ u T) (fresh : x ∉ Δ.domain) :
+      BasicValTyp Δ (v.substitute x u) U := by
+    refine (BasicValTyp.rec
+      (motive_1 := fun Δ' v U _ => ∀ Δ x T u,
+        Δ' = Δ.insert x T → BasicValTyp Δ u T → x ∉ Δ.domain →
+          BasicValTyp Δ (v.substitute x u) U)
+      (motive_2 := fun Δ' e U _ => ∀ Δ x T u,
+        Δ' = Δ.insert x T → BasicValTyp Δ u T → x ∉ Δ.domain →
+          BasicTermTyp Δ (e.substitute x u) U)
+      ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ typed) Δ x T u rfl arg fresh
+    · intro Δ' c Δ x T u eq arg fresh
+      exact BasicValTyp.const Δ c
+    · intro Δ' y U hlookup Δ x T u eq arg fresh
+      subst Δ'
+      by_cases hyx : y = x
+      · subst y
+        have hUT : U = T := by
+          rw [BasicEnv.lookup_insert] at hlookup
+          exact (Option.some.inj hlookup).symm
+        subst U
+        simpa [Value.substitute] using arg
+      · have hy : Δ.lookup y = some U := by
+          rwa [BasicEnv.lookup_insert_of_ne Δ T hyx] at hlookup
+        simpa [Value.substitute, hyx] using BasicValTyp.free hy
+    · intro Δ' S V e L body ih Δ x T u eq arg fresh
+      subst Δ'
+      apply BasicValTyp.lam (L ∪ {x} ∪ Δ.domain)
+      intro y hy
+      have hy' : y ∉ L ∧ y ≠ x ∧ y ∉ Δ.domain := by
+        have h := Finset.notMem_union.1 hy
+        have hLx := Finset.notMem_union.1 h.1
+        exact ⟨hLx.1, by simpa using hLx.2, h.2⟩
+      have henv : (Δ.insert x T).insert y S =
+          (Δ.insert y S).insert x T :=
+        BasicEnv.insert_comm Δ T S (Ne.symm hy'.2.1)
+      have hu : BasicValTyp (Δ.insert y S) u T :=
+        arg.weaken (BasicEnv.subset_insert_of_fresh Δ y S hy'.2.2)
+      have hx : x ∉ (Δ.insert y S).domain := by
+        simpa [BasicEnv.domain_insert, Ne.symm hy'.2.1] using fresh
+      have htyped := ih y hy'.1 (Δ.insert y S) x T u henv hu hx
+      rw [Term.substitute_openAt e x u (.free y) arg.locallyClosed 0] at htyped
+      simpa [Value.substitute, hy'.2.1] using htyped
+    · intro Δ' S V v L body ih Δ x T u eq arg fresh
+      subst Δ'
+      apply BasicValTyp.fix (L ∪ {x} ∪ Δ.domain)
+      intro y hy
+      have hy' : y ∉ L ∧ y ≠ x ∧ y ∉ Δ.domain := by
+        have h := Finset.notMem_union.1 hy
+        have hLx := Finset.notMem_union.1 h.1
+        exact ⟨hLx.1, by simpa using hLx.2, h.2⟩
+      have henv : (Δ.insert x T).insert y S =
+          (Δ.insert y S).insert x T :=
+        BasicEnv.insert_comm Δ T S (Ne.symm hy'.2.1)
+      have hu : BasicValTyp (Δ.insert y S) u T :=
+        arg.weaken (BasicEnv.subset_insert_of_fresh Δ y S hy'.2.2)
+      have hx : x ∉ (Δ.insert y S).domain := by
+        simpa [BasicEnv.domain_insert, Ne.symm hy'.2.1] using fresh
+      have htyped := ih y hy'.1 (Δ.insert y S) x T u henv hu hx
+      rw [Value.substitute_openAt v x u (.free y) arg.locallyClosed 0] at htyped
+      simpa [Value.substitute, hy'.2.1] using htyped
+    · intro Δ' v U typed ih Δ x T u eq arg fresh
+      exact BasicTermTyp.ret (ih Δ x T u eq arg fresh)
+    · intro Δ' S V e₁ e₂ L left right ih₁ ih₂ Δ x T u eq arg fresh
+      subst Δ'
+      apply BasicTermTyp.letE (L ∪ {x} ∪ Δ.domain)
+        (ih₁ Δ x T u rfl arg fresh)
+      intro y hy
+      have hy' : y ∉ L ∧ y ≠ x ∧ y ∉ Δ.domain := by
+        have h := Finset.notMem_union.1 hy
+        have hLx := Finset.notMem_union.1 h.1
+        exact ⟨hLx.1, by simpa using hLx.2, h.2⟩
+      have henv : (Δ.insert x T).insert y S =
+          (Δ.insert y S).insert x T :=
+        BasicEnv.insert_comm Δ T S (Ne.symm hy'.2.1)
+      have hu : BasicValTyp (Δ.insert y S) u T :=
+        arg.weaken (BasicEnv.subset_insert_of_fresh Δ y S hy'.2.2)
+      have hx : x ∉ (Δ.insert y S).domain := by
+        simpa [BasicEnv.domain_insert, Ne.symm hy'.2.1] using fresh
+      have htyped := ih₂ y hy'.1 (Δ.insert y S) x T u henv hu hx
+      rw [Term.substitute_openAt e₂ x u (.free y) arg.locallyClosed 0] at htyped
+      simpa [Value.substitute, hy'.2.1] using htyped
+    · intro Δ' op v b₁ b₂ signature typed ih Δ x T u eq arg fresh
+      exact BasicTermTyp.primitive signature (ih Δ x T u eq arg fresh)
+    · intro Δ' S V v₁ v₂ fn arg' ih₁ ih₂ Δ x T u eq arg fresh
+      exact BasicTermTyp.app (ih₁ Δ x T u eq arg fresh)
+        (ih₂ Δ x T u eq arg fresh)
+    · intro Δ' v e₁ e₂ U scrutinee left right ih ih₁ ih₂
+        Δ x T u eq arg fresh
+      exact BasicTermTyp.matchBool (ih Δ x T u eq arg fresh)
+        (ih₁ Δ x T u eq arg fresh) (ih₂ Δ x T u eq arg fresh)
+
+  theorem BasicTermTyp.substitute {Δ : BasicEnv} {x : Atom}
+      {T U : SimpleType} {e : Term} {u : Value}
+      (typed : BasicTermTyp (Δ.insert x T) e U)
+      (arg : BasicValTyp Δ u T) (fresh : x ∉ Δ.domain) :
+      BasicTermTyp Δ (e.substitute x u) U := by
+    refine (BasicTermTyp.rec
+      (motive_1 := fun Δ' v U _ => ∀ Δ x T u,
+        Δ' = Δ.insert x T → BasicValTyp Δ u T → x ∉ Δ.domain →
+          BasicValTyp Δ (v.substitute x u) U)
+      (motive_2 := fun Δ' e U _ => ∀ Δ x T u,
+        Δ' = Δ.insert x T → BasicValTyp Δ u T → x ∉ Δ.domain →
+          BasicTermTyp Δ (e.substitute x u) U)
+      ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ typed) Δ x T u rfl arg fresh
+    · intro Δ' c Δ x T u eq arg fresh
+      subst Δ'
+      exact (BasicValTyp.const (Δ.insert x T) c).substitute arg fresh
+    · intro Δ' y U hlookup Δ x T u eq arg fresh
+      subst Δ'
+      exact (BasicValTyp.free hlookup).substitute arg fresh
+    · intro Δ' S V e L body ih Δ x T u eq arg fresh
+      subst Δ'
+      exact (BasicValTyp.lam L body).substitute arg fresh
+    · intro Δ' S V v L body ih Δ x T u eq arg fresh
+      subst Δ'
+      exact (BasicValTyp.fix L body).substitute arg fresh
+    · intro Δ' v U typed ih Δ x T u eq arg fresh
+      exact BasicTermTyp.ret (ih Δ x T u eq arg fresh)
+    · intro Δ' S V e₁ e₂ L left right ih₁ ih₂ Δ x T u eq arg fresh
+      subst Δ'
+      apply BasicTermTyp.letE (L ∪ {x} ∪ Δ.domain)
+        (ih₁ Δ x T u rfl arg fresh)
+      intro y hy
+      have hy' : y ∉ L ∧ y ≠ x ∧ y ∉ Δ.domain := by
+        have h := Finset.notMem_union.1 hy
+        have hLx := Finset.notMem_union.1 h.1
+        exact ⟨hLx.1, by simpa using hLx.2, h.2⟩
+      have henv : (Δ.insert x T).insert y S =
+          (Δ.insert y S).insert x T :=
+        BasicEnv.insert_comm Δ T S (Ne.symm hy'.2.1)
+      have hu : BasicValTyp (Δ.insert y S) u T :=
+        arg.weaken (BasicEnv.subset_insert_of_fresh Δ y S hy'.2.2)
+      have hx : x ∉ (Δ.insert y S).domain := by
+        simpa [BasicEnv.domain_insert, Ne.symm hy'.2.1] using fresh
+      have htyped := ih₂ y hy'.1 (Δ.insert y S) x T u henv hu hx
+      rw [Term.substitute_openAt e₂ x u (.free y) arg.locallyClosed 0] at htyped
+      simpa [Value.substitute, hy'.2.1] using htyped
+    · intro Δ' op v b₁ b₂ signature typed ih Δ x T u eq arg fresh
+      exact BasicTermTyp.primitive signature (ih Δ x T u eq arg fresh)
+    · intro Δ' S V v₁ v₂ fn arg' ih₁ ih₂ Δ x T u eq arg fresh
+      exact BasicTermTyp.app (ih₁ Δ x T u eq arg fresh)
+        (ih₂ Δ x T u eq arg fresh)
+    · intro Δ' v e₁ e₂ U scrutinee left right ih ih₁ ih₂
+        Δ x T u eq arg fresh
+      exact BasicTermTyp.matchBool (ih Δ x T u eq arg fresh)
+        (ih₁ Δ x T u eq arg fresh) (ih₂ Δ x T u eq arg fresh)
+
+end
+
+theorem BasicTermTyp.openAt_of_body {Δ : BasicEnv} {T U : SimpleType}
+    {e : Term} {u : Value} (L : Finset Atom)
+    (body : ∀ x, x ∉ L →
+      BasicTermTyp (Δ.insert x T) (e.openAt 0 (.free x)) U)
+    (arg : BasicValTyp Δ u T) : BasicTermTyp Δ (e.openAt 0 u) U := by
+  obtain ⟨x, hx⟩ :=
+    Finset.exists_nat_subset_range (L ∪ Δ.domain ∪ e.support)
+  have fresh : x ∉ L ∪ Δ.domain ∪ e.support := by
+    intro h
+    have := hx h
+    simp at this
+  have fresh' : x ∉ L ∧ x ∉ Δ.domain ∧ x ∉ e.support := by
+    simpa [and_assoc] using fresh
+  have h := (body x fresh'.1).substitute arg fresh'.2.1
+  rwa [Term.substitute_openVar e x u 0 fresh'.2.2 arg.locallyClosed] at h
+
+theorem BasicValTyp.openAt_of_body {Δ : BasicEnv} {T U : SimpleType}
+    {v u : Value} (L : Finset Atom)
+    (body : ∀ x, x ∉ L →
+      BasicValTyp (Δ.insert x T) (v.openAt 0 (.free x)) U)
+    (arg : BasicValTyp Δ u T) : BasicValTyp Δ (v.openAt 0 u) U := by
+  obtain ⟨x, hx⟩ :=
+    Finset.exists_nat_subset_range (L ∪ Δ.domain ∪ v.support)
+  have fresh : x ∉ L ∪ Δ.domain ∪ v.support := by
+    intro h
+    have := hx h
+    simp at this
+  have fresh' : x ∉ L ∧ x ∉ Δ.domain ∧ x ∉ v.support := by
+    simpa [and_assoc] using fresh
+  have h := (body x fresh'.1).substitute arg fresh'.2.1
+  rwa [Value.substitute_openVar v x u 0 fresh'.2.2 arg.locallyClosed] at h
+
+theorem Primitive.Step.resultBase {op : Primitive} {c c' : Constant}
+    (step : Primitive.Step op c c') :
+    op.signature.2 = c'.baseType := by
+  cases step <;> rfl
+
+theorem HeadStep.preserve {Δ : BasicEnv} {e e' : Term} {T : SimpleType}
+    (step : HeadStep e e') (typed : BasicTermTyp Δ e T) :
+    BasicTermTyp Δ e' T := by
+  cases step with
+  | letRet v e closed =>
+      cases typed with
+      | letE L left right =>
+          cases left with
+          | ret arg => exact BasicTermTyp.openAt_of_body L right arg
+  | primitive op c c' step closed =>
+      cases typed with
+      | @primitive _ _ _ b₁ b₂ signature arg =>
+          cases arg with
+          | const =>
+              have hb : c'.baseType = b₂ :=
+                step.resultBase.symm.trans (congrArg Prod.snd signature)
+              rw [← hb]
+              exact BasicTermTyp.ret (BasicValTyp.const Δ c')
+  | beta S e v closed =>
+      cases typed with
+      | app fn arg =>
+          cases fn with
+          | lam L body => exact BasicTermTyp.openAt_of_body L body arg
+  | fix S vf v closed =>
+      cases typed with
+      | app fn arg =>
+          cases fn with
+          | fix L body =>
+              exact BasicTermTyp.app
+                (BasicValTyp.openAt_of_body L body arg)
+                (BasicValTyp.fix L body)
+  | matchTrue e₁ e₂ closed =>
+      cases typed with
+      | matchBool scrutinee left right => exact left
+  | matchFalse e₁ e₂ closed =>
+      cases typed with
+      | matchBool scrutinee left right => exact right
+
+theorem Step.preserve {Δ : BasicEnv} {e e' : Term} {T : SimpleType}
+    (step : Step e e') (typed : BasicTermTyp Δ e T) :
+    BasicTermTyp Δ e' T := by
+  cases step with
+  | head step => exact step.preserve typed
+  | letE step closed =>
+      cases typed with
+      | letE L left right =>
+          exact BasicTermTyp.letE L (step.preserve left) right
+
+theorem Steps.preserve {Δ : BasicEnv} {e e' : Term} {T : SimpleType}
+    (steps : Steps e e') (typed : BasicTermTyp Δ e T) :
+    BasicTermTyp Δ e' T := by
+  induction steps with
+  | refl => exact typed
+  | tail step steps ih => exact ih (step.preserve typed)
+
+theorem BasicTermTyp.reaches {Δ : BasicEnv} {e : Term} {v : Value}
+    {T : SimpleType} (typed : BasicTermTyp Δ e T) (h : e.reaches v) :
+    BasicValTyp Δ v T := by
+  have result := h.preserve typed
+  cases result with
+  | ret typed => exact typed
 
 namespace Qualifier
 
