@@ -467,6 +467,55 @@ theorem LocallyClosedAt.mono {τ : ContextType} {d d' : Nat}
         ih₂ h.2 (Nat.add_le_add_right hdd 1)⟩
   | persist τ ih => exact ih h hdd
 
+theorem openAt_shiftFrom_eq (τ : ContextType) (k : Nat) (x : Atom)
+    (closed : τ.LocallyClosedAt k) (fresh : x ∉ τ.freeAtoms) :
+    (τ.shiftFrom k).openAt k x = τ := by
+  induction τ generalizing k with
+  | «over» b q =>
+      simp only [shiftFrom, openAt]
+      apply congrArg (ContextType.over b)
+      apply q.openAt_shiftFrom_eq
+      · exact closed
+      · rw [← q.mem_freeAtoms_iff]
+        exact fresh
+  | under b q =>
+      simp only [shiftFrom, openAt]
+      apply congrArg (ContextType.under b)
+      apply q.openAt_shiftFrom_eq
+      · exact closed
+      · rw [← q.mem_freeAtoms_iff]
+        exact fresh
+  | inter τ₁ τ₂ ih₁ ih₂ =>
+      have fresh' : x ∉ τ₁.freeAtoms ∧ x ∉ τ₂.freeAtoms := by
+        simpa [freeAtoms] using fresh
+      simp only [shiftFrom, openAt]
+      rw [ih₁ k closed.1 fresh'.1, ih₂ k closed.2 fresh'.2]
+  | union τ₁ τ₂ ih₁ ih₂ =>
+      have fresh' : x ∉ τ₁.freeAtoms ∧ x ∉ τ₂.freeAtoms := by
+        simpa [freeAtoms] using fresh
+      simp only [shiftFrom, openAt]
+      rw [ih₁ k closed.1 fresh'.1, ih₂ k closed.2 fresh'.2]
+  | sum τ₁ τ₂ ih₁ ih₂ =>
+      have fresh' : x ∉ τ₁.freeAtoms ∧ x ∉ τ₂.freeAtoms := by
+        simpa [freeAtoms] using fresh
+      simp only [shiftFrom, openAt]
+      rw [ih₁ k closed.1 fresh'.1, ih₂ k closed.2 fresh'.2]
+  | arrow τ₁ τ₂ ih₁ ih₂ =>
+      have fresh' : x ∉ τ₁.freeAtoms ∧ x ∉ τ₂.freeAtoms := by
+        simpa [freeAtoms] using fresh
+      simp only [shiftFrom, openAt]
+      rw [ih₁ k closed.1 fresh'.1,
+        ih₂ (k + 1) closed.2 fresh'.2]
+  | wand τ₁ τ₂ ih₁ ih₂ =>
+      have fresh' : x ∉ τ₁.freeAtoms ∧ x ∉ τ₂.freeAtoms := by
+        simpa [freeAtoms] using fresh
+      simp only [shiftFrom, openAt]
+      rw [ih₁ k closed.1 fresh'.1,
+        ih₂ (k + 1) closed.2 fresh'.2]
+  | persist τ ih =>
+      simp only [shiftFrom, openAt]
+      rw [ih k closed fresh]
+
 /-- All branches of a context type have compatible erased shapes. -/
 def ShapeOK : ContextType → Prop
   | .over _ _ | .under _ _ => True
