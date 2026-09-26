@@ -931,6 +931,26 @@ theorem models_persist_elim {m : Capability} {P : Formula}
   rw [← same]
   exact Capability.restrict_refines m P.freeAtoms
 
+/-- A formula is persistent when it entails its persistent modality. -/
+def Persistent (P : Formula) : Prop :=
+  P ⊫ □ P
+
+theorem persistent_persist (P : Formula) : Persistent (□ P) := by
+  intro m h
+  obtain ⟨σ, hσ, same, hP⟩ := (models_persist_iff m P).1 h
+  apply (models_persist_iff m (□ P)).2
+  refine ⟨σ, ?_, ?_, ?_⟩
+  · simpa using hσ
+  · simpa using same
+  · apply (models_persist_iff (Capability.singleton σ) P).2
+    refine ⟨σ, hσ, ?_, hP⟩
+    rw [← hσ]
+    exact Capability.restrict_domain_self (Capability.singleton σ)
+
+theorem persistent_equiv_persist {P : Formula} (h : Persistent P) :
+    P ⊣⊢ □ P :=
+  ⟨h, fun _ hP => models_persist_elim hP⟩
+
 theorem models_fiber_iff (m : Capability) (X : Finset LogicVar)
     (P : Formula) :
     m ⊨ Formula.fiber X P ↔
