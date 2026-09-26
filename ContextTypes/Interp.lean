@@ -81,6 +81,80 @@ end
     instantiateTerm e ∅ = e :=
   instantiateTermAt_empty e 0
 
+mutual
+
+  theorem instantiateValueAt_eq_of_agreeOn (v : Value) (d : Nat)
+      {ρ σ : Assignment}
+      (h : ∀ ξ, ξ ∈ v.logicSupportAt d → ρ.lookup ξ = σ.lookup ξ) :
+      instantiateValueAt v d ρ = instantiateValueAt v d σ := by
+    cases v with
+    | const c => rfl
+    | free x =>
+        simp only [instantiateValueAt]
+        rw [h (.free x) (by simp [Value.logicSupportAt])]
+    | bound k =>
+        simp only [instantiateValueAt]
+        by_cases hkd : k < d
+        · simp [hkd]
+        · have hdk : d ≤ k := Nat.le_of_not_gt hkd
+          simp only [hkd, if_false]
+          rw [h (.bound (k - d)) (by
+            simp [Value.logicSupportAt, boundLogicSupportAt, hdk])]
+    | lam T e =>
+        simp only [instantiateValueAt]
+        rw [instantiateTermAt_eq_of_agreeOn e (d + 1) h]
+    | fix T v =>
+        simp only [instantiateValueAt]
+        rw [instantiateValueAt_eq_of_agreeOn v (d + 1) h]
+
+  theorem instantiateTermAt_eq_of_agreeOn (e : Term) (d : Nat)
+      {ρ σ : Assignment}
+      (h : ∀ ξ, ξ ∈ e.logicSupportAt d → ρ.lookup ξ = σ.lookup ξ) :
+      instantiateTermAt e d ρ = instantiateTermAt e d σ := by
+    cases e with
+    | ret v =>
+        simp only [instantiateTermAt]
+        rw [instantiateValueAt_eq_of_agreeOn v d h]
+    | letE e₁ e₂ =>
+        simp only [instantiateTermAt]
+        rw [instantiateTermAt_eq_of_agreeOn e₁ d (by
+          intro ξ hξ
+          exact h ξ (Finset.mem_union_left _ hξ))]
+        rw [instantiateTermAt_eq_of_agreeOn e₂ (d + 1) (by
+          intro ξ hξ
+          exact h ξ (Finset.mem_union_right _ hξ))]
+    | primitive op v =>
+        simp only [instantiateTermAt]
+        rw [instantiateValueAt_eq_of_agreeOn v d h]
+    | app v₁ v₂ =>
+        simp only [instantiateTermAt]
+        rw [instantiateValueAt_eq_of_agreeOn v₁ d (by
+          intro ξ hξ
+          exact h ξ (Finset.mem_union_left _ hξ))]
+        rw [instantiateValueAt_eq_of_agreeOn v₂ d (by
+          intro ξ hξ
+          exact h ξ (Finset.mem_union_right _ hξ))]
+    | matchBool v e₁ e₂ =>
+        simp only [instantiateTermAt]
+        rw [instantiateValueAt_eq_of_agreeOn v d (by
+          intro ξ hξ
+          exact h ξ (Finset.mem_union_left _
+            (Finset.mem_union_left _ hξ)))]
+        rw [instantiateTermAt_eq_of_agreeOn e₁ d (by
+          intro ξ hξ
+          exact h ξ (Finset.mem_union_left _
+            (Finset.mem_union_right _ hξ)))]
+        rw [instantiateTermAt_eq_of_agreeOn e₂ d (by
+          intro ξ hξ
+          exact h ξ (Finset.mem_union_right _ hξ))]
+
+end
+
+theorem instantiateTerm_eq_of_agreeOn (e : Term) {ρ σ : Assignment}
+    (h : ∀ ξ, ξ ∈ e.logicSupport → ρ.lookup ξ = σ.lookup ξ) :
+    instantiateTerm e ρ = instantiateTerm e σ :=
+  instantiateTermAt_eq_of_agreeOn e 0 h
+
 /-! ## Binder insertion for result-first formulas -/
 
 mutual
