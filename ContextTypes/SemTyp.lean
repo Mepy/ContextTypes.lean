@@ -83,7 +83,7 @@ theorem sub {Φ : PrimitiveContext} {«Σ» : BasicEnv} {Γ : Context}
     {e : Term} {τ₁ τ₂ : ContextType}
     (wf : SynTyp.WellFormed «Σ» Γ e τ₂)
     (typed : Φ ; «Σ» ; Γ ⊨ e ⋮ τ₁)
-    (subtype : «Σ» , Γ ⊢ τ₁ <: τ₂) :
+    (subtype : «Σ» ; Γ ⊢ τ₁ <: τ₂) :
     Φ ; «Σ» ; Γ ⊨ e ⋮ τ₂ := by
   intro m hΓ
   have he : Γ.erase ⊢ₑ e ⋮ τ₁.erase := by

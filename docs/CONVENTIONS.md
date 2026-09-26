@@ -75,7 +75,7 @@ open scoped ContextTypes
 | Context interpretation | `⟦Γ⟧[Σ]` | `Context.interpUnder Σ Γ` |
 | Syntactic typing | `Φ ; Σ ; Γ ⊢ e ⋮ τ` | `SynTyp Φ Σ Γ e τ` |
 | Semantic typing | `Φ ; Σ ; Γ ⊨ e ⋮ τ` | `SemTyp Φ Σ Γ e τ` |
-| Semantic subtype | `Σ , Γ ⊢ τ₁ <: τ₂` | `SubTypeUnder Σ Γ τ₁ τ₂` |
+| Semantic subtype | `Σ ; Γ ⊢ τ₁ <: τ₂` | `SubTypeUnder Σ Γ τ₁ τ₂` |
 | Semantic context subtype | `Σ ⊢ Γ₁ ≤[X] Γ₂` | `SubCtxUnder Σ X Γ₁ Γ₂` |
 
 Do not introduce alternate spellings such as `≤w`, `WorldLe`, `Satisfies`,

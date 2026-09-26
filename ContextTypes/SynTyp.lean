@@ -114,7 +114,7 @@ inductive SynTyp (Φ : PrimitiveContext) («Σ» : BasicEnv) :
   | sub {Γ : Context} {e : Term} {τ₁ τ₂ : ContextType}
       (wf : SynTyp.WellFormed «Σ» Γ e τ₂)
       (typed : SynTyp Φ «Σ» Γ e τ₁)
-      (subtype : «Σ» , Γ ⊢ τ₁ <: τ₂) :
+      (subtype : «Σ» ; Γ ⊢ τ₁ <: τ₂) :
       SynTyp Φ «Σ» Γ e τ₂
   | ctxSub {Γ₁ Γ₂ : Context} {e : Term} {τ : ContextType}
       (wf : SynTyp.WellFormed «Σ» Γ₁ e τ)
