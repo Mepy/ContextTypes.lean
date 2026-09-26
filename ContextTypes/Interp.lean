@@ -492,6 +492,11 @@ def relevantEnv (Δ : BasicEnv) (τ : ContextType) (e : Term) : BasicEnv :=
     relevantEnv (relevantEnv Δ τ e) τ e = relevantEnv Δ τ e := by
   simp [relevantEnv, BasicEnv.restrict_restrict]
 
+@[simp] theorem relevantEnv_persist (Δ : BasicEnv) (τ : ContextType)
+    (e : Term) :
+    relevantEnv Δ (.persist τ) e = relevantEnv Δ τ e :=
+  rfl
+
 theorem relevantEnv_minimal (Δ : BasicEnv) (τ : ContextType) (e : Term) :
     relevantEnv Δ τ e = relevantEnv (Δ.restrict (relevantAtoms τ e)) τ e := by
   simpa [relevantEnv] using (relevantEnv_idem Δ τ e).symm
@@ -515,6 +520,10 @@ def resultFirst (Δ : BasicEnv) (τ : ContextType) (e : Term) : Formula :=
 def guard (d : Nat) (Δ : BasicEnv) (τ : ContextType) (e : Term) : Formula :=
   wellFormed d Δ τ ∧ᶜ
     (basicWorld Δ ∧ᶜ (basicTyping Δ e τ.erase ∧ᶜ total e))
+
+@[simp] theorem guard_persist (d : Nat) (Δ : BasicEnv) (τ : ContextType)
+    (e : Term) : guard d Δ (.persist τ) e = guard d Δ τ e :=
+  rfl
 
 @[simp] theorem freeAtoms_basicWorld (Δ : BasicEnv) :
     (basicWorld Δ).freeAtoms = Δ.domain := by
@@ -1175,6 +1184,19 @@ def interpFuel : Nat → Nat → BasicEnv → ContextType → Term → Formula
 /-- Interpretation of a context type at a core term. -/
 def interp (Δ : BasicEnv) (τ : ContextType) (e : Term) : Formula :=
   interpFuel τ.measure 0 Δ τ e
+
+theorem interp_persist (Δ : BasicEnv) (τ : ContextType) (e : Term) :
+    interp Δ (.persist τ) e =
+      (Interp.guard 0 (Interp.relevantEnv Δ τ e) τ e ∧ᶜ
+        Formula.all
+          (Interp.resultFirst (Interp.relevantEnv Δ τ e) (.persist τ) e ⇒ᶜ
+            □ interpFuel τ.measure 1 (Interp.relevantEnv Δ τ e)
+              (τ.shiftFrom 0) (.ret (.bound 0)))) := by
+  unfold interp
+  rw [show (ContextType.persist τ).measure = τ.measure + 1 by
+    simp [measure, Nat.add_comm]]
+  simp only [interpFuel, Interp.relevantEnv_persist,
+    Interp.guard_persist, Nat.zero_add]
 
 theorem freeAtoms_interpFuel_subset (gas d : Nat) (Δ : BasicEnv)
     (τ : ContextType) (e : Term) :
