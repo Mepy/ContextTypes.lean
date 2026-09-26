@@ -354,6 +354,53 @@ theorem termLogicSupport_locallyClosed (e : Term) (closed : e.locallyClosed) :
     LogicVar.LocallyClosed e.logicSupport :=
   termLogicSupportAt_locallyClosed e 0 closed
 
+theorem contextTypeSupportAt_locallyClosed {τ : ContextType} {d : Nat}
+    (closed : τ.LocallyClosedAt d) :
+    LogicVar.LocallyClosed (τ.supportAt d) := by
+  intro k hk
+  induction τ generalizing d with
+  | «over» b q =>
+      simp only [ContextType.supportAt] at hk
+      obtain ⟨ξ, hξ, hξk⟩ := Finset.mem_biUnion.1 hk
+      cases ξ with
+      | free x => simp [LogicVar.atDepth] at hξk
+      | bound n =>
+          by_cases hdn : d + 1 ≤ n
+          · have hn := closed n hξ
+            omega
+          · simp [LogicVar.atDepth, hdn] at hξk
+  | under b q =>
+      simp only [ContextType.supportAt] at hk
+      obtain ⟨ξ, hξ, hξk⟩ := Finset.mem_biUnion.1 hk
+      cases ξ with
+      | free x => simp [LogicVar.atDepth] at hξk
+      | bound n =>
+          by_cases hdn : d + 1 ≤ n
+          · have hn := closed n hξ
+            omega
+          · simp [LogicVar.atDepth, hdn] at hξk
+  | inter τ₁ τ₂ ih₁ ih₂ =>
+      rcases Finset.mem_union.1 hk with hk | hk
+      · exact ih₁ closed.1 hk
+      · exact ih₂ closed.2 hk
+  | union τ₁ τ₂ ih₁ ih₂ =>
+      rcases Finset.mem_union.1 hk with hk | hk
+      · exact ih₁ closed.1 hk
+      · exact ih₂ closed.2 hk
+  | sum τ₁ τ₂ ih₁ ih₂ =>
+      rcases Finset.mem_union.1 hk with hk | hk
+      · exact ih₁ closed.1 hk
+      · exact ih₂ closed.2 hk
+  | arrow τ₁ τ₂ ih₁ ih₂ =>
+      rcases Finset.mem_union.1 hk with hk | hk
+      · exact ih₁ closed.1 hk
+      · exact ih₂ closed.2 hk
+  | wand τ₁ τ₂ ih₁ ih₂ =>
+      rcases Finset.mem_union.1 hk with hk | hk
+      · exact ih₁ closed.1 hk
+      · exact ih₂ closed.2 hk
+  | persist τ ih => exact ih closed hk
+
 mutual
 
   theorem shiftValueAt_logicSupportAt (v : Value) (d : Nat) :
@@ -511,6 +558,44 @@ def relevantSupport (Δ : BasicEnv) (τ : ContextType)
       match ξ with
       | .bound k => {.bound k}
       | .free _ => ∅
+
+theorem relevantSupport_locallyClosed (Δ : BasicEnv) (τ : ContextType)
+    (e : Term) (closedτ : τ.LocallyClosed) (closedE : e.locallyClosed) :
+    LogicVar.LocallyClosed (relevantSupport Δ τ e) := by
+  intro k hk
+  simp only [relevantSupport, Finset.mem_union, Finset.mem_image,
+    Finset.mem_biUnion] at hk
+  rcases hk with ⟨x, _, same⟩ | ⟨ξ, hξ, hξk⟩
+  · cases same
+  · cases ξ with
+    | free x => simp at hξk
+    | bound n =>
+        simp only [Finset.mem_singleton] at hξk
+        cases hξk
+        rcases hξ with hξ | hξ
+        · exact contextTypeSupportAt_locallyClosed closedτ k hξ
+        · exact termLogicSupport_locallyClosed e closedE k hξ
+
+theorem logicSupport_subset_relevantSupport (Δ : BasicEnv) (τ : ContextType)
+    (e : Term) (support : e.support ⊆ Δ.domain) :
+    e.logicSupport ⊆ relevantSupport Δ τ e := by
+  intro ξ hξ
+  cases ξ with
+  | bound k =>
+      apply Finset.mem_union_right
+      apply Finset.mem_biUnion.2
+      exact ⟨.bound k, Finset.mem_union_right _ hξ, by simp⟩
+  | free x =>
+      apply Finset.mem_union_left
+      apply Finset.mem_image.2
+      refine ⟨x, ?_, rfl⟩
+      rw [relevantEnv_domain]
+      apply Finset.mem_inter.2
+      have hx : x ∈ e.support := by
+        rw [← freeAtomSet_term_logicSupport e,
+          LogicVar.mem_freeAtomSet_iff]
+        exact hξ
+      exact ⟨support hx, Finset.mem_union_right _ hx⟩
 
 /-- Result formula under a fresh outer logical binder. -/
 def resultFirst (Δ : BasicEnv) (τ : ContextType) (e : Term) : Formula :=
