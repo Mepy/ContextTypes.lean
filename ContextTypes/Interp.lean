@@ -155,6 +155,24 @@ theorem instantiateTerm_eq_of_agreeOn (e : Term) {ρ σ : Assignment}
     instantiateTerm e ρ = instantiateTerm e σ :=
   instantiateTermAt_eq_of_agreeOn e 0 h
 
+theorem instantiateTerm_eq_of_restrict_eq (e : Term) (X : Finset LogicVar)
+    (σ ρ : Store) (closedX : LogicVar.LocallyClosed X)
+    (support : e.logicSupport ⊆ X)
+    (same : σ.restrict (LogicVar.freeAtomSet X) =
+      ρ.restrict (LogicVar.freeAtomSet X)) :
+    instantiateTerm e σ.toAssignment = instantiateTerm e ρ.toAssignment := by
+  apply instantiateTerm_eq_of_agreeOn
+  intro ξ hξ
+  have hξX := support hξ
+  cases ξ with
+  | bound k => exact (closedX k hξX).elim
+  | free x =>
+      simp only [Store.toAssignment_lookup_free]
+      have hs := congrArg (fun s => s.lookup x) same
+      have hx : x ∈ LogicVar.freeAtomSet X :=
+        (LogicVar.mem_freeAtomSet_iff X x).2 hξX
+      simpa [Store.lookup_restrict, hx] using hs
+
 /-! ## Binder insertion for result-first formulas -/
 
 mutual
@@ -1064,6 +1082,116 @@ theorem freeAtoms_resultFirst_relevant_subset (Δ : BasicEnv)
 
 /-! ## Result observations -/
 
+theorem resultQualifier_substitute_holdsStore_iff
+    {X : Finset LogicVar} {e : Term} {y : Atom} {s o : Store}
+    (closedX : LogicVar.LocallyClosed X) (support : e.logicSupport ⊆ X)
+    (fresh : LogicVar.free y ∉ X)
+    (hs : s.domain = LogicVar.freeAtomSet X) (ho : o.domain = {y}) :
+    let q := resultQualifier e (.free y)
+    (q.substitute s.toAssignment).HoldsStore o ↔
+      ∃ v, o.lookup y = some v ∧
+        (instantiateTerm e s.toAssignment).reaches v := by
+  let q := resultQualifier e (.free y)
+  let r := q.substitute s.toAssignment
+  have hsA : s.toAssignment.domain = X := by
+    rw [Store.toAssignment_domain, hs]
+    exact (LogicVar.eq_image_free_of_locallyClosed closedX).symm
+  have hrsupp : r.support = {.free y} := by
+    change (q.substitute s.toAssignment).support = {.free y}
+    rw [Qualifier.support_substitute, hsA]
+    apply Finset.ext
+    intro ξ
+    simp only [q, resultQualifier, Finset.mem_sdiff, Finset.mem_union,
+      Finset.mem_singleton]
+    constructor
+    · rintro ⟨he | hy, hn⟩
+      · exact (hn (support he)).elim
+      · exact hy
+    · intro hy
+      subst ξ
+      exact ⟨Or.inr rfl, fresh⟩
+  have hrfree : r.freeAtoms = {y} := by
+    change LogicVar.freeAtomSet r.support = {y}
+    rw [hrsupp]
+    simp
+  have agree : ∀ (a : AssignmentOn r.support) (ξ : LogicVar),
+      ξ ∈ e.logicSupport →
+      (a.substituteBack q.support s.toAssignment).assignment.lookup ξ =
+        s.toAssignment.lookup ξ := by
+    intro a ξ hξ
+    have hξX := support hξ
+    have hξy : ξ ≠ .free y := fun same => by
+      subst ξ
+      exact fresh hξX
+    have hξa : ξ ∉ a.assignment.domain := by
+      rw [a.domain_eq, hrsupp]
+      simpa using hξy
+    have hξq : ξ ∈ q.support := by
+      change ξ ∈ e.logicSupport ∪ {.free y}
+      exact Finset.mem_union_left _ hξ
+    change (a.assignment.merge
+      (s.toAssignment.restrict q.support)).lookup ξ = _
+    calc
+      _ = (s.toAssignment.restrict q.support).lookup ξ :=
+        Finmap.lookup_union_right hξa
+      _ = s.toAssignment.lookup ξ := by
+        rw [Assignment.lookup_restrict, if_pos hξq]
+  have inst : ∀ a : AssignmentOn r.support,
+      instantiateTerm e
+          (a.substituteBack q.support s.toAssignment).assignment =
+        instantiateTerm e s.toAssignment := by
+    intro a
+    exact instantiateTerm_eq_of_agreeOn e (agree a)
+  constructor
+  · rintro ⟨_, a, ha, look⟩
+    change LogicVar.free y ∉ e.logicSupport ∧
+      ∃ v,
+        (a.substituteBack q.support s.toAssignment).assignment.lookup
+            (.free y) = some v ∧
+        (instantiateTerm e
+          (a.substituteBack q.support s.toAssignment).assignment).reaches v
+      at ha
+    obtain ⟨v, hv, heval⟩ := ha.2
+    refine ⟨v, ?_, ?_⟩
+    · rw [← hv]
+      symm
+      change (a.assignment.merge
+        (s.toAssignment.restrict q.support)).lookup (.free y) = o.lookup y
+      have hyA : LogicVar.free y ∈ a.assignment.domain := by
+        rw [a.domain_eq, hrsupp]
+        simp
+      calc
+        _ = a.assignment.lookup (.free y) := Finmap.lookup_union_left hyA
+        _ = o.lookup y := look y
+    · rwa [inst a] at heval
+  · rintro ⟨v, hv, heval⟩
+    refine ⟨ho.trans hrfree.symm, ?_⟩
+    let a : AssignmentOn r.support :=
+      { assignment := o.toAssignment
+        domain_eq := by
+          rw [Store.toAssignment_domain, ho, hrsupp]
+          simp }
+    refine ⟨a, ?_, ?_⟩
+    · change LogicVar.free y ∉ e.logicSupport ∧
+        ∃ w,
+          (a.substituteBack q.support s.toAssignment).assignment.lookup
+              (.free y) = some w ∧
+          (instantiateTerm e
+            (a.substituteBack q.support s.toAssignment).assignment).reaches w
+      refine ⟨fun hy => fresh (support hy), v, ?_, ?_⟩
+      · change (a.assignment.merge
+          (s.toAssignment.restrict q.support)).lookup (.free y) = some v
+        have hyA : LogicVar.free y ∈ a.assignment.domain := by
+          rw [a.domain_eq, hrsupp]
+          simp
+        calc
+          _ = a.assignment.lookup (.free y) := Finmap.lookup_union_left hyA
+          _ = o.lookup y := by simp [a]
+          _ = some v := hv
+      · rwa [inst a]
+    · intro x
+      simp [a]
+
 theorem resultQualifier_shift_openAt (e : Term) (y : Atom)
     (closed : e.locallyClosed) (fresh : y ∉ e.support) :
     (resultQualifier (shiftTerm e) (.bound 0)).openAt 0 y =
@@ -1281,6 +1409,190 @@ theorem models_resultAt_lookup {m : Capability} {X : Finset LogicVar}
           Store.toAssignment_lookup_free, Store.lookup_restrict,
           if_pos ((LogicVar.mem_freeAtomSet_iff X x).2 hξX)])]
   exact heval
+
+/-- Introduce an exact result graph from its two characteristic properties:
+every store names an actual result, and every possible result is represented
+by a store with the same input projection. -/
+theorem models_resultAt_intro {m : Capability} {X : Finset LogicVar}
+    {e : Term} {y : Atom}
+    (closedX : LogicVar.LocallyClosed X) (support : e.logicSupport ⊆ X)
+    (fresh : LogicVar.free y ∉ X)
+    (scope : LogicVar.freeAtomSet X ∪ {y} ⊆ m.domain)
+    (sound : ∀ σ, σ ∈ m → ∃ v, σ.lookup y = some v ∧
+      (instantiateTerm e σ.toAssignment).reaches v)
+    (complete : ∀ σ, σ ∈ m → ∀ v,
+      (instantiateTerm e σ.toAssignment).reaches v →
+      ∃ ρ, ρ ∈ m ∧
+        ρ.restrict (LogicVar.freeAtomSet X) =
+          σ.restrict (LogicVar.freeAtomSet X) ∧
+        ρ.lookup y = some v) :
+    m ⊨ resultAt X e (.free y) := by
+  let A := LogicVar.freeAtomSet X
+  let P := resultAt X e (.free y)
+  let q := resultQualifier e (.free y)
+  have hyA : y ∉ A := by
+    intro hy
+    exact fresh ((LogicVar.mem_freeAtomSet_iff X y).1 hy)
+  have heA : e.support ⊆ A := by
+    intro x hx
+    rw [← freeAtomSet_term_logicSupport,
+      LogicVar.mem_freeAtomSet_iff] at hx
+    change x ∈ LogicVar.freeAtomSet X
+    rw [LogicVar.mem_freeAtomSet_iff]
+    exact support hx
+  have hqfree : q.freeAtoms = e.support ∪ {y} := by
+    change LogicVar.freeAtomSet (e.logicSupport ∪ {.free y}) = _
+    rw [Formula.LogicVar.freeAtomSet_union,
+      freeAtomSet_term_logicSupport]
+    simp
+  have hPfree : P.freeAtoms = A ∪ {y} := by
+    change (resultAt X e (.free y)).freeAtoms = A ∪ {y}
+    rw [freeAtoms_resultAt]
+    rw [Finset.union_eq_left.2 heA]
+    simp [A, LogicVar.freeAtoms]
+  change m ⊨ Formula.fiber X (Formula.atom q)
+  apply Formula.models_fiber_intro
+  · simp only [Formula.freeAtoms_fiber, Formula.freeAtoms_atom]
+    rw [hqfree]
+    change A ∪ (e.support ∪ {y}) ⊆ m.domain
+    rw [← Finset.union_assoc, Finset.union_eq_left.2 heA]
+    exact scope
+  · exact closedX
+  · intro s f hf
+    simp only [Formula.substituteStore]
+    let r := q.substitute s.toAssignment
+    change f ⊨ Formula.atom r
+    have hrdom : (m.restrict P.freeAtoms).domain = P.freeAtoms := by
+      rw [Capability.restrict_domain, Finset.inter_eq_right]
+      simpa [hPfree] using scope
+    have hsdom : s.domain = A := by
+      have hs := (m.restrict P.freeAtoms).restrict A
+        |>.mem_domain hf.projection_mem
+      rw [Capability.restrict_domain, hrdom, hPfree] at hs
+      simpa [A, hyA] using hs
+    have hsA : s.toAssignment.domain = X := by
+      rw [Store.toAssignment_domain, hsdom]
+      exact (LogicVar.eq_image_free_of_locallyClosed closedX).symm
+    have hrsupp : r.support = {.free y} := by
+      change (q.substitute s.toAssignment).support = {.free y}
+      rw [Qualifier.support_substitute, hsA]
+      apply Finset.ext
+      intro ξ
+      simp only [q, resultQualifier, Finset.mem_sdiff, Finset.mem_union,
+        Finset.mem_singleton]
+      constructor
+      · rintro ⟨he | hy, hn⟩
+        · exact (hn (support he)).elim
+        · exact hy
+      · intro hy
+        subst ξ
+        exact ⟨Or.inr rfl, fresh⟩
+    have hrfree : r.freeAtoms = {y} := by
+      change LogicVar.freeAtomSet r.support = {y}
+      rw [hrsupp]
+      simp
+    have hfdom : f.domain = A ∪ {y} := by
+      have hfd := hf.domain_eq
+      change f.domain = (m.restrict P.freeAtoms).domain at hfd
+      rw [hrdom, hPfree] at hfd
+      exact hfd
+    rw [Formula.models_atom_iff]
+    refine ⟨?_, ?_⟩
+    · rw [Capability.restrict_domain, hrfree, hfdom]
+      simp
+    · refine ⟨?_, ?_, ?_⟩
+      · intro k hk
+        rw [hrsupp] at hk
+        simp at hk
+      · rw [Capability.restrict_domain, hrfree, hfdom]
+        simp
+      · intro o ho
+        rw [hrfree] at ho
+        rw [show r.HoldsStore o ↔ ∃ v, o.lookup y = some v ∧
+          (instantiateTerm e s.toAssignment).reaches v from
+          resultQualifier_substitute_holdsStore_iff closedX support fresh
+            hsdom ho]
+        constructor
+        · rintro ⟨v, hv, heval⟩
+          obtain ⟨t₀, ht₀R, ht₀s⟩ := hf.projection_mem
+          obtain ⟨σ₀, hσ₀, hσ₀t⟩ := ht₀R
+          change σ₀.restrict P.freeAtoms = t₀ at hσ₀t
+          have hσ₀A : σ₀.restrict A = s := by
+            calc
+              σ₀.restrict A = (σ₀.restrict P.freeAtoms).restrict A := by
+                rw [Store.restrict_restrict,
+                  Finset.inter_eq_right.2 (by
+                    rw [hPfree]
+                    exact Finset.subset_union_left)]
+              _ = t₀.restrict A := by rw [hσ₀t]
+              _ = s := ht₀s
+          have hinst : instantiateTerm e s.toAssignment =
+              instantiateTerm e σ₀.toAssignment := by
+            apply instantiateTerm_eq_of_restrict_eq e X s σ₀ closedX support
+            rw [Store.restrict_eq_self s (by rw [hsdom])]
+            exact hσ₀A.symm
+          obtain ⟨ρ, hρ, hρA, hρy⟩ :=
+            complete σ₀ hσ₀ v (by rwa [← hinst])
+          let t := ρ.restrict P.freeAtoms
+          have htR : t ∈ m.restrict P.freeAtoms := ⟨ρ, hρ, rfl⟩
+          have htA : t.restrict A = s := by
+            calc
+              t.restrict A = ρ.restrict A := by
+                simp only [t, Store.restrict_restrict]
+                rw [Finset.inter_eq_right.2 (by
+                  rw [hPfree]
+                  exact Finset.subset_union_left)]
+              _ = σ₀.restrict A := hρA
+              _ = s := hσ₀A
+          have htf : t ∈ f := by
+            apply hf.mem_iff.2
+            refine ⟨htR, ?_⟩
+            simpa [hsdom] using htA
+          have hto : t.restrict {y} = o := by
+            apply Store.ext
+            intro x
+            by_cases hxy : x = y
+            · subst x
+              have hyP : y ∈ P.freeAtoms := by rw [hPfree]; simp
+              simp [t, Store.lookup_restrict, hyP, hρy, hv]
+            · have hox : o.lookup x = none :=
+                (Store.lookup_eq_none_iff o x).2 (by
+                  rw [ho]
+                  exact fun hx => hxy (Finset.mem_singleton.1 hx))
+              simp [t, Store.lookup_restrict, hxy, hox]
+          rw [hrfree, Capability.restrict_restrict, Finset.inter_self]
+          exact ⟨t, htf, hto⟩
+        · intro homem
+          rw [hrfree, Capability.restrict_restrict, Finset.inter_self] at homem
+          obtain ⟨t, htf, hto⟩ := homem
+          have htR := hf.source_mem htf
+          obtain ⟨σ, hσ, hσt⟩ := htR
+          change σ.restrict P.freeAtoms = t at hσt
+          have htA : t.restrict A = s := hf.restrict_input htf
+          have hσA : σ.restrict A = s := by
+            calc
+              σ.restrict A = (σ.restrict P.freeAtoms).restrict A := by
+                rw [Store.restrict_restrict,
+                  Finset.inter_eq_right.2 (by
+                    rw [hPfree]
+                    exact Finset.subset_union_left)]
+              _ = t.restrict A := by rw [hσt]
+              _ = s := htA
+          obtain ⟨v, hσy, heval⟩ := sound σ hσ
+          refine ⟨v, ?_, ?_⟩
+          · have hty := congrArg (fun u => u.lookup y) hto
+            change (t.restrict {y}).lookup y = o.lookup y at hty
+            rw [Store.lookup_restrict, if_pos (by simp)] at hty
+            have htsy := congrArg (fun u => u.lookup y) hσt
+            change (σ.restrict P.freeAtoms).lookup y = t.lookup y at htsy
+            rw [Store.lookup_restrict, if_pos (by rw [hPfree]; simp)] at htsy
+            exact hty.symm.trans (htsy.symm.trans hσy)
+          · have hinst : instantiateTerm e s.toAssignment =
+                instantiateTerm e σ.toAssignment := by
+              apply instantiateTerm_eq_of_restrict_eq e X s σ closedX support
+              rw [Store.restrict_eq_self s (by rw [hsdom])]
+              exact hσA.symm
+            rwa [hinst]
 
 theorem models_resultAt_ret_free_lookup {m : Capability}
     {X : Finset LogicVar} {y z : Atom}
