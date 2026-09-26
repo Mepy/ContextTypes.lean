@@ -742,6 +742,109 @@ theorem freeAtoms_resultFirst_relevant_subset (Δ : BasicEnv)
 
 /-! ## Result observations -/
 
+theorem resultQualifier_shift_openAt (e : Term) (y : Atom)
+    (closed : e.locallyClosed) (fresh : y ∉ e.support) :
+    (resultQualifier (shiftTerm e) (.bound 0)).openAt 0 y =
+      resultQualifier e (.free y) := by
+  rw [shiftTerm_eq_of_locallyClosed e closed]
+  let q := resultQualifier e (.bound 0)
+  let r := resultQualifier e (.free y)
+  have hsupp : LogicVar.openSupport 0 y e.logicSupport = e.logicSupport := by
+    apply LogicVar.openSupport_eq_self_of_fresh
+    · exact termLogicSupport_locallyClosed e closed 0
+    · intro hy
+      apply fresh
+      rw [← freeAtomSet_term_logicSupport e,
+        LogicVar.mem_freeAtomSet_iff]
+      exact hy
+  apply Qualifier.ext
+  · change LogicVar.openSupport 0 y
+        (e.logicSupport ∪ {.bound 0}) = e.logicSupport ∪ {.free y}
+    rw [show LogicVar.openSupport 0 y
+        (e.logicSupport ∪ {.bound 0}) =
+          LogicVar.openSupport 0 y e.logicSupport ∪
+            LogicVar.openSupport 0 y {.bound 0} by
+      simp [LogicVar.openSupport]]
+    rw [hsupp]
+    simp [LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap]
+  · intro ρ σ same
+    change (LogicVar.bound 0 ∉ e.logicSupport ∧
+        ∃ v,
+          (ρ.swapBack (.bound 0) (.free y)).assignment.lookup (.bound 0) =
+              some v ∧
+          (instantiateTerm e
+            (ρ.swapBack (.bound 0) (.free y)).assignment).reaches v) ↔
+      LogicVar.free y ∉ e.logicSupport ∧
+        ∃ v, σ.assignment.lookup (.free y) = some v ∧
+          (instantiateTerm e σ.assignment).reaches v
+    have hbound : LogicVar.bound 0 ∉ e.logicSupport :=
+      termLogicSupport_locallyClosed e closed 0
+    have hfree : LogicVar.free y ∉ e.logicSupport := by
+      intro hy
+      apply fresh
+      rw [← freeAtomSet_term_logicSupport e,
+        LogicVar.mem_freeAtomSet_iff]
+      exact hy
+    have hagree : ∀ ξ, ξ ∈ e.logicSupport →
+        (ρ.swapBack (.bound 0) (.free y)).assignment.lookup ξ =
+          σ.assignment.lookup ξ := by
+      intro ξ hξ
+      simp only [AssignmentOn.swapBack, Assignment.lookup_swap]
+      change ρ.assignment.lookup
+          (LogicVar.swap (.bound 0) (.free y) ξ) =
+        σ.assignment.lookup ξ
+      have hb : ξ ≠ LogicVar.bound 0 := fun h => hbound (h ▸ hξ)
+      have hf : ξ ≠ LogicVar.free y := fun h => hfree (h ▸ hξ)
+      rw [show LogicVar.swap (.bound 0) (.free y) ξ = ξ by
+        simp [LogicVar.swap, hb, hf]]
+      exact congrArg (fun a => a.lookup ξ) same
+    have hterm : instantiateTerm e
+        (ρ.swapBack (.bound 0) (.free y)).assignment =
+          instantiateTerm e σ.assignment :=
+      instantiateTerm_eq_of_agreeOn e hagree
+    have hresult :
+        (ρ.swapBack (.bound 0) (.free y)).assignment.lookup (.bound 0) =
+          σ.assignment.lookup (.free y) := by
+      simp only [AssignmentOn.swapBack, Assignment.lookup_swap]
+      change ρ.assignment.lookup
+          (LogicVar.swap (.bound 0) (.free y) (.bound 0)) = _
+      rw [LogicVar.swap_left]
+      exact congrArg (fun a => a.lookup (.free y)) same
+    simp only [hbound, hfree, not_false_eq_true, true_and]
+    rw [hresult, hterm]
+
+theorem resultAt_shift_openAt (X : Finset LogicVar) (e : Term) (y : Atom)
+    (closedX : LogicVar.LocallyClosed X) (closedE : e.locallyClosed)
+    (support : e.logicSupport ⊆ X) (fresh : LogicVar.free y ∉ X) :
+    (resultAt (X.image (LogicVar.shiftFrom 0)) (shiftTerm e) (.bound 0)).openAt
+        0 y = resultAt X e (.free y) := by
+  have hshift : X.image (LogicVar.shiftFrom 0) = X :=
+    LogicVar.image_shiftFrom_eq_of_locallyClosed X 0 closedX
+  have hopen : LogicVar.openSupport 0 y X = X := by
+    apply LogicVar.openSupport_eq_self_of_fresh
+    · exact closedX 0
+    · exact fresh
+  have freshE : y ∉ e.support := by
+    intro hy
+    apply fresh
+    apply support
+    rw [← LogicVar.mem_freeAtomSet_iff,
+      freeAtomSet_term_logicSupport]
+    exact hy
+  simp only [resultAt, Formula.openAt, hshift, hopen]
+  rw [resultQualifier_shift_openAt e y closedE freshE]
+
+theorem resultFirst_openAt (Δ : BasicEnv) (τ : ContextType) (e : Term)
+    (y : Atom)
+    (closed : LogicVar.LocallyClosed (relevantSupport Δ τ e))
+    (closedE : e.locallyClosed)
+    (support : e.logicSupport ⊆ relevantSupport Δ τ e)
+    (fresh : LogicVar.free y ∉ relevantSupport Δ τ e) :
+    (resultFirst Δ τ e).openAt 0 y =
+      resultAt (relevantSupport Δ τ e) e (.free y) := by
+  exact resultAt_shift_openAt (relevantSupport Δ τ e) e y closed closedE
+    support fresh
+
 /-- A result atom names the actual result reached from every store in its
 ambient capability. -/
 theorem models_resultAt_lookup {m : Capability} {X : Finset LogicVar}

@@ -104,6 +104,12 @@ theorem eq_image_free_of_locallyClosed {X : Finset LogicVar}
       simp only [LogicVar.free.injEq, exists_eq_right]
       exact (mem_freeAtomSet_iff X x).symm
 
+theorem image_shiftFrom_eq_of_locallyClosed (X : Finset LogicVar) (k : Nat)
+    (closed : LocallyClosed X) : X.image (shiftFrom k) = X := by
+  rw [LogicVar.eq_image_free_of_locallyClosed closed]
+  rw [Finset.image_image]
+  simp [Function.comp_def, shiftFrom]
+
 end LogicVar
 
 /-- Formulas of context logic.  `wand d P Q` binds `d` logical variables in
