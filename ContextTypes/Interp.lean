@@ -1074,6 +1074,16 @@ theorem interpUnder_minimal («Σ» : BasicEnv) (Γ : Context) :
   cases Γ <;>
     simp [interpUnder, Context.freeAtoms, BasicEnv.restrict_restrict]
 
+/-- The ambient erased world is observed by the context interpretation. -/
+theorem erasureUnder_domain_subset_freeAtoms_interpUnder
+    («Σ» : BasicEnv) (Γ : Context) :
+    (erasureUnder «Σ» Γ).domain ⊆ (interpUnder «Σ» Γ).freeAtoms := by
+  cases Γ <;>
+    simp [erasureUnder, interpUnder, Context.freeAtoms, Context.erase] <;>
+    intro x hx <;>
+    simp only [Finset.mem_union, Finset.mem_inter, Finset.mem_sdiff] at hx ⊢ <;>
+    tauto
+
 theorem models_interpUnder_basicWorld {m : Capability} {«Σ» : BasicEnv}
     {Γ : Context} (h : m ⊨ interpUnder «Σ» Γ) :
     m ⊨ Interp.basicWorld (erasureUnder «Σ» Γ) := by
