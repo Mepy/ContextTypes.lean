@@ -616,6 +616,75 @@ def guard (d : Nat) (Δ : BasicEnv) (τ : ContextType) (e : Term) : Formula :=
   change LogicVar.freeAtomSet (Δ.domain.image LogicVar.free) = Δ.domain
   exact Formula.LogicVar.freeAtomSet_image_free Δ.domain
 
+theorem models_wellFormed_iff (m : Capability) (d : Nat)
+    (Δ : BasicEnv) (τ : ContextType) :
+    m ⊨ wellFormed d Δ τ ↔
+      Δ.domain ⊆ m.domain ∧ τ.WellFormedAt d Δ.domain := by
+  rw [wellFormed]
+  constructor
+  · intro h
+    obtain ⟨_, scope, holds⟩ :=
+      (Formula.models_fiberAtom_iff m (wellFormedQualifier d Δ τ)).1 h
+    refine ⟨?_, ?_⟩
+    · simpa [wellFormedQualifier, Qualifier.freeAtoms,
+        LogicVar.freeAtoms] using scope
+    · obtain ⟨σ, hσ⟩ := m.nonempty
+      obtain ⟨_, ρ, hρ, _⟩ := holds σ hσ
+      exact hρ
+  · rintro ⟨scope, wf⟩
+    apply (Formula.models_fiberAtom_iff m
+      (wellFormedQualifier d Δ τ)).2
+    refine ⟨?_, ?_, ?_⟩
+    · intro k hk
+      simp [wellFormedQualifier] at hk
+    · simpa [wellFormedQualifier, Qualifier.freeAtoms,
+        LogicVar.freeAtoms] using scope
+    · intro σ hσ
+      have hdom :
+          (σ.restrict (wellFormedQualifier d Δ τ).freeAtoms).domain =
+            (wellFormedQualifier d Δ τ).freeAtoms := by
+        rw [Store.domain_restrict, m.mem_domain hσ,
+          Finset.inter_eq_right.2]
+        simpa [wellFormedQualifier, Qualifier.freeAtoms,
+          LogicVar.freeAtoms] using scope
+      let ρ : AssignmentOn (wellFormedQualifier d Δ τ).support :=
+        { assignment := (σ.restrict Δ.domain).toAssignment
+          domain_eq := by
+            rw [Store.toAssignment_domain, Store.domain_restrict,
+              m.mem_domain hσ, Finset.inter_eq_right.2 scope]
+            rfl }
+      refine ⟨hdom, ρ, wf, ?_⟩
+      intro x
+      simp [ρ, wellFormedQualifier, Qualifier.freeAtoms,
+        LogicVar.freeAtoms]
+
+theorem wellFormed_openAt_eq (d : Nat) (Δ : BasicEnv)
+    (τ : ContextType) (k : Nat) (y : Atom) (fresh : y ∉ Δ.domain) :
+    (wellFormed d Δ τ).openAt k y = wellFormed d Δ τ := by
+  let q := wellFormedQualifier d Δ τ
+  have hbound : LogicVar.bound k ∉ q.support := by
+    simp [q, wellFormedQualifier]
+  have hfree : LogicVar.free y ∉ q.support := by
+    simpa [q, wellFormedQualifier] using fresh
+  have hq : q.openAt k y = q := q.openAt_fresh k y hbound hfree
+  have hsupp : LogicVar.openSupport k y q.support = q.support := by
+    apply LogicVar.openSupport_eq_self_of_fresh
+    · exact hbound
+    · exact hfree
+  simp only [wellFormed, Formula.fiberAtom, Formula.openAt]
+  change Formula.fiber (LogicVar.openSupport k y q.support)
+      (Formula.atom (q.openAt k y)) = Formula.fiber q.support (Formula.atom q)
+  rw [hsupp, hq]
+
+theorem models_wellFormed_shift_openAt {m : Capability} {d : Nat}
+    {Δ : BasicEnv} {τ : ContextType} {k : Nat} {y : Atom}
+    (fresh : y ∉ Δ.domain) (h : m ⊨ wellFormed d Δ τ) :
+    m ⊨ (wellFormed (d + 1) Δ (τ.shiftFrom k)).openAt 0 y := by
+  rw [wellFormed_openAt_eq (d + 1) Δ (τ.shiftFrom k) 0 y fresh]
+  apply (models_wellFormed_iff m (d + 1) Δ (τ.shiftFrom k)).2
+  exact ⟨(models_wellFormed_iff m d Δ τ).1 h |>.1,
+    ((models_wellFormed_iff m d Δ τ).1 h |>.2).shiftFrom k⟩
+
 theorem models_basicWorld_iff (m : Capability) (Δ : BasicEnv) :
     m ⊨ basicWorld Δ ↔
       Δ.domain ⊆ m.domain ∧
