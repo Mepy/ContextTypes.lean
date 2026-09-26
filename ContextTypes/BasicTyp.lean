@@ -711,6 +711,17 @@ theorem ScopedAt.freeAtoms_subset {q : Qualifier} {d : Nat}
   rw [Qualifier.mem_freeAtoms_iff] at hx
   exact h (.free x) hx
 
+theorem ScopedAt.regularize {q : Qualifier} {d : Nat}
+    {X Y : Finset Atom} (h : q.ScopedAt d X)
+    (hY : q.freeAtoms ⊆ Y) : q.ScopedAt d Y := by
+  intro ξ hξ
+  cases ξ with
+  | bound k => exact h (.bound k) hξ
+  | free x =>
+      apply hY
+      rw [Qualifier.mem_freeAtoms_iff]
+      exact hξ
+
 theorem ScopedAt.shiftFrom {q : Qualifier} {d : Nat} {X : Finset Atom}
     (h : q.ScopedAt d X) (k : Nat) :
     (q.shiftFrom k).ScopedAt (d + 1) X := by
@@ -965,6 +976,33 @@ theorem WellFormedAt.freeAtoms_subset {τ : ContextType} {d : Nat}
           exact Finset.notMem_empty x this)
       · exact ih₂ h.2 hx
   | persist τ ih => exact ih h
+
+theorem WellFormedAt.regularize {τ : ContextType} {d : Nat}
+    {X Y : Finset Atom} (h : τ.WellFormedAt d X)
+    (hY : τ.freeAtoms ⊆ Y) : τ.WellFormedAt d Y := by
+  induction τ generalizing d X Y with
+  | «over» b q => exact Qualifier.ScopedAt.regularize h hY
+  | under b q => exact Qualifier.ScopedAt.regularize h hY
+  | inter τ₁ τ₂ ih₁ ih₂ =>
+      refine ⟨ih₁ h.1 ?_, ih₂ h.2.1 ?_, h.2.2⟩
+      · exact Finset.Subset.trans Finset.subset_union_left hY
+      · exact Finset.Subset.trans Finset.subset_union_right hY
+  | union τ₁ τ₂ ih₁ ih₂ =>
+      refine ⟨ih₁ h.1 ?_, ih₂ h.2.1 ?_, h.2.2⟩
+      · exact Finset.Subset.trans Finset.subset_union_left hY
+      · exact Finset.Subset.trans Finset.subset_union_right hY
+  | sum τ₁ τ₂ ih₁ ih₂ =>
+      refine ⟨ih₁ h.1 ?_, ih₂ h.2.1 ?_, h.2.2⟩
+      · exact Finset.Subset.trans Finset.subset_union_left hY
+      · exact Finset.Subset.trans Finset.subset_union_right hY
+  | arrow τ₁ τ₂ ih₁ ih₂ =>
+      refine ⟨ih₁ h.1 ?_, ih₂ h.2 ?_⟩
+      · exact Finset.Subset.trans Finset.subset_union_left hY
+      · exact Finset.Subset.trans Finset.subset_union_right hY
+  | wand τ₁ τ₂ ih₁ ih₂ =>
+      refine ⟨h.1, ih₂ h.2 ?_⟩
+      exact Finset.Subset.trans Finset.subset_union_right hY
+  | persist τ ih => exact ih h hY
 
 end ContextType
 

@@ -743,6 +743,113 @@ theorem models_basicWorld_iff (m : Capability) (Δ : BasicEnv) :
         simp [ρ, basicWorldQualifier, Qualifier.freeAtoms,
           LogicVar.freeAtoms]
 
+theorem models_basicTyping_ret_free {m : Capability} {Δ : BasicEnv}
+    {y : Atom} {T : SimpleType} (hworld : m ⊨ basicWorld Δ)
+    (hlookup : Δ.lookup y = some T) :
+    m ⊨ basicTyping Δ (.ret (.free y)) T := by
+  unfold basicTyping Formula.fiberAtom
+  let q := basicTypingQualifier Δ (.ret (.free y)) T
+  change m ⊨ Formula.fiberAtom q
+  have hyΔ : y ∈ Δ.domain := Finmap.mem_iff.mpr ⟨T, hlookup⟩
+  have hqsupp : q.support = Δ.domain.image LogicVar.free := by
+    simp only [q, basicTypingQualifier, Term.logicSupportAt,
+      Value.logicSupportAt, Finset.union_eq_left]
+    intro ξ hξ
+    have hξy : ξ = .free y := by simpa using hξ
+    subst ξ
+    exact Finset.mem_image.2 ⟨y, hyΔ, rfl⟩
+  have hqfree : q.freeAtoms = Δ.domain := by
+    change LogicVar.freeAtomSet q.support = Δ.domain
+    rw [hqsupp]
+    exact Formula.LogicVar.freeAtomSet_image_free Δ.domain
+  obtain ⟨scope, typed⟩ := (models_basicWorld_iff m Δ).1 hworld
+  apply (Formula.models_fiberAtom_iff m q).2
+  refine ⟨?_, ?_, ?_⟩
+  · intro k hk
+    rw [hqsupp] at hk
+    simp at hk
+  · simpa [hqfree] using scope
+  · intro σ hσ
+    let s := σ.restrict q.freeAtoms
+    have hsdom : s.domain = q.freeAtoms := by
+      simp only [s]
+      rw [Store.domain_restrict, m.mem_domain hσ,
+        Finset.inter_eq_right.2]
+      simpa [hqfree] using scope
+    let ρ : AssignmentOn q.support :=
+      { assignment := s.toAssignment
+        domain_eq := by
+          rw [Store.toAssignment_domain, hsdom, hqfree, hqsupp] }
+    refine ⟨hsdom, ρ, ?_, ?_⟩
+    · change ((.ret (.free y) : Term).support ⊆ Δ.domain) ∧
+        storeTyped
+          (fun ξ => match ξ with
+            | .bound _ => none
+            | .free x => Δ.lookup x)
+          ρ.assignment ∧
+        BasicTermTyp ∅
+          (instantiateTerm (.ret (.free y)) ρ.assignment) T
+      refine ⟨by simpa [Term.support, Value.support], ?_, ?_⟩
+      · intro ξ U hU
+        cases ξ with
+        | bound k => simp at hU
+        | free x =>
+            obtain ⟨v, hv, hvU⟩ := typed σ hσ x U hU
+            refine ⟨v, ?_, hvU⟩
+            have hx : x ∈ Δ.domain := Finmap.mem_iff.mpr ⟨U, hU⟩
+            simp [ρ, s, hqfree, Store.lookup_restrict, hx, hv]
+      · obtain ⟨v, hv, hvT⟩ := typed σ hσ y T hlookup
+        simpa [ρ, s, hqfree, Store.lookup_restrict, hyΔ, hv,
+          instantiateTerm, instantiateTermAt, instantiateValueAt] using
+          BasicTermTyp.ret hvT
+    · intro x
+      simp [ρ, s]
+
+theorem models_total_ret_free {m : Capability} {Δ : BasicEnv}
+    {y : Atom} {T : SimpleType} (hworld : m ⊨ basicWorld Δ)
+    (hlookup : Δ.lookup y = some T) :
+    m ⊨ total (.ret (.free y)) := by
+  have hbasic := models_basicTyping_ret_free hworld hlookup
+  unfold total Formula.fiberAtom
+  let q := totalQualifier (.ret (.free y))
+  change m ⊨ Formula.fiberAtom q
+  have hqsupp : q.support = {.free y} := by
+    simp [q, totalQualifier, Term.logicSupportAt, Value.logicSupportAt]
+  have hqfree : q.freeAtoms = {y} := by
+    change LogicVar.freeAtomSet q.support = {y}
+    rw [hqsupp]
+    simp
+  have hy : y ∈ m.domain := by
+    apply (models_basicWorld_iff m Δ).1 hworld |>.1
+    exact Finmap.mem_iff.mpr ⟨T, hlookup⟩
+  apply (Formula.models_fiberAtom_iff m q).2
+  refine ⟨?_, ?_, ?_⟩
+  · intro k hk
+    rw [hqsupp] at hk
+    simp at hk
+  · simpa [hqfree] using hy
+  · intro σ hσ
+    obtain ⟨v, hv, hvT⟩ :=
+      (models_basicWorld_iff m Δ).1 hworld |>.2 σ hσ y T hlookup
+    let s := σ.restrict q.freeAtoms
+    have hsdom : s.domain = q.freeAtoms := by
+      simp only [s]
+      rw [Store.domain_restrict, m.mem_domain hσ,
+        Finset.inter_eq_right.2]
+      simpa [hqfree] using hy
+    let ρ : AssignmentOn q.support :=
+      { assignment := s.toAssignment
+        domain_eq := by
+          rw [Store.toAssignment_domain, hsdom, hqfree, hqsupp]
+          simp }
+    refine ⟨hsdom, ρ, ?_, ?_⟩
+    · change (instantiateTerm (.ret (.free y)) ρ.assignment).MustTerminate
+      simpa [ρ, s, hqfree, Store.lookup_restrict, hv,
+        instantiateTerm, instantiateTermAt, instantiateValueAt] using
+        Term.MustTerminate.ret v hvT.locallyClosed
+    · intro x
+      simp [ρ, s]
+
 theorem models_basicTyping_term {m : Capability} {Δ : BasicEnv}
     {e : Term} {T : SimpleType} (closed : e.locallyClosed)
     (h : m ⊨ basicTyping Δ e T) {σ : Store} (hσ : σ ∈ m) :
@@ -1287,6 +1394,99 @@ theorem models_resultTotal_openAt {m : Capability}
         instantiateValueAt] using Term.MustTerminate.ret v hvT.locallyClosed
     · intro x
       simp [a, s]
+
+theorem models_guard_result_alias {m : Capability} {d : Nat}
+    {Δ : BasicEnv} {τ : ContextType} {e : Term} {y : Atom}
+    {X : Finset LogicVar}
+    (closedX : LogicVar.LocallyClosed X) (closedE : e.locallyClosed)
+    (he : e.logicSupport ⊆ X) (hτ : τ.support ⊆ X)
+    (fresh : LogicVar.free y ∉ X)
+    (lookup : Δ.lookup y = some τ.erase)
+    (hres : m ⊨ resultAt X e (.free y))
+    (hguard : m ⊨ guard d (relevantEnv Δ τ e) τ e) :
+    m ⊨ guard d (relevantEnv Δ τ (.ret (.free y))) τ
+      (.ret (.free y)) := by
+  let Δe := relevantEnv Δ τ e
+  let Δy := relevantEnv Δ τ (.ret (.free y))
+  have hyτ : y ∉ τ.freeAtoms := by
+    intro hy
+    apply fresh
+    exact hτ ((τ.free_mem_support_iff y).2 hy)
+  have hye : y ∉ e.support := by
+    intro hy
+    apply fresh
+    apply he
+    rw [← LogicVar.mem_freeAtomSet_iff,
+      freeAtomSet_term_logicSupport]
+    exact hy
+  have hyM : y ∈ m.domain := by
+    apply Formula.models_scope hres
+    simp [LogicVar.freeAtoms]
+  have hlookupY : Δy.lookup y = some τ.erase := by
+    simp [Δy, relevantEnv, relevantAtoms, Term.support, Value.support,
+      hyτ, lookup]
+  have hwf := Formula.models_and_elim_left hguard
+  have hrest := Formula.models_and_elim_right hguard
+  have hworld := Formula.models_and_elim_left hrest
+  have hbasic := Formula.models_and_elim_left
+    (Formula.models_and_elim_right hrest)
+  have hwfInfo := (models_wellFormed_iff m d Δe τ).1 hwf
+  have hworldInfo := (models_basicWorld_iff m Δe).1 hworld
+  have hscopeY : Δy.domain ⊆ m.domain := by
+    intro x hx
+    rw [relevantEnv_domain] at hx
+    have hx' := Finset.mem_inter.1 hx
+    rcases Finset.mem_union.1 hx'.2 with hxτ | hxy
+    · apply hwfInfo.1
+      rw [relevantEnv_domain]
+      exact Finset.mem_inter.2
+        ⟨hx'.1, Finset.mem_union_left _ hxτ⟩
+    · have hxy' : x = y := by
+        simpa [Term.support, Value.support] using hxy
+      subst x
+      exact hyM
+  have hwfY : m ⊨ wellFormed d Δy τ := by
+    apply (models_wellFormed_iff m d Δy τ).2
+    refine ⟨hscopeY, hwfInfo.2.regularize ?_⟩
+    intro x hx
+    rw [relevantEnv_domain]
+    have hxE := hwfInfo.2.freeAtoms_subset hx
+    rw [relevantEnv_domain] at hxE
+    have hxE' := Finset.mem_inter.1 hxE
+    exact Finset.mem_inter.2
+      ⟨hxE'.1, Finset.mem_union_left _ hx⟩
+  have hworldY : m ⊨ basicWorld Δy := by
+    apply (models_basicWorld_iff m Δy).2
+    refine ⟨hscopeY, ?_⟩
+    intro σ hσ x T hx
+    by_cases hxy : x = y
+    · subst x
+      have hT : T = τ.erase := by
+        rw [hlookupY] at hx
+        exact Option.some.inj hx.symm
+      subst T
+      exact models_resultAt_typed closedX closedE he fresh hres hbasic σ hσ
+    · have hxin : x ∈ relevantAtoms τ (.ret (.free y)) := by
+        by_contra hn
+        simp [Δy, relevantEnv, BasicEnv.lookup_restrict, hn] at hx
+      have hxΔ : Δ.lookup x = some T := by
+        simpa [Δy, relevantEnv, BasicEnv.lookup_restrict, hxin] using hx
+      have hxτ : x ∈ τ.freeAtoms := by
+        rcases Finset.mem_union.1 hxin with hxτ | hxret
+        · exact hxτ
+        · have : x = y := by
+            simpa [Term.support, Value.support] using hxret
+          exact (hxy this).elim
+      have hxE : Δe.lookup x = some T := by
+        simp [Δe, relevantEnv, BasicEnv.lookup_restrict,
+          relevantAtoms, hxτ, hxΔ]
+      exact hworldInfo.2 σ hσ x T hxE
+  unfold guard
+  apply Formula.models_and_intro hwfY
+  apply Formula.models_and_intro hworldY
+  apply Formula.models_and_intro
+  · exact models_basicTyping_ret_free hworldY hlookupY
+  · exact models_total_ret_free hworldY hlookupY
 
 /-! ## Closed static atoms -/
 
