@@ -1298,6 +1298,51 @@ theorem Extends.restrict_base {F : FiberExtension} {m n : Capability}
         · rw [output_store_domain (projection_domain h.applicable hτ) hrel hρ]
           exact h.applicable.2
 
+/-- A fixed fiber extension has one resulting capability on any fixed base. -/
+theorem Extends.unique {F : Capability.FiberExtension} {m n₁ n₂ : Capability}
+    (h₁ : F.Extends m n₁) (h₂ : F.Extends m n₂) : n₁ = n₂ := by
+  apply Capability.ext
+  · exact h₁.domain_eq.trans h₂.domain_eq.symm
+  · intro τ
+    constructor
+    · exact fun hτ => (h₂.mem_iff τ).2 ((h₁.mem_iff τ).1 hτ)
+    · exact fun hτ => (h₁.mem_iff τ).2 ((h₂.mem_iff τ).1 hτ)
+
+/-- Projecting an extension keeps all its outputs and any input superset. -/
+theorem Extends.restrictInputs {F : Capability.FiberExtension} {m n : Capability}
+    (h : F.Extends m n) {X : Finset Atom} (input : F.input ⊆ X) (scope : X ⊆ m.domain) :
+    F.Extends (m.restrict X) (n.restrict (X ∪ F.output)) := by
+  have hX : (m.restrict X).domain = X := by
+    rw [Capability.restrict_domain, Finset.inter_eq_right.2 scope]
+  have projection (σ : Store) (hσ : σ ∈ m) :
+      (σ.restrict X).restrict F.input = σ.restrict F.input := by
+    rw [Store.restrict_restrict, Finset.inter_eq_right.2 input]
+  have merged (σ ρ : Store) (hσ : σ ∈ m) (hρ : ρ.domain = F.output) :
+      (σ.merge ρ).restrict (X ∪ F.output) = (σ.restrict X).merge ρ := by
+    rw [Store.restrict_merge, Store.restrict_eq_self ρ (by rw [hρ]; exact Finset.subset_union_right)]
+    congr 1
+    apply Store.restrict_congr
+    intro x hx
+    have hxO : x ∉ F.output := fun hxO =>
+      Finset.disjoint_left.1 h.applicable.2 hxO (by rwa [m.mem_domain hσ] at hx)
+    simp [hxO]
+  refine ⟨?_, ?_, ?_⟩
+  · rw [Applicable, hX]
+    exact ⟨input, h.applicable.2.mono_right scope⟩
+  · rw [Capability.restrict_domain, h.domain_eq, hX]
+    exact Finset.inter_eq_right.2 (Finset.union_subset_union scope (Finset.Subset.refl _))
+  · intro τ
+    constructor
+    · rintro ⟨υ, hυ, rfl⟩
+      obtain ⟨σ, w, ρ, hσ, hrel, hρ, rfl⟩ := h.mem_iff υ |>.1 hυ
+      refine ⟨σ.restrict X, w, ρ, ⟨σ, hσ, rfl⟩, ?_, hρ, ?_⟩
+      · rwa [projection σ hσ]
+      · exact merged σ ρ hσ (output_store_domain (projection_domain h.applicable hσ) hrel hρ)
+    · rintro ⟨σ, w, ρ, ⟨υ, hυ, rfl⟩, hrel, hρ, rfl⟩
+      rw [projection υ hυ] at hrel
+      refine ⟨υ.merge ρ, (h.mem_iff _).2 ⟨υ, w, ρ, hυ, hrel, hρ, rfl⟩, ?_⟩
+      exact merged υ ρ hυ (output_store_domain (projection_domain h.applicable hυ) hrel hρ)
+
 theorem Extends.singleton_of_output_lookup {F : FiberExtension}
     {σ : Store} {n : Capability} {y : Atom}
     (h : F.Extends (Capability.singleton σ) n)

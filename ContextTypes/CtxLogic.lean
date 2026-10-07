@@ -613,6 +613,20 @@ theorem openManyAt_cons (P : Formula) (k d : Nat) (x : Atom) (η : Fin d → Ato
       congr 1
       omega
 
+/-- A fresh finite family commutes with a distinct binder opening in the
+context logic, including qualifiers' name transpositions. -/
+theorem openManyAt_openAt_comm (P : Formula) (k d : Nat) (η : Fin d → Atom)
+    (l : Nat) (x : Atom) (apart : ∀ i : Fin d, k + i.val ≠ l) (names : ∀ i, η i ≠ x) :
+    (P.openManyAt k d η).openAt l x = (P.openAt l x).openManyAt k d η := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      rw [openManyAt, Formula.openAt_comm _ (k + d) l _ x
+        (by simpa using apart (Fin.last d)) (names (Fin.last d)),
+        ih (fun i => η i.castSucc) (fun i => by simpa using apart i.castSucc)
+          (fun i => names i.castSucc)]
+      rfl
+
 theorem openManyAt_all (P : Formula) (k d : Nat) (η : Fin d → Atom) :
     (Formula.all P).openManyAt k d η = .all (P.openManyAt (k + 1) d η) := by
   induction d with
@@ -1038,6 +1052,26 @@ theorem models_impl_intro {m : Capability} {P Q : Formula}
   rw [Capability.restrict_domain, Finset.inter_eq_right]
   exact scope
 
+/-- With all observations in scope, implication is implication between the
+two satisfaction propositions on the same capability. -/
+theorem models_impl_iff_of_scope (m : Capability) (P Q : Formula)
+    (scope : (P ⇒ᶜ Q).freeAtoms ⊆ m.domain) :
+    m ⊨ (P ⇒ᶜ Q) ↔ (m ⊨ P → m ⊨ Q) := by
+  constructor
+  · exact fun h => models_impl_elim h
+  · intro h
+    apply models_impl_intro scope
+    intro n href hP
+    have hdom : (m.restrict (P ⇒ᶜ Q).freeAtoms).domain = (P ⇒ᶜ Q).freeAtoms := by
+      rw [Capability.restrict_domain, Finset.inter_eq_right.2 scope]
+    have same : m.restrict (P ⇒ᶜ Q).freeAtoms = n.restrict (P ⇒ᶜ Q).freeAtoms := by
+      change m.restrict (P ⇒ᶜ Q).freeAtoms = n.restrict (m.restrict (P ⇒ᶜ Q).freeAtoms).domain at href
+      rwa [hdom] at href
+    have hP' := (models_projection (P ⇒ᶜ Q).freeAtoms
+      (by simp only [freeAtoms_impl]; exact Finset.subset_union_left) same).2 hP
+    exact (models_projection (P ⇒ᶜ Q).freeAtoms
+      (by simp only [freeAtoms_impl]; exact Finset.subset_union_right) same).1 (h hP')
+
 theorem models_star_iff (m : Capability) (P Q : Formula) :
     m ⊨ (P ∗ Q) ↔
       let r := m.restrict (P ∗ Q).freeAtoms
@@ -1229,6 +1263,55 @@ theorem models_all_iff_refines (m : Capability) (P : Formula) :
     exact hall y (fun hyL => hy (Finset.mem_union_left _ hyL))
       (fun hyP => hy (Finset.mem_union_right _ hyP)) n hExt.refines
       (by rw [hExt.domain_eq, hdom, hFout])
+
+/-- Universal quantification can retain the full ambient capability, including
+bindings the quantified formula does not observe. -/
+theorem models_all_iff_full (m : Capability) (P : Formula) :
+    m ⊨ Formula.all P ↔
+      P.freeAtoms ⊆ m.domain ∧
+        ∃ L : Finset Atom, ∀ y, y ∉ L → y ∉ m.domain →
+          ∀ n : Capability, m ⊑ n → n.domain = m.domain ∪ {y} → n ⊨ P.openAt 0 y := by
+  constructor
+  · intro h
+    obtain ⟨scope, L, hall⟩ := (models_all_iff_refines m P).1 h
+    refine ⟨scope, L, ?_⟩
+    intro y hy fresh n href hndom
+    let X := P.freeAtoms ∪ {y}
+    have refines : m.restrict P.freeAtoms ⊑ n.restrict X := by
+      change m.restrict P.freeAtoms = (n.restrict X).restrict (m.restrict P.freeAtoms).domain
+      rw [Capability.restrict_domain, Finset.inter_eq_right.2 scope,
+        Capability.restrict_restrict, Finset.inter_eq_right.2 Finset.subset_union_left]
+      have same := congrArg (fun r : Capability => r.restrict P.freeAtoms) href
+      simpa only [Capability.restrict_restrict, Finset.inter_eq_right.2 scope] using same
+    have domain : (n.restrict X).domain = X := by
+      rw [Capability.restrict_domain, hndom]
+      exact Finset.inter_eq_right.2 (Finset.union_subset_union scope (Finset.Subset.refl _))
+    have hn := hall y hy (fun hx => fresh (scope hx)) (n.restrict X) refines domain
+    exact (models_restrict_superset n (P.openAt 0 y) (X := X)
+      (by simpa only [X, Finset.union_comm] using freeAtoms_openAt_subset P 0 y)).2 hn
+  · rintro ⟨scope, L, hall⟩
+    apply (models_all_iff_refines m P).2
+    refine ⟨scope, L ∪ m.domain, ?_⟩
+    intro y hy freshP n href hndom
+    have fresh : y ∉ m.domain := fun hx => hy (Finset.mem_union_right _ hx)
+    have hdom : (m.restrict P.freeAtoms).domain = P.freeAtoms := by
+      rw [Capability.restrict_domain, Finset.inter_eq_right.2 scope]
+    obtain ⟨F, hFin, hFout, hExt⟩ := Capability.FiberExtension.exists_of_refines href
+      (by rwa [hdom]) (by rw [hdom]; simpa using freshP)
+    have applicable : F.Applicable m := by
+      rw [Capability.FiberExtension.Applicable, hFin, hdom, hFout]
+      exact ⟨scope, by simpa using fresh⟩
+    obtain ⟨n', hExt'⟩ := F.extends_exists m applicable
+    have hproject := hExt'.restrictInputs (X := P.freeAtoms)
+      (by rw [hFin, hdom]) scope
+    have same : n'.restrict (P.freeAtoms ∪ {y}) = n := by
+      rw [← hFout]
+      exact hproject.unique hExt
+    have hn' := hall y (fun hx => hy (Finset.mem_union_left _ hx)) fresh n'
+      hExt'.refines (by simpa only [hFout] using hExt'.domain_eq)
+    apply (models_restrict_superset n' (P.openAt 0 y) (X := P.freeAtoms ∪ {y})
+      (by simpa only [Finset.union_comm] using freeAtoms_openAt_subset P 0 y)).1 at hn'
+    rwa [same] at hn'
 
 theorem models_over_iff (m : Capability) (P : Formula) :
     m ⊨ (🄾 P) ↔
