@@ -3833,6 +3833,9 @@ def measure : ContextType → Nat
     (τ.shiftFrom k).measure = τ.measure := by
   induction τ generalizing k <;> simp_all [shiftFrom, measure]
 
+theorem measure_pos (τ : ContextType) : 0 < τ.measure := by
+  cases τ <;> simp only [measure] <;> omega
+
 def interpFuel : Nat → Nat → BasicEnv → ContextType → Term → Formula
   | 0, d, Δ, τ, e =>
       let Δ' := Interp.relevantEnv Δ τ e
@@ -3873,6 +3876,99 @@ def interpFuel : Nat → Nat → BasicEnv → ContextType → Term → Formula
         | .persist τ =>
             .all (Interp.resultFirst Δ' (.persist τ) e ⇒ᶜ
               □ interpFuel gas (d + 1) Δ' (τ.shiftFrom 0) (.ret (.bound 0)))
+
+/-- Once enough fuel is available to visit the entire context type, the
+result-first interpretation is independent of the fuel allowance. -/
+theorem interpFuel_eq_of_measure_le (gas gas' d : Nat) (Δ : BasicEnv)
+    (τ : ContextType) (e : Term)
+    (lower : τ.measure ≤ gas) (lower' : τ.measure ≤ gas') :
+    interpFuel gas d Δ τ e = interpFuel gas' d Δ τ e := by
+  have aux : ∀ n (τ : ContextType), τ.measure = n →
+      ∀ gas gas' d Δ e, τ.measure ≤ gas → τ.measure ≤ gas' →
+      interpFuel gas d Δ τ e = interpFuel gas' d Δ τ e := by
+    intro n
+    induction n using Nat.strong_induction_on with
+    | h n ih =>
+        intro τ hmeasure gas gas' d Δ e lower lower'
+        cases gas with
+        | zero =>
+            have := τ.measure_pos
+            omega
+        | succ gas =>
+            cases gas' with
+            | zero =>
+                have := τ.measure_pos
+                omega
+            | succ gas' =>
+                have hchild (τ' : ContextType) (d' : Nat) (Δ' : BasicEnv) (e' : Term)
+                    (smaller : τ'.measure < τ.measure) :
+                    interpFuel gas d' Δ' τ' e' = interpFuel gas' d' Δ' τ' e' :=
+                  ih τ'.measure (by omega) τ' rfl gas gas' d' Δ' e'
+                    (by omega) (by omega)
+                cases τ with
+                | «over» b q => rfl
+                | under b q => rfl
+                | inter τ₁ τ₂ =>
+                    have h₁ := hchild τ₁ d Δ e (by
+                      simp only [measure]
+                      omega)
+                    have h₂ := hchild τ₂ d Δ e (by
+                      simp only [measure]
+                      omega)
+                    simp only [interpFuel]
+                    rw [h₁, h₂]
+                | union τ₁ τ₂ =>
+                    have h₁ := hchild τ₁ d Δ e (by
+                      simp only [measure]
+                      omega)
+                    have h₂ := hchild τ₂ d Δ e (by
+                      simp only [measure]
+                      omega)
+                    simp only [interpFuel]
+                    rw [h₁, h₂]
+                | sum τ₁ τ₂ =>
+                    have h₁ := hchild (τ₁.shiftFrom 0) (d + 1)
+                      (Interp.relevantEnv Δ (.sum τ₁ τ₂) e) (.ret (.bound 0)) (by
+                        simp only [measure_shiftFrom, measure]
+                        omega)
+                    have h₂ := hchild (τ₂.shiftFrom 0) (d + 1)
+                      (Interp.relevantEnv Δ (.sum τ₁ τ₂) e) (.ret (.bound 0)) (by
+                        simp only [measure_shiftFrom, measure]
+                        omega)
+                    simp only [interpFuel]
+                    rw [h₁, h₂]
+                | arrow τ₁ τ₂ =>
+                    have h₁ := hchild ((τ₁.shiftFrom 0).shiftFrom 0) (d + 2)
+                      (Interp.relevantEnv Δ (.arrow τ₁ τ₂) e) (.ret (.bound 0)) (by
+                        simp only [measure_shiftFrom, measure]
+                        omega)
+                    have h₂ := hchild (τ₂.shiftFrom 1) (d + 2)
+                      (Interp.relevantEnv Δ (.arrow τ₁ τ₂) e)
+                      (.app (.bound 1) (.bound 0)) (by
+                        simp only [measure_shiftFrom, measure]
+                        omega)
+                    simp only [interpFuel]
+                    rw [h₁, h₂]
+                | wand τ₁ τ₂ =>
+                    have h₁ := hchild ((τ₁.shiftFrom 0).shiftFrom 0) (d + 2)
+                      (Interp.relevantEnv Δ (.wand τ₁ τ₂) e) (.ret (.bound 0)) (by
+                        simp only [measure_shiftFrom, measure]
+                        omega)
+                    have h₂ := hchild (τ₂.shiftFrom 1) (d + 2)
+                      (Interp.relevantEnv Δ (.wand τ₁ τ₂) e)
+                      (.app (.bound 1) (.bound 0)) (by
+                        simp only [measure_shiftFrom, measure]
+                        omega)
+                    simp only [interpFuel]
+                    rw [h₁, h₂]
+                | persist τ =>
+                    have hτ := hchild (τ.shiftFrom 0) (d + 1)
+                      (Interp.relevantEnv Δ (.persist τ) e) (.ret (.bound 0)) (by
+                        simp only [measure_shiftFrom, measure]
+                        omega)
+                    simp only [interpFuel]
+                    rw [hτ]
+  exact aux τ.measure τ rfl gas gas' d Δ e lower lower'
 
 /-- Interpretation of a context type at a core term. -/
 def interp (Δ : BasicEnv) (τ : ContextType) (e : Term) : Formula :=
