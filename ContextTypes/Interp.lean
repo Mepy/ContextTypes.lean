@@ -2274,6 +2274,78 @@ theorem models_guard_relevant_of_world {m : Capability} {Δ : BasicEnv}
   exact Formula.models_and_intro hformed
     (Formula.models_and_intro hworld (Formula.models_and_intro hbasic terminates))
 
+/-- Opening a finite family transports the guard used by the actual type
+interpretation, including its restriction to relevant free inputs. -/
+theorem models_guard_relevant_openManyAt_iff
+    {m : Capability} {Δ : BasicEnv} {τ : ContextType} {e : Term}
+    {n d : Nat} {η : Fin d → Atom} {T : Fin d → SimpleType}
+    (wfτ : τ.WellFormedAt (n + d) Δ.domain)
+    (inj : Function.Injective η) (freshΔ : ∀ i, η i ∉ Δ.domain)
+    (support : e.support ⊆ Δ.domain)
+    (typed : Δ.insertMany d η T ⊢ₑ e.openManyAt n d η ⋮ τ.erase)
+    (world : m ⊨ basicWorld (Δ.insertMany d η T)) :
+    m ⊨ (guard (n + d) (relevantEnv Δ τ e) τ e).openManyAt n d η ↔
+      m ⊨ guard n
+        (relevantEnv (Δ.insertMany d η T) (τ.openManyAt n d η) (e.openManyAt n d η))
+        (τ.openManyAt n d η) (e.openManyAt n d η) := by
+  let Δr := relevantEnv Δ τ e
+  let Δ' := Δ.insertMany d η T
+  have hdom : Δr.domain = Δ.domain ∩ (τ.freeAtoms ∪ e.support) := by
+    simp only [Δr, relevantEnv_domain, relevantAtoms]
+  have scopeτ : τ.freeAtoms ⊆ Δr.domain := by
+    intro x hx
+    rw [hdom]
+    exact Finset.mem_inter.2 ⟨wfτ.freeAtoms_subset hx, Finset.mem_union_left _ hx⟩
+  have supportR : e.support ⊆ Δr.domain := by
+    intro x hx
+    rw [hdom]
+    exact Finset.mem_inter.2 ⟨support hx, Finset.mem_union_right _ hx⟩
+  have freshR : ∀ i, η i ∉ Δr.domain := by
+    intro i hx
+    rw [hdom] at hx
+    exact freshΔ i (Finset.mem_inter.1 hx).1
+  have embed : Δr.Subset Δ' := by
+    intro x U hx
+    have hxR : x ∈ Δr.domain := (BasicEnv.mem_domain_iff Δr x).2 ⟨U, hx⟩
+    rw [hdom] at hxR
+    have hxΔ : x ∈ Δ.domain := (Finset.mem_inter.1 hxR).1
+    have hxA : x ∈ relevantAtoms τ e := (Finset.mem_inter.1 hxR).2
+    change (Δ.insertMany d η T).lookup x = some U
+    rw [BasicEnv.lookup_insertMany_of_apart Δ d η T x
+      (fun i hi => freshΔ i (hi ▸ hxΔ))]
+    simpa [Δr, relevantEnv, BasicEnv.lookup_restrict, hxA] using hx
+  have hw := (models_basicWorld_iff m Δ').1 world
+  have scopeR : Δr.domain ⊆ m.domain := by
+    intro x hx
+    obtain ⟨U, hU⟩ := (BasicEnv.mem_domain_iff Δr x).1 hx
+    exact hw.1 ((BasicEnv.mem_domain_iff Δ' x).2 ⟨U, embed x U hU⟩)
+  have worldR : m ⊨ basicWorld Δr :=
+    (models_basicWorld_iff m Δr).2
+      ⟨scopeR, fun σ hσ x U hx => hw.2 σ hσ x U (embed x U hx)⟩
+  have formedR : m ⊨ wellFormed (n + d) Δr τ :=
+    (models_wellFormed_iff m _ _ _).2 ⟨scopeR, wfτ.regularize scopeτ⟩
+  have basicR : m ⊨ (basicTyping Δr e τ.erase).openManyAt n d η :=
+    (models_basicTyping_openManyAt_iff inj freshR supportR embed
+      typed.locallyClosed typed.support_subset world).2 (models_basicTyping_of_world typed world)
+  have wfOpen : (τ.openManyAt n d η).WellFormedAt n Δ'.domain := by
+    simpa only [Δ', BasicEnv.domain_insertMany] using wfτ.openManyAt η inj freshΔ
+  have typedOpen : Δ' ⊢ₑ e.openManyAt n d η ⋮ (τ.openManyAt n d η).erase := by
+    simpa only [ContextType.erase_openManyAt] using typed
+  have freshE : ∀ i, η i ∉ e.support := fun i hx => freshΔ i (support hx)
+  have source :
+      m ⊨ (guard (n + d) Δr τ e).openManyAt n d η ↔
+        m ⊨ total (e.openManyAt n d η) := by
+    simp only [guard, Formula.openManyAt_and]
+    rw [wellFormed_openManyAt_eq _ _ _ _ _ _ freshR,
+      basicWorld_openManyAt_eq _ _ _ _ freshR, total_openManyAt e n d η inj freshE]
+    simp only [Formula.models_and_iff, formedR, worldR, basicR, true_and]
+  rw [source]
+  constructor
+  · exact fun h => models_guard_relevant_of_world wfOpen typedOpen world h
+  · intro h
+    exact Formula.models_and_elim_right
+      (Formula.models_and_elim_right (Formula.models_and_elim_right h))
+
 @[simp] theorem freeAtoms_guard (d : Nat) (Δ : BasicEnv)
     (τ : ContextType) (e : Term) :
     (guard d Δ τ e).freeAtoms =
@@ -5120,6 +5192,39 @@ theorem underResultFiber_openAt (b : BaseType) (q : Qualifier) (k : Nat) (y : At
   simp only [Formula.openAt, underResult]
   rw [resultFiberSupport_openAt, resultBasicTyping_openAt_fresh]
 
+/-- Restricting an environment to relevant inputs a second time does not
+change the complete result-first graph. -/
+@[simp] theorem resultFirst_relevantEnv (Δ : BasicEnv) (τ : ContextType) (e : Term) :
+    resultFirst (relevantEnv Δ τ e) τ e = resultFirst Δ τ e := by
+  simp only [resultFirst, relevantSupport, relevantEnv_idem]
+
+/-- Finite input opening preserves the overapproximate result body and its
+distinguished result binder. -/
+theorem overResultFiber_openManyAt (b : BaseType) (q : Qualifier)
+    (k d : Nat) (η : Fin d → Atom) :
+    (Formula.fiber (q.support \ {.bound 0}) (overResult b q)).openManyAt (k + 1) d η =
+      Formula.fiber ((q.openManyAt (k + 1) d η).support \ {.bound 0})
+        (overResult b (q.openManyAt (k + 1) d η)) := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      rw [Formula.openManyAt, ih, show k + 1 + d = (k + d) + 1 by omega,
+        overResultFiber_openAt]
+      simp only [Qualifier.openManyAt, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+
+/-- Finite input opening follows the same law for underapproximate results. -/
+theorem underResultFiber_openManyAt (b : BaseType) (q : Qualifier)
+    (k d : Nat) (η : Fin d → Atom) :
+    (Formula.fiber (q.support \ {.bound 0}) (underResult b q)).openManyAt (k + 1) d η =
+      Formula.fiber ((q.openManyAt (k + 1) d η).support \ {.bound 0})
+        (underResult b (q.openManyAt (k + 1) d η)) := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      rw [Formula.openManyAt, ih, show k + 1 + d = (k + d) + 1 by omega,
+        underResultFiber_openAt]
+      simp only [Qualifier.openManyAt, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+
 theorem overResultFiber_openAt_fresh (b : BaseType) (q : Qualifier)
     (k : Nat) (y : Atom) (closed : q.locallyClosedAt (k + 1))
     (fresh : y ∉ q.freeAtoms) :
@@ -7259,6 +7364,57 @@ theorem models_interp_app_bound_openAt_under_iff {m : Capability} {Δ : BasicEnv
   simp only [interp, measure, ContextType.openAt, interpFuel, Formula.openAt]
   rw [hr', hb, Formula.models_and_iff, Formula.models_and_iff, hg]
   rfl
+
+/-- Finite named inputs normalize the interpretation of any dependent
+overapproximate base type, at any remaining binder depth and positive fuel. -/
+theorem models_interpFuel_openManyAt_over_iff
+    {m : Capability} {Δ : BasicEnv} {b : BaseType} {q : Qualifier} {e : Term}
+    {gas n d : Nat} {η : Fin d → Atom} {T : Fin d → SimpleType}
+    (wfτ : ({ν : b | q} : ContextType).WellFormedAt (n + d) Δ.domain)
+    (inj : Function.Injective η) (freshΔ : ∀ i, η i ∉ Δ.domain)
+    (support : e.support ⊆ Δ.domain)
+    (typed : Δ.insertMany d η T ⊢ₑ e.openManyAt n d η ⋮ .base b)
+    (world : m ⊨ Interp.basicWorld (Δ.insertMany d η T)) :
+    m ⊨ (interpFuel (gas + 1) (n + d) Δ ({ν : b | q}) e).openManyAt n d η ↔
+      m ⊨ interpFuel (gas + 1) n (Δ.insertMany d η T)
+        (({ν : b | q} : ContextType).openManyAt n d η) (e.openManyAt n d η) := by
+  have hg := Interp.models_guard_relevant_openManyAt_iff wfτ inj freshΔ support typed world
+  have freshτ : ∀ i, η i ∉ (ContextType.over b q).freeAtoms :=
+    fun i hx => freshΔ i (wfτ.freeAtoms_subset hx)
+  have freshE : ∀ i, η i ∉ e.support := fun i hx => freshΔ i (support hx)
+  have hr := Interp.resultFirst_openManyAt_inputs Δ (.over b q) e n d η T
+    inj freshΔ freshτ freshE
+  simp only [interpFuel, Formula.openManyAt_and, Formula.openManyAt_all,
+    Formula.openManyAt_impl, ContextType.openManyAt_over]
+  simp only [Interp.resultFirst_relevantEnv] at *
+  rw [hr, Interp.overResultFiber_openManyAt,
+    Formula.models_and_iff, Formula.models_and_iff]
+  simpa only [ContextType.openManyAt_over] using and_congr hg Iff.rfl
+
+/-- The finite dependent-input conversion also preserves angelic base types. -/
+theorem models_interpFuel_openManyAt_under_iff
+    {m : Capability} {Δ : BasicEnv} {b : BaseType} {q : Qualifier} {e : Term}
+    {gas n d : Nat} {η : Fin d → Atom} {T : Fin d → SimpleType}
+    (wfτ : ([ν : b | q] : ContextType).WellFormedAt (n + d) Δ.domain)
+    (inj : Function.Injective η) (freshΔ : ∀ i, η i ∉ Δ.domain)
+    (support : e.support ⊆ Δ.domain)
+    (typed : Δ.insertMany d η T ⊢ₑ e.openManyAt n d η ⋮ .base b)
+    (world : m ⊨ Interp.basicWorld (Δ.insertMany d η T)) :
+    m ⊨ (interpFuel (gas + 1) (n + d) Δ ([ν : b | q]) e).openManyAt n d η ↔
+      m ⊨ interpFuel (gas + 1) n (Δ.insertMany d η T)
+        (([ν : b | q] : ContextType).openManyAt n d η) (e.openManyAt n d η) := by
+  have hg := Interp.models_guard_relevant_openManyAt_iff wfτ inj freshΔ support typed world
+  have freshτ : ∀ i, η i ∉ (ContextType.under b q).freeAtoms :=
+    fun i hx => freshΔ i (wfτ.freeAtoms_subset hx)
+  have freshE : ∀ i, η i ∉ e.support := fun i hx => freshΔ i (support hx)
+  have hr := Interp.resultFirst_openManyAt_inputs Δ (.under b q) e n d η T
+    inj freshΔ freshτ freshE
+  simp only [interpFuel, Formula.openManyAt_and, Formula.openManyAt_all,
+    Formula.openManyAt_impl, ContextType.openManyAt_under]
+  simp only [Interp.resultFirst_relevantEnv] at *
+  rw [hr, Interp.underResultFiber_openManyAt,
+    Formula.models_and_iff, Formula.models_and_iff]
+  simpa only [ContextType.openManyAt_under] using and_congr hg Iff.rfl
 
 /-- Pointwise result equivalence transports the full result-first
 interpretation, including the static and universal-termination guard. -/
