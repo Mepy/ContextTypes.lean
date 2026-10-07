@@ -564,6 +564,27 @@ scoped[ContextTypes] notation:55 (name := formulaBindSet) X:56 " ▷ " P:55 =>
     (P.openAt k x).openAt k x = P := by
   induction P generalizing k <;> simp_all [openAt]
 
+/-- Independent formula binder openings commute, including underneath
+universal and magic-wand binders. -/
+theorem openAt_comm (P : Formula) (k l : Nat) (x y : Atom)
+    (hkl : k ≠ l) (hxy : x ≠ y) :
+    (P.openAt k x).openAt l y = (P.openAt l y).openAt k x := by
+  induction P generalizing k l with
+  | top | bot => rfl
+  | atom q =>
+      simp only [openAt, Qualifier.openAt_comm q k l x y hkl hxy]
+  | and P Q ih₁ ih₂ | or P Q ih₁ ih₂ | impl P Q ih₁ ih₂
+  | star P Q ih₁ ih₂ | sum P Q ih₁ ih₂ =>
+      simp only [openAt, ih₁ k l hkl, ih₂ k l hkl]
+  | wand d P Q ih₁ ih₂ =>
+      simp only [openAt, ih₁ (k + d) (l + d) (by omega),
+        ih₂ (k + d) (l + d) (by omega)]
+  | all P ih => simp only [openAt, ih (k + 1) (l + 1) (by omega)]
+  | «over» P ih | under P ih | persist P ih => simp only [openAt, ih k l hkl]
+  | fiber X P ih =>
+      simp only [openAt, ih k l hkl,
+        LogicVar.openSupport_comm l k y x (Ne.symm hkl) (Ne.symm hxy) X]
+
 @[simp] theorem swap_involutive (P : Formula) (x y : Atom) :
     (P.swap x y).swap x y = P := by
   induction P <;> simp_all [swap]

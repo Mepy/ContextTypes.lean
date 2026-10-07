@@ -79,6 +79,18 @@ def openSupport (k : Nat) (x : Atom) (X : Finset LogicVar) : Finset LogicVar :=
     openBinder k x (openBinder k x ξ) = ξ := by
   exact swap_involutive _ _ _
 
+/-- Openings of distinct binders with distinct names commute. -/
+theorem openBinder_comm (k l : Nat) (x y : Atom)
+    (hkl : k ≠ l) (hxy : x ≠ y) (ξ : LogicVar) :
+    openBinder k x (openBinder l y ξ) = openBinder l y (openBinder k x ξ) := by
+  cases ξ with
+  | bound j =>
+      by_cases hjk : j = k <;> by_cases hjl : j = l
+      all_goals simp_all [openBinder, swap, Ne.symm hkl, Ne.symm hxy]
+  | free z =>
+      by_cases hzx : z = x <;> by_cases hzy : z = y
+      all_goals simp_all [openBinder, swap, Ne.symm hkl, Ne.symm hxy]
+
 @[simp] theorem mem_openSupport (k : Nat) (x : Atom) (X : Finset LogicVar)
     (ξ : LogicVar) :
     ξ ∈ openSupport k x X ↔ openBinder k x ξ ∈ X := by
@@ -96,6 +108,14 @@ def openSupport (k : Nat) (x : Atom) (X : Finset LogicVar) : Finset LogicVar :=
     openSupport k x (openSupport k x X) = X := by
   ext ξ
   simp
+
+/-- Independent binder openings commute on finite logical supports. -/
+theorem openSupport_comm (k l : Nat) (x y : Atom)
+    (hkl : k ≠ l) (hxy : x ≠ y) (X : Finset LogicVar) :
+    openSupport k x (openSupport l y X) = openSupport l y (openSupport k x X) := by
+  ext ξ
+  simp only [mem_openSupport]
+  rw [openBinder_comm k l x y hkl hxy]
 
 theorem openSupport_eq_self_of_fresh (X : Finset LogicVar) (k : Nat)
     (x : Atom) (bound : LogicVar.bound k ∉ X)
@@ -342,6 +362,43 @@ abbrev logicSupport (e : Term) : Finset LogicVar :=
   e.logicSupportAt 0
 
 end Term
+
+mutual
+/-- Core-value openings at distinct indices commute, since inserted free
+values are unaffected by subsequent bound-variable opening. -/
+theorem Value.openAt_free_comm (v : Value) (k l : Nat) (x y : Atom) (hkl : k ≠ l) :
+    (v.openAt k (.free x)).openAt l (.free y) =
+      (v.openAt l (.free y)).openAt k (.free x) := by
+  cases v with
+  | const c | free z => rfl
+  | bound j =>
+      by_cases hjk : j = k <;> by_cases hjl : j = l
+      all_goals simp_all [Value.openAt]
+  | lam T e =>
+      simp only [Value.openAt]
+      rw [Term.openAt_free_comm e (k + 1) (l + 1) x y (by omega)]
+  | fix T v =>
+      simp only [Value.openAt]
+      rw [Value.openAt_free_comm v (k + 1) (l + 1) x y (by omega)]
+
+/-- Core-term openings at distinct indices commute. -/
+theorem Term.openAt_free_comm (e : Term) (k l : Nat) (x y : Atom) (hkl : k ≠ l) :
+    (e.openAt k (.free x)).openAt l (.free y) =
+      (e.openAt l (.free y)).openAt k (.free x) := by
+  cases e with
+  | ret v => simp only [Term.openAt, Value.openAt_free_comm v k l x y hkl]
+  | letE e₁ e₂ =>
+      simp only [Term.openAt]
+      rw [Term.openAt_free_comm e₁ k l x y hkl,
+        Term.openAt_free_comm e₂ (k + 1) (l + 1) x y (by omega)]
+  | primitive op v => simp only [Term.openAt, Value.openAt_free_comm v k l x y hkl]
+  | app v₁ v₂ =>
+      simp only [Term.openAt, Value.openAt_free_comm v₁ k l x y hkl,
+        Value.openAt_free_comm v₂ k l x y hkl]
+  | matchBool v e₁ e₂ =>
+      simp only [Term.openAt, Value.openAt_free_comm v k l x y hkl,
+        Term.openAt_free_comm e₁ k l x y hkl, Term.openAt_free_comm e₂ k l x y hkl]
+end
 
 mutual
 /-- Opening transports the externally visible support of a value. -/

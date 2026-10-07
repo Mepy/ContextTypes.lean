@@ -559,6 +559,27 @@ theorem holds_conj_iff (q r : Qualifier)
       rw [Assignment.swap_involutive, same]
     rw [back]
 
+/-- Qualifier opening transposes keys, so independent openings require both
+distinct indices and distinct names. -/
+theorem openAt_comm (q : Qualifier) (k l : Nat) (x y : Atom)
+    (hkl : k ≠ l) (hxy : x ≠ y) :
+    (q.openAt k x).openAt l y = (q.openAt l y).openAt k x := by
+  apply Qualifier.ext
+  · exact LogicVar.openSupport_comm l k y x (Ne.symm hkl) (Ne.symm hxy) q.support
+  · intro ρ σ same
+    change q.holds ((ρ.swapBack (.bound l) (.free y)).swapBack (.bound k) (.free x)) ↔
+      q.holds ((σ.swapBack (.bound k) (.free x)).swapBack (.bound l) (.free y))
+    have back : (ρ.swapBack (.bound l) (.free y)).swapBack (.bound k) (.free x) =
+        (σ.swapBack (.bound k) (.free x)).swapBack (.bound l) (.free y) := by
+      apply AssignmentOn.ext
+      apply Assignment.ext
+      intro ξ
+      simp only [AssignmentOn.swapBack, Assignment.lookup_swap, same]
+      change σ.assignment.lookup (LogicVar.openBinder l y (LogicVar.openBinder k x ξ)) =
+        σ.assignment.lookup (LogicVar.openBinder k x (LogicVar.openBinder l y ξ))
+      rw [LogicVar.openBinder_comm l k y x (Ne.symm hkl) (Ne.symm hxy)]
+    rw [back]
+
 @[simp] theorem swap_involutive (q : Qualifier) (x y : Atom) :
     (q.swap x y).swap x y = q := by
   apply ext

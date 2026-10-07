@@ -156,6 +156,20 @@ def openAt : ContextType → Nat → Atom → ContextType
   | .wand τ₁ τ₂, k, x => .wand (τ₁.openAt k x) (τ₂.openAt (k + 1) x)
   | .persist τ, k, x => .persist (τ.openAt k x)
 
+/-- Independent context-type binder openings commute under all constructors. -/
+theorem openAt_comm (τ : ContextType) (k l : Nat) (x y : Atom)
+    (hkl : k ≠ l) (hxy : x ≠ y) :
+    (τ.openAt k x).openAt l y = (τ.openAt l y).openAt k x := by
+  induction τ generalizing k l with
+  | «over» b q | under b q =>
+      simp only [openAt]
+      rw [Qualifier.openAt_comm q (k + 1) (l + 1) x y (by omega) hxy]
+  | inter τ₁ τ₂ ih₁ ih₂ | union τ₁ τ₂ ih₁ ih₂ | sum τ₁ τ₂ ih₁ ih₂ =>
+      simp only [openAt, ih₁ k l hkl, ih₂ k l hkl]
+  | arrow τ₁ τ₂ ih₁ ih₂ | wand τ₁ τ₂ ih₁ ih₂ =>
+      simp only [openAt, ih₁ k l hkl, ih₂ (k + 1) (l + 1) (by omega)]
+  | persist τ ih => simp only [openAt, ih k l hkl]
+
 /-- Context-type opening transports its externally visible logical support. -/
 theorem supportAt_openAt (τ : ContextType) (d k : Nat) (y : Atom) :
     (τ.openAt (k + d) y).supportAt d = LogicVar.openSupport k y (τ.supportAt d) := by
