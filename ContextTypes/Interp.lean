@@ -5633,6 +5633,201 @@ theorem models_interp_of_reaches_iff
     (h : m ⊨ interp Δ τ e₁) : m ⊨ interp Δ τ e₂ :=
   models_interpFuel_of_reaches_iff wfτ typed₁ typed₂ world terminates support heval h
 
+
+/-- Correlated equality of reachable results transports the entire type
+interpretation across input capabilities and erased environments. -/
+theorem models_interpFuel_of_resultsEquivOn
+    {m n : Capability} {Δ₁ Δ₂ : BasicEnv} {τ : ContextType} {e₁ e₂ : Term} {gas : Nat}
+    (wf₁ : τ.WellFormed Δ₁.domain) (wf₂ : τ.WellFormed Δ₂.domain)
+    (typed₁ : Δ₁ ⊢ₑ e₁ ⋮ τ.erase) (typed₂ : Δ₂ ⊢ₑ e₂ ⋮ τ.erase)
+    (world : n ⊨ Interp.basicWorld Δ₂) (terminates : n ⊨ Interp.total e₂)
+    (env : BasicEnv.AgreeOn τ.freeAtoms Δ₁ Δ₂)
+    (results : Interp.ResultsEquivOn τ.freeAtoms m n e₁ e₂)
+    (h : m ⊨ interpFuel gas 0 Δ₁ τ e₁) :
+    n ⊨ interpFuel gas 0 Δ₂ τ e₂ := by
+  induction gas generalizing τ with
+  | zero =>
+      exact Formula.models_and_intro
+        (Interp.models_guard_relevant_of_world wf₂ typed₂ world terminates)
+        (Formula.models_top n)
+  | succ gas ih =>
+      let X := τ.freeAtoms ∪ e₁.support
+      let Y := τ.freeAtoms ∪ e₂.support
+      let Θ₁ := Interp.relevantEnv Δ₁ τ e₁
+      let Θ₂ := Interp.relevantEnv Δ₂ τ e₂
+      have hΘ₁ : Θ₁.domain = X := by
+        rw [Interp.relevantEnv_domain]
+        exact Finset.inter_eq_right.2
+          (Finset.union_subset wf₁.freeAtoms_subset typed₁.support_subset)
+      have hΘ₂ : Θ₂.domain = Y := by
+        rw [Interp.relevantEnv_domain]
+        exact Finset.inter_eq_right.2
+          (Finset.union_subset wf₂.freeAtoms_subset typed₂.support_subset)
+      have hres : ∀ (Δ : BasicEnv) (e : Term), τ.WellFormed Δ.domain → e.locallyClosed →
+          (Interp.relevantEnv Δ τ e).domain = τ.freeAtoms ∪ e.support →
+          Interp.resultFirst (Interp.relevantEnv Δ τ e) τ e =
+            Interp.resultAt ((τ.freeAtoms ∪ e.support).image LogicVar.free) e (.bound 0) := by
+        intro Δ e wf closed hdom
+        let Δ' := Interp.relevantEnv Δ τ e
+        have hX : Interp.relevantSupport Δ' τ e =
+            (τ.freeAtoms ∪ e.support).image LogicVar.free := by
+          rw [LogicVar.eq_image_free_of_locallyClosed
+            (Interp.relevantSupport_locallyClosed Δ' τ e wf.locallyClosedAt closed)]
+          rw [Interp.freeAtomSet_relevantSupport, Interp.relevantEnv_idem, hdom]
+        change Interp.resultAt ((Interp.relevantSupport Δ' τ e).image (LogicVar.shiftFrom 0))
+          (Interp.shiftTerm e) (.bound 0) = _
+        have hclosed : LogicVar.LocallyClosed ((τ.freeAtoms ∪ e.support).image LogicVar.free) := by
+          intro k hk
+          simp at hk
+        rw [hX, LogicVar.image_shiftFrom_eq_of_locallyClosed _ 0 hclosed,
+          Interp.shiftTerm_eq_of_locallyClosed e closed]
+      have hr₁ := hres Δ₁ e₁ wf₁ typed₁.locallyClosed hΘ₁
+      have hr₂ := hres Δ₂ e₂ wf₂ typed₂.locallyClosed hΘ₂
+      have hguard₁ := models_interpFuel_guard h
+      have hwf := (Interp.models_wellFormed_iff m 0 Θ₁ τ).1
+        (Formula.models_and_elim_left hguard₁)
+      have hX : X ⊆ m.domain := by simpa only [hΘ₁] using hwf.1
+      have hY : Y ⊆ n.domain := Finset.Subset.trans
+        (Finset.union_subset wf₂.freeAtoms_subset typed₂.support_subset)
+        ((Interp.models_basicWorld_iff n Δ₂).1 world).1
+      have total₁ : m ⊨ Interp.total e₁ := Formula.models_and_elim_right
+        (Formula.models_and_elim_right (Formula.models_and_elim_right hguard₁))
+      have returns₁ : ∀ σ, σ ∈ m → ∃ v, (Interp.instantiateTerm e₁ σ.toAssignment).reaches v :=
+        fun σ hσ => (Interp.models_total_term typed₁.locallyClosed total₁ hσ).reaches_result
+      have returns₂ : ∀ ρ, ρ ∈ n → ∃ v, (Interp.instantiateTerm e₂ ρ.toAssignment).reaches v :=
+        fun ρ hρ => (Interp.models_total_term typed₂.locallyClosed terminates hρ).reaches_result
+      have hall (Q : Formula) (hQ : Q.freeAtoms ⊆ τ.freeAtoms)
+          (hq : m ⊨ Formula.all (Interp.resultFirst Θ₁ τ e₁ ⇒ᶜ Q)) :
+          n ⊨ Formula.all (Interp.resultFirst Θ₂ τ e₂ ⇒ᶜ Q) := by
+        rw [hr₁] at hq
+        rw [hr₂]
+        exact Interp.models_all_resultAt_of_resultsEquivOn hX hY returns₁ returns₂
+          typed₁.locallyClosed typed₂.locallyClosed Finset.subset_union_right Finset.subset_union_right
+          Finset.subset_union_left Finset.subset_union_left hQ results hq
+      have hagree : BasicEnv.AgreeOn τ.freeAtoms Θ₁ Θ₂ := by
+        intro x hx
+        simp only [Θ₁, Θ₂, Interp.relevantEnv, BasicEnv.lookup_restrict,
+          Interp.relevantAtoms, if_pos (Finset.mem_union_left _ hx)]
+        exact env x hx
+      have hfuel (τ' : ContextType) (e : Term) (d : Nat)
+          (hs : τ'.freeAtoms ∪ e.support ⊆ τ.freeAtoms) :
+          interpFuel gas d Θ₁ τ' e = interpFuel gas d Θ₂ τ' e :=
+        interpFuel_eq_of_agreeOn gas d (hagree.mono hs)
+      have hfree (τ' : ContextType) (e : Term) (d : Nat)
+          (hs : τ'.freeAtoms ∪ e.support ⊆ τ.freeAtoms) :
+          (interpFuel gas d Θ₁ τ' e).freeAtoms ⊆ τ.freeAtoms :=
+        Finset.Subset.trans (freeAtoms_interpFuel_subset gas d Θ₁ τ' e) hs
+      have hscope (τ' : ContextType) (hs : τ'.freeAtoms ⊆ τ.freeAtoms) :
+          (interpFuel gas 0 Δ₂ τ' e₂).freeAtoms ⊆ n.domain :=
+        Finset.Subset.trans (freeAtoms_interpFuel_subset gas 0 Δ₂ τ' e₂)
+          (Finset.Subset.trans (Finset.union_subset_union hs (Finset.Subset.refl _)) hY)
+      have hguard := Interp.models_guard_relevant_of_world wf₂ typed₂ world terminates
+      have hbody := Formula.models_and_elim_right h
+      cases τ with
+      | «over» b q =>
+          dsimp only at hbody ⊢
+          apply Formula.models_and_intro hguard
+          exact hall _ (by rw [Interp.freeAtoms_overResultFiber]; exact Finset.Subset.refl _) hbody
+      | under b q =>
+          dsimp only at hbody ⊢
+          apply Formula.models_and_intro hguard
+          exact hall _ (by rw [Interp.freeAtoms_underResultFiber]; exact Finset.Subset.refl _) hbody
+      | inter τ₁ τ₂ =>
+          dsimp only at hbody ⊢
+          apply Formula.models_and_intro hguard
+          apply Formula.models_and_intro
+          · exact ih wf₁.1 wf₂.1 typed₁ typed₂
+              (env.mono Finset.subset_union_left) (results.mono Finset.subset_union_left) (Formula.models_and_elim_left hbody)
+          · have ht₁ : Δ₁ ⊢ₑ e₁ ⋮ τ₂.erase := by simpa only [ContextType.erase, wf₁.2.2] using typed₁
+            have ht₂ : Δ₂ ⊢ₑ e₂ ⋮ τ₂.erase := by simpa only [ContextType.erase, wf₂.2.2] using typed₂
+            exact ih wf₁.2.1 wf₂.2.1 ht₁ ht₂
+              (env.mono Finset.subset_union_right) (results.mono Finset.subset_union_right) (Formula.models_and_elim_right hbody)
+      | union τ₁ τ₂ =>
+          dsimp only at hbody ⊢
+          apply Formula.models_and_intro hguard
+          have hs := (Formula.models_or_iff m _ _ (Formula.models_scope hbody)).1 hbody
+          rcases hs with hs | hs
+          · exact Formula.models_or_intro_left (ih wf₁.1 wf₂.1 typed₁ typed₂
+              (env.mono Finset.subset_union_left) (results.mono Finset.subset_union_left) hs)
+              (hscope τ₂ Finset.subset_union_right)
+          · have ht₁ : Δ₁ ⊢ₑ e₁ ⋮ τ₂.erase := by simpa only [ContextType.erase, wf₁.2.2] using typed₁
+            have ht₂ : Δ₂ ⊢ₑ e₂ ⋮ τ₂.erase := by simpa only [ContextType.erase, wf₂.2.2] using typed₂
+            exact Formula.models_or_intro_right (hscope τ₁ Finset.subset_union_left)
+              (ih wf₁.2.1 wf₂.2.1 ht₁ ht₂
+              (env.mono Finset.subset_union_right) (results.mono Finset.subset_union_right) hs)
+      | sum τ₁ τ₂ =>
+          dsimp only at hbody ⊢
+          have hs₁ : (τ₁.shiftFrom 0).freeAtoms ∪ (.ret (.bound 0) : Term).support ⊆
+              (τ₁ ⊕ τ₂ : ContextType).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom, Term.support, Value.support, Finset.union_empty] using
+              (Finset.subset_union_left : τ₁.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          have hs₂ : (τ₂.shiftFrom 0).freeAtoms ∪ (.ret (.bound 0) : Term).support ⊆
+              (τ₁ ⊕ τ₂ : ContextType).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom, Term.support, Value.support, Finset.union_empty] using
+              (Finset.subset_union_right : τ₂.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          apply Formula.models_and_intro hguard
+          dsimp only
+          rw [← hfuel _ _ 1 hs₁, ← hfuel _ _ 1 hs₂]
+          apply hall _ _ hbody
+          simp only [Formula.freeAtoms_sum]
+          exact Finset.union_subset (hfree _ _ 1 hs₁) (hfree _ _ 1 hs₂)
+      | arrow τ₁ τ₂ =>
+          dsimp only at hbody ⊢
+          have hs₁ : ((τ₁.shiftFrom 0).shiftFrom 0).freeAtoms ∪
+              (.ret (.bound 0) : Term).support ⊆ (ContextType.arrow τ₁ τ₂).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom, Term.support, Value.support, Finset.union_empty] using
+              (Finset.subset_union_left : τ₁.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          have hs₂ : (τ₂.shiftFrom 1).freeAtoms ∪
+              (.app (.bound 1) (.bound 0) : Term).support ⊆ (ContextType.arrow τ₁ τ₂).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom, Term.support, Value.support, Finset.union_empty] using
+              (Finset.subset_union_right : τ₂.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          apply Formula.models_and_intro hguard
+          dsimp only
+          rw [← hfuel _ _ 2 hs₁, ← hfuel _ _ 2 hs₂]
+          apply hall _ _ hbody
+          simp only [Formula.freeAtoms_all, Formula.freeAtoms_impl]
+          exact Finset.union_subset (hfree _ _ 2 hs₁) (hfree _ _ 2 hs₂)
+      | wand τ₁ τ₂ =>
+          dsimp only at hbody ⊢
+          have hs₁ : ((τ₁.shiftFrom 0).shiftFrom 0).freeAtoms ∪
+              (.ret (.bound 0) : Term).support ⊆ (ContextType.wand τ₁ τ₂).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom, Term.support, Value.support, Finset.union_empty] using
+              (Finset.subset_union_left : τ₁.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          have hs₂ : (τ₂.shiftFrom 1).freeAtoms ∪
+              (.app (.bound 1) (.bound 0) : Term).support ⊆ (ContextType.wand τ₁ τ₂).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom, Term.support, Value.support, Finset.union_empty] using
+              (Finset.subset_union_right : τ₂.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          apply Formula.models_and_intro hguard
+          dsimp only
+          rw [← hfuel _ _ 2 hs₁, ← hfuel _ _ 2 hs₂]
+          apply hall _ _ hbody
+          simp only [Formula.freeAtoms_wand]
+          exact Finset.union_subset (hfree _ _ 2 hs₁) (hfree _ _ 2 hs₂)
+      | persist τ =>
+          dsimp only at hbody ⊢
+          have hs : (τ.shiftFrom 0).freeAtoms ∪ (.ret (.bound 0) : Term).support ⊆
+              (ContextType.persist τ).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom, Term.support, Value.support, Finset.union_empty] using
+              (Finset.Subset.refl τ.freeAtoms)
+          apply Formula.models_and_intro hguard
+          dsimp only
+          rw [← hfuel _ _ 1 hs]
+          apply hall _ _ hbody
+          simp only [Formula.freeAtoms_persist]
+          exact hfree _ _ 1 hs
+
+/-- Equality of the complete result graphs observed by a type transports its
+interpretation, even when intermediate input variables are forgotten. -/
+theorem models_interp_of_resultsEquivOn
+    {m n : Capability} {Δ₁ Δ₂ : BasicEnv} {τ : ContextType} {e₁ e₂ : Term}
+    (wf₁ : τ.WellFormed Δ₁.domain) (wf₂ : τ.WellFormed Δ₂.domain)
+    (typed₁ : Δ₁ ⊢ₑ e₁ ⋮ τ.erase) (typed₂ : Δ₂ ⊢ₑ e₂ ⋮ τ.erase)
+    (world : n ⊨ Interp.basicWorld Δ₂) (terminates : n ⊨ Interp.total e₂)
+    (env : BasicEnv.AgreeOn τ.freeAtoms Δ₁ Δ₂)
+    (results : Interp.ResultsEquivOn τ.freeAtoms m n e₁ e₂)
+    (h : m ⊨ interp Δ₁ τ e₁) : n ⊨ interp Δ₂ τ e₂ :=
+  models_interpFuel_of_resultsEquivOn wf₁ wf₂ typed₁ typed₂ world terminates env results h
+
 /-- Name every result of a nondeterministic term beneath a fresh binder,
 preserving the whole context-type interpretation. -/
 theorem models_interpFuel_result_alias
