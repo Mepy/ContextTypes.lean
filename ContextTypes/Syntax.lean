@@ -914,6 +914,16 @@ theorem support_openManyAt_subset (e : Term) (k d : Nat) (η : Fin d → Atom) :
         subst x
         exact Finset.mem_union_right _ (Finset.mem_image.2 ⟨Fin.last d, Finset.mem_univ _, rfl⟩)
 
+/-- An atom absent from both the original term and all selected names stays fresh. -/
+theorem fresh_openManyAt (e : Term) (k d : Nat) (η : Fin d → Atom) {x : Atom}
+    (fresh : x ∉ e.support) (apart : ∀ i, x ≠ η i) :
+    x ∉ (e.openManyAt k d η).support := by
+  intro hx
+  rcases Finset.mem_union.1 (e.support_openManyAt_subset k d η hx) with hx | hx
+  · exact fresh hx
+  · obtain ⟨i, _, same⟩ := Finset.mem_image.1 hx
+    exact apart i same.symm
+
 /-- A fresh injective opening transports all externally visible term keys. -/
 theorem logicSupportAt_openManyAt (e : Term) (n k d : Nat) (η : Fin d → Atom)
     (inj : Function.Injective η) (fresh : ∀ i, η i ∉ e.support) :

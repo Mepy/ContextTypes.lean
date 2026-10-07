@@ -1029,6 +1029,65 @@ theorem resultAt_openAt (X : Finset LogicVar) (e : Term) (ξ : LogicVar)
         (LogicVar.openBinder k y ξ) := by
   simp only [resultAt, Formula.openAt, resultQualifier_openAt e ξ k y fresh]
 
+/-- A finite fresh injective opening preserves the universal-termination predicate. -/
+theorem totalQualifier_openManyAt (e : Term) (k d : Nat) (η : Fin d → Atom)
+    (inj : Function.Injective η) (fresh : ∀ i, η i ∉ e.support) :
+    (totalQualifier e).openManyAt k d η = totalQualifier (e.openManyAt k d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      have freshLast := e.fresh_openManyAt k d (fun i => η i.castSucc)
+        (fresh (Fin.last d)) (fun i h => by
+          have := congrArg Fin.val (inj h)
+          simp at this
+          omega)
+      rw [Qualifier.openManyAt,
+        ih (fun i : Fin d => η i.castSucc)
+          (fun i j h => Fin.castSucc_injective d (inj h)) (fun i => fresh i.castSucc),
+        totalQualifier_openAt _ _ _ freshLast]
+      rfl
+
+/-- Totality commutes with a finite fresh injective family of binder openings. -/
+theorem total_openManyAt (e : Term) (k d : Nat) (η : Fin d → Atom)
+    (inj : Function.Injective η) (fresh : ∀ i, η i ∉ e.support) :
+    (total e).openManyAt k d η = total (e.openManyAt k d η) := by
+  unfold total Formula.fiberAtom
+  rw [Formula.openManyAt_fiber, Formula.openManyAt_atom, totalQualifier_openManyAt e k d η inj fresh]
+  have hs := e.logicSupportAt_openManyAt 0 k d η inj fresh
+  simp only [Nat.add_zero] at hs
+  change (e.openManyAt k d η).logicSupport = e.logicSupport.image (LogicVar.openManyAt k d η) at hs
+  simp only [totalQualifier]
+  rw [← hs]
+
+/-- A finite opening transports a result predicate and its distinguished key together. -/
+theorem resultQualifier_openManyAt (e : Term) (ξ : LogicVar) (k d : Nat) (η : Fin d → Atom)
+    (inj : Function.Injective η) (fresh : ∀ i, η i ∉ e.support) :
+    (resultQualifier e ξ).openManyAt k d η =
+      resultQualifier (e.openManyAt k d η) (LogicVar.openManyAt k d η ξ) := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      have freshLast := e.fresh_openManyAt k d (fun i => η i.castSucc)
+        (fresh (Fin.last d)) (fun i h => by
+          have := congrArg Fin.val (inj h)
+          simp at this
+          omega)
+      rw [Qualifier.openManyAt,
+        ih (fun i : Fin d => η i.castSucc)
+          (fun i j h => Fin.castSucc_injective d (inj h)) (fun i => fresh i.castSucc),
+        resultQualifier_openAt _ _ _ _ freshLast]
+      rfl
+
+/-- Finite opening preserves the complete result graph and its input-fiber keys. -/
+theorem resultAt_openManyAt (X : Finset LogicVar) (e : Term) (ξ : LogicVar)
+    (k d : Nat) (η : Fin d → Atom)
+    (inj : Function.Injective η) (fresh : ∀ i, η i ∉ e.support) :
+    (resultAt X e ξ).openManyAt k d η =
+      resultAt (X.image (LogicVar.openManyAt k d η)) (e.openManyAt k d η)
+        (LogicVar.openManyAt k d η ξ) := by
+  simp only [resultAt, Formula.openManyAt_fiber, Formula.openManyAt_atom,
+    resultQualifier_openManyAt e ξ k d η inj fresh]
+
 def resultBasicTyping (b : BaseType) : Formula :=
   basicTyping ∅ (.ret (.bound 0)) (.base b)
 

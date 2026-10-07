@@ -407,6 +407,34 @@ theorem openManyAt_wand (τ₁ τ₂ : ContextType) (k d : Nat) (η : Fin d → 
   | succ d ih =>
       simp [openManyAt, openAt, ih, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
 
+/-- Finite opening adds only selected names to the context type's free support. -/
+theorem freeAtoms_openManyAt_subset (τ : ContextType) (k d : Nat) (η : Fin d → Atom) :
+    (τ.openManyAt k d η).freeAtoms ⊆ τ.freeAtoms ∪ Finset.univ.image η := by
+  induction d with
+  | zero => simp [openManyAt]
+  | succ d ih =>
+      intro x hx
+      have h := freeAtoms_openAt_subset
+        (τ.openManyAt k d (fun i => η i.castSucc)) (k + d) (η (Fin.last d)) hx
+      rcases Finset.mem_union.1 h with h | h
+      · have hx : x = η (Fin.last d) := by simpa using h
+        subst x
+        exact Finset.mem_union_right _ (Finset.mem_image.2 ⟨Fin.last d, Finset.mem_univ _, rfl⟩)
+      · rcases Finset.mem_union.1 (ih _ h) with h | h
+        · exact Finset.mem_union_left _ h
+        · obtain ⟨i, _, rfl⟩ := Finset.mem_image.1 h
+          exact Finset.mem_union_right _ (Finset.mem_image.2 ⟨i.castSucc, Finset.mem_univ _, rfl⟩)
+
+/-- A name outside the type and the selected family remains fresh after opening. -/
+theorem fresh_openManyAt (τ : ContextType) (k d : Nat) (η : Fin d → Atom) {x : Atom}
+    (fresh : x ∉ τ.freeAtoms) (apart : ∀ i, x ≠ η i) :
+    x ∉ (τ.openManyAt k d η).freeAtoms := by
+  intro hx
+  rcases Finset.mem_union.1 (τ.freeAtoms_openManyAt_subset k d η hx) with hx | hx
+  · exact fresh hx
+  · obtain ⟨i, _, same⟩ := Finset.mem_image.1 hx
+    exact apart i same.symm
+
 @[simp] theorem erase_shiftFrom (τ : ContextType) (k : Nat) :
     (τ.shiftFrom k).erase = τ.erase := by
   induction τ generalizing k <;> simp_all [shiftFrom, erase]

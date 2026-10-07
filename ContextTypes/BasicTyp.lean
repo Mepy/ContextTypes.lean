@@ -41,6 +41,62 @@ theorem lookup_insert_of_ne (Δ : BasicEnv) {x y : Atom} (T : SimpleType)
     (h : y ≠ x) : (Δ.insert x T).lookup y = Δ.lookup y :=
   Finmap.lookup_insert_of_ne Δ h
 
+/-- Insert the erased types of a finite family of named inputs. -/
+def insertMany : (d : Nat) → (Fin d → Atom) → (Fin d → SimpleType) → BasicEnv → BasicEnv
+  | 0, _, _, Δ => Δ
+  | d + 1, η, T, Δ => (insertMany d (fun i => η i.castSucc)
+      (fun i => T i.castSucc) Δ).insert (η (Fin.last d)) (T (Fin.last d))
+
+@[simp] theorem domain_insertMany (Δ : BasicEnv) (d : Nat)
+    (η : Fin d → Atom) (T : Fin d → SimpleType) :
+    (Δ.insertMany d η T).domain = Δ.domain ∪ Finset.univ.image η := by
+  induction d with
+  | zero => simp [insertMany]
+  | succ d ih =>
+      rw [insertMany, domain_insert, ih]
+      ext x
+      simp only [Finset.mem_union, Finset.mem_singleton, Finset.mem_image,
+        Finset.mem_univ, true_and]
+      constructor
+      · rintro (hx | hx | ⟨i, hi⟩)
+        · exact Or.inr ⟨Fin.last d, hx.symm⟩
+        · exact Or.inl hx
+        · exact Or.inr ⟨i.castSucc, hi⟩
+      · rintro (hx | ⟨i, hi⟩)
+        · exact Or.inr (Or.inl hx)
+        · refine Fin.lastCases ?_ (fun j => ?_) i hi
+          · intro hi
+            exact Or.inl hi.symm
+          · intro hi
+            exact Or.inr (Or.inr ⟨j, hi⟩)
+
+theorem lookup_insertMany_of_apart (Δ : BasicEnv) (d : Nat)
+    (η : Fin d → Atom) (T : Fin d → SimpleType) (x : Atom)
+    (apart : ∀ i, x ≠ η i) :
+    (Δ.insertMany d η T).lookup x = Δ.lookup x := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      rw [insertMany, lookup_insert_of_ne _ _ (apart (Fin.last d))]
+      exact ih _ _ (fun i => apart i.castSucc)
+
+theorem lookup_insertMany (Δ : BasicEnv) (d : Nat)
+    (η : Fin d → Atom) (T : Fin d → SimpleType) (inj : Function.Injective η) (i : Fin d) :
+    (Δ.insertMany d η T).lookup (η i) = some (T i) := by
+  induction d with
+  | zero => exact Fin.elim0 i
+  | succ d ih =>
+      refine Fin.lastCases ?_ (fun j => ?_) i
+      · simp [insertMany]
+      · have apart : η j.castSucc ≠ η (Fin.last d) := by
+          intro h
+          have := congrArg Fin.val (inj h)
+          simp at this
+          omega
+        rw [insertMany, lookup_insert_of_ne _ _ apart]
+        exact ih (fun j : Fin d => η j.castSucc) (fun j : Fin d => T j.castSucc)
+          (fun i j h => Fin.castSucc_injective d (inj h)) j
+
 @[simp] theorem lookup_erase (Δ : BasicEnv) (x : Atom) :
     (Δ.erase x).lookup x = none :=
   Finmap.lookup_erase x Δ
