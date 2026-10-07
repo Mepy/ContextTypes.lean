@@ -357,6 +357,44 @@ theorem supportAt_openManyAt (τ : ContextType) (n k d : Nat) (η : Fin d → At
   | zero => rfl
   | succ d ih => simp [openManyAt, ih]
 
+/-- Finite input opening commutes with insertion of an internal type binder. -/
+theorem openManyAt_shiftFrom_of_le (τ : ContextType) (n k d : Nat) (η : Fin d → Atom)
+    (hk : n ≤ k) :
+    (τ.shiftFrom n).openManyAt (k + 1) d η = (τ.openManyAt k d η).shiftFrom n := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      rw [openManyAt, ih, show k + 1 + d = (k + d) + 1 by omega,
+        openAt_shiftFrom_of_le _ n (k + d) _ (by omega)]
+      rfl
+
+theorem openManyAt_inter (τ₁ τ₂ : ContextType) (k d : Nat) (η : Fin d → Atom) :
+    (ContextType.inter τ₁ τ₂).openManyAt k d η =
+      .inter (τ₁.openManyAt k d η) (τ₂.openManyAt k d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openManyAt, openAt, ih]
+
+theorem openManyAt_union (τ₁ τ₂ : ContextType) (k d : Nat) (η : Fin d → Atom) :
+    (ContextType.union τ₁ τ₂).openManyAt k d η =
+      .union (τ₁.openManyAt k d η) (τ₂.openManyAt k d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openManyAt, openAt, ih]
+
+theorem openManyAt_sum (τ₁ τ₂ : ContextType) (k d : Nat) (η : Fin d → Atom) :
+    (ContextType.sum τ₁ τ₂).openManyAt k d η =
+      .sum (τ₁.openManyAt k d η) (τ₂.openManyAt k d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openManyAt, openAt, ih]
+
+theorem openManyAt_persist (τ : ContextType) (k d : Nat) (η : Fin d → Atom) :
+    (ContextType.persist τ).openManyAt k d η = .persist (τ.openManyAt k d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openManyAt, openAt, ih]
+
 theorem openManyAt_cons (τ : ContextType) (k d : Nat) (x : Atom) (η : Fin d → Atom) :
     τ.openManyAt k (d + 1) (Fin.cons x η) =
       (τ.openAt k x).openManyAt (k + 1) d η := by

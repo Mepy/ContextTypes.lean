@@ -412,6 +412,46 @@ private theorem union_subset_singleton_union {A B A' B' : Finset Atom}
     · exact Finset.mem_union_left _ hx
     · exact Finset.mem_union_right _ (Finset.mem_union_right _ hx)
 
+/-- Rebasing visible formula keys commutes with opening an external binder. -/
+theorem supportSetAtDepth_openSupport (n k : Nat) (y : Atom) (X : Finset LogicVar) :
+    supportSetAtDepth n (LogicVar.openSupport (k + n) y X) =
+      LogicVar.openSupport k y (supportSetAtDepth n X) := by
+  simp only [supportSetAtDepth, LogicVar.openSupport, Finset.image_biUnion, Finset.biUnion_image]
+  apply Finset.biUnion_congr rfl
+  intro ξ hξ
+  cases ξ with
+  | free x =>
+      by_cases hxy : x = y
+      all_goals simp [LogicVar.openBinder, LogicVar.swap, hxy]
+  | bound j =>
+      by_cases same : j = k + n
+      · subst j
+        simp [LogicVar.openBinder, LogicVar.swap]
+      · by_cases hnj : n ≤ j
+        · have hjk : j - n ≠ k := by omega
+          simp [LogicVar.openBinder, LogicVar.swap, same, hnj, hjk]
+        · simp [LogicVar.openBinder, LogicVar.swap, same, hnj]
+
+/-- Formula support transports opening at the appropriate external depth. -/
+theorem supportAt_openAt (P : Formula) (n k : Nat) (y : Atom) :
+    (P.openAt (k + n) y).supportAt n = LogicVar.openSupport k y (P.supportAt n) := by
+  induction P generalizing n k with
+  | top | bot => simp [openAt, supportAt, LogicVar.openSupport]
+  | atom q => exact supportSetAtDepth_openSupport n k y q.support
+  | and P Q ihP ihQ | or P Q ihP ihQ | impl P Q ihP ihQ
+  | star P Q ihP ihQ | sum P Q ihP ihQ =>
+      simp only [openAt, supportAt, ihP, ihQ, LogicVar.openSupport, Finset.image_union]
+  | wand d P Q ihP ihQ =>
+      simp only [openAt, supportAt, show k + n + d = k + (n + d) by omega, ihP, ihQ,
+        LogicVar.openSupport, Finset.image_union]
+  | all P ih =>
+      simp only [openAt, supportAt, show k + n + 1 = k + (n + 1) by omega, ih]
+  | «over» P ih | under P ih | persist P ih => exact ih n k
+  | fiber X P ih =>
+      simp only [openAt, supportAt]
+      rw [supportSetAtDepth_openSupport, ih]
+      simp only [LogicVar.openSupport, Finset.image_union]
+
 theorem freeAtoms_openAt_subset (P : Formula) (k : Nat) (y : Atom) :
     (P.openAt k y).freeAtoms ⊆ {y} ∪ P.freeAtoms := by
   induction P generalizing k with
@@ -666,6 +706,53 @@ theorem openManyAt_fiber (X : Finset LogicVar) (P : Formula) (k d : Nat) (η : F
   | succ d ih =>
       simp only [openManyAt, ih, openAt, LogicVar.openSupport, Finset.image_image]
       rfl
+
+/-- An entire finite input family transports every visible formula key. -/
+theorem supportAt_openManyAt (P : Formula) (n k d : Nat) (η : Fin d → Atom) :
+    (P.openManyAt (k + n) d η).supportAt n =
+      (P.supportAt n).image (LogicVar.openManyAt k d η) := by
+  induction d with
+  | zero => simp [openManyAt, LogicVar.openManyAt]
+  | succ d ih =>
+      rw [openManyAt, show k + n + d = (k + d) + n by omega, supportAt_openAt, ih]
+      simp only [LogicVar.openSupport, Finset.image_image, LogicVar.openManyAt]
+      rfl
+
+/-- Finite opening adds no free observations except the selected names. -/
+theorem freeAtoms_openManyAt_subset (P : Formula) (k d : Nat) (η : Fin d → Atom) :
+    (P.openManyAt k d η).freeAtoms ⊆ P.freeAtoms ∪ Finset.univ.image η := by
+  induction d with
+  | zero => simp [openManyAt]
+  | succ d ih =>
+      intro x hx
+      have h := freeAtoms_openAt_subset
+        (P.openManyAt k d (fun i => η i.castSucc)) (k + d) (η (Fin.last d)) hx
+      rcases Finset.mem_union.1 h with h | h
+      · have hx : x = η (Fin.last d) := Finset.mem_singleton.1 h
+        subst x
+        exact Finset.mem_union_right _ (Finset.mem_image.2 ⟨Fin.last d, Finset.mem_univ _, rfl⟩)
+      · rcases Finset.mem_union.1 (ih _ h) with h | h
+        · exact Finset.mem_union_left _ h
+        · obtain ⟨i, _, rfl⟩ := Finset.mem_image.1 h
+          exact Finset.mem_union_right _ (Finset.mem_image.2 ⟨i.castSucc, Finset.mem_univ _, rfl⟩)
+
+theorem openManyAt_or (P Q : Formula) (k d : Nat) (η : Fin d → Atom) :
+    (P ∨ᶜ Q).openManyAt k d η = (P.openManyAt k d η ∨ᶜ Q.openManyAt k d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openManyAt, openAt, ih]
+
+theorem openManyAt_sum (P Q : Formula) (k d : Nat) (η : Fin d → Atom) :
+    (P ⊕ Q).openManyAt k d η = (P.openManyAt k d η ⊕ Q.openManyAt k d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openManyAt, openAt, ih]
+
+theorem openManyAt_persist (P : Formula) (k d : Nat) (η : Fin d → Atom) :
+    (□ P).openManyAt k d η = (□ (P.openManyAt k d η)) := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openManyAt, openAt, ih]
 
 @[simp] theorem measure_openManyAt (P : Formula) (k d : Nat) (η : Fin d → Atom) :
     (P.openManyAt k d η).measure = P.measure := by
