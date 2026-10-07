@@ -4256,6 +4256,43 @@ theorem resultBasicTyping_openAt_fresh (b : BaseType) (k : Nat) (y : Atom) :
   rw [LogicVar.openSupport_eq_self_of_fresh q.support (k + 1) y hb hf,
     q.openAt_fresh (k + 1) y hb hf]
 
+/-- Opening an input binder does not alter the distinguished result binder. -/
+theorem resultFiberSupport_openAt (q : Qualifier) (k : Nat) (y : Atom) :
+    LogicVar.openSupport (k + 1) y (q.support \ {.bound 0}) =
+      (q.openAt (k + 1) y).support \ {.bound 0} := by
+  have fixed : LogicVar.openBinder (k + 1) y (.bound 0) = .bound 0 := by
+    simp [LogicVar.openBinder, LogicVar.swap]
+  ext ξ
+  have same : LogicVar.openBinder (k + 1) y ξ = .bound 0 ↔ ξ = .bound 0 := by
+    constructor
+    · intro h
+      calc
+        ξ = LogicVar.openBinder (k + 1) y (LogicVar.openBinder (k + 1) y ξ) :=
+          (LogicVar.swap_involutive _ _ ξ).symm
+        _ = LogicVar.openBinder (k + 1) y (.bound 0) := congrArg _ h
+        _ = .bound 0 := fixed
+    · rintro rfl
+      exact fixed
+  simp only [LogicVar.mem_openSupport, Finset.mem_sdiff, Finset.mem_singleton,
+    Qualifier.support_openAt, same]
+
+/-- An opened input in an overapproximate base result is interpreted by
+opening its qualifier, while leaving the result's basic-typing atom intact. -/
+theorem overResultFiber_openAt (b : BaseType) (q : Qualifier) (k : Nat) (y : Atom) :
+    (Formula.fiber (q.support \ {.bound 0}) (overResult b q)).openAt (k + 1) y =
+      Formula.fiber ((q.openAt (k + 1) y).support \ {.bound 0})
+        (overResult b (q.openAt (k + 1) y)) := by
+  simp only [Formula.openAt, overResult]
+  rw [resultFiberSupport_openAt, resultBasicTyping_openAt_fresh]
+
+/-- The underapproximate base result follows the same dependent opening law. -/
+theorem underResultFiber_openAt (b : BaseType) (q : Qualifier) (k : Nat) (y : Atom) :
+    (Formula.fiber (q.support \ {.bound 0}) (underResult b q)).openAt (k + 1) y =
+      Formula.fiber ((q.openAt (k + 1) y).support \ {.bound 0})
+        (underResult b (q.openAt (k + 1) y)) := by
+  simp only [Formula.openAt, underResult]
+  rw [resultFiberSupport_openAt, resultBasicTyping_openAt_fresh]
+
 theorem overResultFiber_openAt_fresh (b : BaseType) (q : Qualifier)
     (k : Nat) (y : Atom) (closed : q.locallyClosedAt (k + 1))
     (fresh : y ∉ q.freeAtoms) :
@@ -6327,6 +6364,74 @@ theorem models_interp_ret_bound_openAt_iff
       m ⊨ interp (Δ.insert y τ.erase) τ (.ret (.free y)) := by
   rw [τ.shiftFrom_eq_of_locallyClosedAt 0 wfτ.locallyClosedAt]
   exact models_interpFuel_ret_bound_openAt_iff wfτ fresh
+
+/-- Opening a symbolic application with an overapproximate base codomain
+agrees with the actual named dependent-codomain interpretation. -/
+theorem models_interp_app_bound_openAt_over_iff {m : Capability} {Δ : BasicEnv}
+    {b : BaseType} {q : Qualifier} {y z : Atom} {T : SimpleType}
+    (wfτ : ({ν : b | q}).WellFormedAt 1 Δ.domain)
+    (freshY : y ∉ Δ.domain) (freshZ : z ∉ Δ.domain) (hne : y ≠ z)
+    (world : m ⊨ Interp.basicWorld ((Δ.insert z (.arrow T (.base b))).insert y T)) :
+    m ⊨ ((interpFuel 1 2 Δ (({ν : b | q}).shiftFrom 1)
+      (.app (.bound 1) (.bound 0))).openAt 1 z).openAt 0 y ↔
+    m ⊨ interp ((Δ.insert z (.arrow T (.base b))).insert y T)
+      (({ν : b | q}).openAt 0 y) (.app (.free z) (.free y)) := by
+  have shift := ({ν : b | q}).shiftFrom_eq_of_locallyClosedAt 1 wfτ.locallyClosedAt
+  have freshq : z ∉ q.freeAtoms := fun h => freshZ (wfτ.freeAtoms_subset h)
+  have hg := Interp.models_guard_relevant_app_bound_openAt_iff wfτ freshY freshZ hne world
+  rw [shift] at hg ⊢
+  have hr := Interp.resultFirst_app_bound_openAt_named_eq T (.arrow T (.base b))
+    wfτ freshY freshZ hne
+  rw [shift] at hr
+  have hr' :
+      ((Interp.resultFirst (Interp.relevantEnv Δ ({ν : b | q}) (.app (.bound 1) (.bound 0)))
+        ({ν : b | q}) (.app (.bound 1) (.bound 0))).openAt 2 z).openAt 1 y =
+      Interp.resultFirst (Interp.relevantEnv ((Δ.insert z (.arrow T (.base b))).insert y T)
+        (({ν : b | q}).openAt 0 y) (.app (.free z) (.free y)))
+        (({ν : b | q}).openAt 0 y) (.app (.free z) (.free y)) := by
+    simpa only [Interp.resultFirst, Interp.relevantSupport, Interp.relevantEnv_idem] using hr
+  have hb : ((Formula.fiber (q.support \ {.bound 0}) (Interp.overResult b q)).openAt 2 z).openAt 1 y =
+      Formula.fiber ((q.openAt 1 y).support \ {.bound 0}) (Interp.overResult b (q.openAt 1 y)) := by
+    rw [Interp.overResultFiber_openAt_fresh b q 1 z wfτ.locallyClosedAt freshq,
+      Interp.overResultFiber_openAt]
+  simp only [Formula.openAt] at hb
+  simp only [interp, measure, ContextType.openAt, interpFuel, Formula.openAt]
+  rw [hr', hb, Formula.models_and_iff, Formula.models_and_iff, hg]
+  rfl
+
+/-- Opening a symbolic application with an underapproximate base codomain
+agrees with the actual named dependent-codomain interpretation. -/
+theorem models_interp_app_bound_openAt_under_iff {m : Capability} {Δ : BasicEnv}
+    {b : BaseType} {q : Qualifier} {y z : Atom} {T : SimpleType}
+    (wfτ : ([ν : b | q]).WellFormedAt 1 Δ.domain)
+    (freshY : y ∉ Δ.domain) (freshZ : z ∉ Δ.domain) (hne : y ≠ z)
+    (world : m ⊨ Interp.basicWorld ((Δ.insert z (.arrow T (.base b))).insert y T)) :
+    m ⊨ ((interpFuel 1 2 Δ (([ν : b | q]).shiftFrom 1)
+      (.app (.bound 1) (.bound 0))).openAt 1 z).openAt 0 y ↔
+    m ⊨ interp ((Δ.insert z (.arrow T (.base b))).insert y T)
+      (([ν : b | q]).openAt 0 y) (.app (.free z) (.free y)) := by
+  have shift := ([ν : b | q]).shiftFrom_eq_of_locallyClosedAt 1 wfτ.locallyClosedAt
+  have freshq : z ∉ q.freeAtoms := fun h => freshZ (wfτ.freeAtoms_subset h)
+  have hg := Interp.models_guard_relevant_app_bound_openAt_iff wfτ freshY freshZ hne world
+  rw [shift] at hg ⊢
+  have hr := Interp.resultFirst_app_bound_openAt_named_eq T (.arrow T (.base b))
+    wfτ freshY freshZ hne
+  rw [shift] at hr
+  have hr' :
+      ((Interp.resultFirst (Interp.relevantEnv Δ ([ν : b | q]) (.app (.bound 1) (.bound 0)))
+        ([ν : b | q]) (.app (.bound 1) (.bound 0))).openAt 2 z).openAt 1 y =
+      Interp.resultFirst (Interp.relevantEnv ((Δ.insert z (.arrow T (.base b))).insert y T)
+        (([ν : b | q]).openAt 0 y) (.app (.free z) (.free y)))
+        (([ν : b | q]).openAt 0 y) (.app (.free z) (.free y)) := by
+    simpa only [Interp.resultFirst, Interp.relevantSupport, Interp.relevantEnv_idem] using hr
+  have hb : ((Formula.fiber (q.support \ {.bound 0}) (Interp.underResult b q)).openAt 2 z).openAt 1 y =
+      Formula.fiber ((q.openAt 1 y).support \ {.bound 0}) (Interp.underResult b (q.openAt 1 y)) := by
+    rw [Interp.underResultFiber_openAt_fresh b q 1 z wfτ.locallyClosedAt freshq,
+      Interp.underResultFiber_openAt]
+  simp only [Formula.openAt] at hb
+  simp only [interp, measure, ContextType.openAt, interpFuel, Formula.openAt]
+  rw [hr', hb, Formula.models_and_iff, Formula.models_and_iff, hg]
+  rfl
 
 /-- Pointwise result equivalence transports the full result-first
 interpretation, including the static and universal-termination guard. -/
