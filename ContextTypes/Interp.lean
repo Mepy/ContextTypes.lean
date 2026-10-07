@@ -2414,6 +2414,292 @@ theorem models_resultAt_ret_free_lookup {m : Capability}
     exact Term.ret.inj this.ret_eq
   rw [hz, hy, heq]
 
+/-- The capability of all results over the observed input stores.  Every
+input must have a result, but the constructor does not assert termination. -/
+def resultCapability (m : Capability) (X : Finset Atom) (e : Term) (y : Atom)
+    (scope : X ⊆ m.domain)
+    (returns : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e σ.toAssignment).reaches v) :
+    Capability where
+  domain := X ∪ {y}
+  stores := fun ρ => ∃ σ, σ ∈ m ∧ ∃ v,
+    (instantiateTerm e σ.toAssignment).reaches v ∧
+      ρ = (σ.restrict X).merge (Store.singleton y v)
+  nonempty := by
+    obtain ⟨σ, hσ⟩ := m.nonempty
+    obtain ⟨v, hv⟩ := returns σ hσ
+    exact ⟨(σ.restrict X).merge (Store.singleton y v), σ, hσ, v, hv, rfl⟩
+  fixedDomain := by
+    rintro ρ ⟨σ, hσ, v, hv, rfl⟩
+    rw [Store.domain_merge, Store.domain_restrict, m.mem_domain hσ,
+      Finset.inter_eq_right.2 scope, Store.domain_singleton]
+
+@[simp] theorem resultCapability_domain (m : Capability) (X : Finset Atom)
+    (e : Term) (y : Atom) (scope : X ⊆ m.domain)
+    (returns : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e σ.toAssignment).reaches v) :
+    (resultCapability m X e y scope returns).domain = X ∪ {y} := rfl
+
+theorem resultCapability_restrict (m : Capability) (X : Finset Atom)
+    (e : Term) (y : Atom) (scope : X ⊆ m.domain)
+    (returns : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e σ.toAssignment).reaches v) :
+    (resultCapability m X e y scope returns).restrict X = m.restrict X := by
+  have hdom : ∀ σ, σ ∈ m → (σ.restrict X).domain = X := by
+    intro σ hσ
+    rw [Store.domain_restrict, m.mem_domain hσ, Finset.inter_eq_right.2 scope]
+  apply Capability.ext
+  · simp [Finset.inter_eq_right.2 scope]
+  · intro ρ
+    constructor
+    · rintro ⟨υ, ⟨σ, hσ, v, hv, rfl⟩, rfl⟩
+      exact ⟨σ, hσ, (Store.restrict_merge_left_full (hdom σ hσ)).symm⟩
+    · rintro ⟨σ, hσ, rfl⟩
+      obtain ⟨v, hv⟩ := returns σ hσ
+      exact ⟨(σ.restrict X).merge (Store.singleton y v),
+        ⟨σ, hσ, v, hv, rfl⟩, Store.restrict_merge_left_full (hdom σ hσ)⟩
+
+theorem models_resultCapability (m : Capability) (X : Finset Atom)
+    (e : Term) (y : Atom) (scope : X ⊆ m.domain)
+    (returns : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e σ.toAssignment).reaches v)
+    (closed : e.locallyClosed) (support : e.support ⊆ X) (fresh : y ∉ X) :
+    resultCapability m X e y scope returns ⊨ resultAt (X.image LogicVar.free) e (.free y) := by
+  have hclosed : LogicVar.LocallyClosed (X.image LogicVar.free) := by
+    intro k hk
+    simp at hk
+  have hlogic : e.logicSupport ⊆ X.image LogicVar.free := by
+    rw [LogicVar.eq_image_free_of_locallyClosed (termLogicSupport_locallyClosed e closed),
+      freeAtomSet_term_logicSupport]
+    exact Finset.image_subset_image support
+  have hdom : ∀ σ, σ ∈ m → (σ.restrict X).domain = X := by
+    intro σ hσ
+    rw [Store.domain_restrict, m.mem_domain hσ, Finset.inter_eq_right.2 scope]
+  have hbase : ∀ σ, σ ∈ m → ∀ v,
+      ((σ.restrict X).merge (Store.singleton y v)).restrict X = σ.restrict X := by
+    intro σ hσ v
+    exact Store.restrict_merge_left_full (hdom σ hσ)
+  have hinst : ∀ σ, σ ∈ m → ∀ v,
+      instantiateTerm e ((σ.restrict X).merge (Store.singleton y v)).toAssignment =
+        instantiateTerm e σ.toAssignment := by
+    intro σ hσ v
+    apply instantiateTerm_eq_of_restrict_eq e (X.image LogicVar.free) _ _ hclosed hlogic
+    simpa only [Formula.LogicVar.freeAtomSet_image_free] using hbase σ hσ v
+  have hlookup : ∀ σ, σ ∈ m → ∀ v,
+      ((σ.restrict X).merge (Store.singleton y v)).lookup y = some v := by
+    intro σ hσ v
+    rw [Store.lookup_merge_right _ _ (by
+      rw [hdom σ hσ]
+      exact fresh),
+      Store.lookup_singleton]
+  apply models_resultAt_intro hclosed hlogic (by simpa using fresh)
+  · simp only [Formula.LogicVar.freeAtomSet_image_free, resultCapability_domain]
+    exact Finset.Subset.refl _
+  · rintro ρ ⟨σ, hσ, v, hv, rfl⟩
+    refine ⟨v, hlookup σ hσ v, ?_⟩
+    rwa [hinst σ hσ v]
+  · rintro ρ ⟨σ, hσ, v, hv, rfl⟩ w hw
+    rw [hinst σ hσ v] at hw
+    refine ⟨(σ.restrict X).merge (Store.singleton y w),
+      ⟨σ, hσ, w, hw, rfl⟩, ?_, hlookup σ hσ w⟩
+    simp only [Formula.LogicVar.freeAtomSet_image_free, hbase σ hσ]
+
+/-- Replacing the named result `y` by an alias `z` preserves exactly the
+observations of `B`, even when `e` has several results for each input. -/
+theorem resultCapability_projection_alias {m k : Capability} {A B : Finset Atom}
+    {e : Term} {y z : Atom} (scope : A ⊆ m.domain)
+    (returns : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e σ.toAssignment).reaches v)
+    (support : e.logicSupport ⊆ A.image LogicVar.free)
+    (hBA : B ⊆ A) (freshY : y ∉ A) (freshZ : z ∉ A)
+    (hres : m ⊨ resultAt (A.image LogicVar.free) e (.free y))
+    (base : k.restrict (B ∪ {y}) = m.restrict (B ∪ {y}))
+    (hlookup : ∀ ρ, ρ ∈ k → ρ.lookup z = ρ.lookup y) :
+    (resultCapability m A e z scope returns).restrict (B ∪ {z}) =
+      k.restrict (B ∪ {z}) := by
+  have hclosed : LogicVar.LocallyClosed (A.image LogicVar.free) := by
+    intro j hj
+    simp at hj
+  have hdom : ∀ σ, σ ∈ m → (σ.restrict A).domain = A := by
+    intro σ hσ
+    rw [Store.domain_restrict, m.mem_domain hσ, Finset.inter_eq_right.2 scope]
+  have hcompare : ∀ σ, σ ∈ m → ∀ v, σ.lookup y = some v →
+      ∀ ρ, ρ ∈ k → ρ.restrict (B ∪ {y}) = σ.restrict (B ∪ {y}) →
+      ((σ.restrict A).merge (Store.singleton z v)).restrict (B ∪ {z}) =
+        ρ.restrict (B ∪ {z}) := by
+    intro σ hσ v hv ρ hρ same
+    apply Store.ext
+    intro x
+    by_cases hx : x ∈ B ∪ {z}
+    · simp only [Store.lookup_restrict, if_pos hx]
+      by_cases hxB : x ∈ B
+      · rw [Store.lookup_merge_left _ _ (by
+          rw [hdom σ hσ]
+          exact hBA hxB),
+          Store.lookup_restrict, if_pos (hBA hxB)]
+        have heq := congrArg (fun s : Store => s.lookup x) same
+        simpa only [Store.lookup_restrict,
+          if_pos (Finset.mem_union_left {y} hxB)] using heq.symm
+      · have hxz : x = z := by simpa only [Finset.mem_union, hxB, false_or,
+          Finset.mem_singleton] using hx
+        subst x
+        rw [Store.lookup_merge_right _ _ (by
+          rw [hdom σ hσ]
+          exact freshZ),
+          Store.lookup_singleton, hlookup ρ hρ]
+        have heq := congrArg (fun s : Store => s.lookup y) same
+        have hy : ρ.lookup y = σ.lookup y := by
+          simpa only [Store.lookup_restrict,
+            if_pos (Finset.mem_union_right B (Finset.mem_singleton_self y))] using heq
+        exact hv.symm.trans hy.symm
+    · simp only [Store.lookup_restrict, if_neg hx]
+  have hstores : ∀ ρ : Store,
+      ρ ∈ (resultCapability m A e z scope returns).restrict (B ∪ {z}) ↔
+        ρ ∈ k.restrict (B ∪ {z}) := by
+    intro ρ
+    constructor
+    · rintro ⟨υ, ⟨σ, hσ, v, hv, rfl⟩, rfl⟩
+      obtain ⟨σ', hσ', same, result⟩ :=
+        models_resultAt_complete hclosed support (by simpa using freshY) hres σ hσ v hv
+      have hσ'C : σ'.restrict (B ∪ {y}) ∈ k.restrict (B ∪ {y}) := by
+        rw [base]
+        exact ⟨σ', hσ', rfl⟩
+      obtain ⟨ρ', hρ', hproj⟩ := hσ'C
+      refine ⟨ρ', hρ', ?_⟩
+      have hc := hcompare σ' hσ' v result ρ' hρ' hproj
+      rw [Formula.LogicVar.freeAtomSet_image_free] at same
+      rw [same] at hc
+      exact hc.symm
+    · rintro ⟨υ, hυ, rfl⟩
+      have hυC : υ.restrict (B ∪ {y}) ∈ m.restrict (B ∪ {y}) := by
+        rw [← base]
+        exact ⟨υ, hυ, rfl⟩
+      obtain ⟨σ, hσ, hproj⟩ := hυC
+      obtain ⟨v, hv, heval⟩ :=
+        models_resultAt_lookup hclosed support (by simpa using freshY) hres σ hσ
+      exact ⟨(σ.restrict A).merge (Store.singleton z v),
+        ⟨σ, hσ, v, heval, rfl⟩, hcompare σ hσ v hv υ hυ hproj.symm⟩
+  apply Capability.ext
+  · obtain ⟨σ, hσ⟩ := (resultCapability m A e z scope returns).restrict (B ∪ {z}) |>.nonempty
+    exact ((resultCapability m A e z scope returns).restrict (B ∪ {z})).mem_domain hσ |>.symm.trans
+      ((k.restrict (B ∪ {z})).mem_domain ((hstores σ).1 hσ))
+  · exact hstores
+
+/-- Naming a nondeterministic result preserves universal result-first
+obligations whose body only observes `B` and the result binder. -/
+theorem models_all_result_alias {m : Capability} {A B : Finset Atom}
+    {e : Term} {y : Atom} {Q : Formula}
+    (closed : e.locallyClosed) (support : e.support ⊆ A)
+    (hBA : B ⊆ A) (supportQ : Q.freeAtoms ⊆ B) (fresh : y ∉ A)
+    (hres : m ⊨ resultAt (A.image LogicVar.free) e (.free y))
+    (hsource : m ⊨ Formula.all (resultAt (A.image LogicVar.free) e (.bound 0) ⇒ᶜ Q)) :
+    m ⊨ Formula.all
+      (resultAt ((B ∪ {y}).image LogicVar.free) (.ret (.free y)) (.bound 0) ⇒ᶜ Q) := by
+  let C := B ∪ {y}
+  let P₁ := resultAt (A.image LogicVar.free) e (.bound 0) ⇒ᶜ Q
+  let P₂ := resultAt (C.image LogicVar.free) (.ret (.free y)) (.bound 0) ⇒ᶜ Q
+  have hclosed : ∀ X : Finset Atom, LogicVar.LocallyClosed (X.image LogicVar.free) := by
+    intro X j hj
+    simp at hj
+  have hlogic : ∀ (e : Term) (X : Finset Atom), e.locallyClosed → e.support ⊆ X →
+      e.logicSupport ⊆ X.image LogicVar.free := by
+    intro e X he hs
+    rw [LogicVar.eq_image_free_of_locallyClosed (termLogicSupport_locallyClosed e he),
+      freeAtomSet_term_logicSupport]
+    exact Finset.image_subset_image hs
+  have retClosed : (.ret (.free y) : Term).locallyClosed := by
+    simp [Term.locallyClosedAt, Value.locallyClosedAt]
+  have retSupport : (.ret (.free y) : Term).support ⊆ C := by
+    simp [C, Term.support, Value.support]
+  have hP₁ : P₁.freeAtoms = A := by
+    simp only [P₁, Formula.freeAtoms_impl, freeAtoms_resultAt,
+      Formula.LogicVar.freeAtomSet_image_free, LogicVar.freeAtoms, Finset.union_empty]
+    rw [Finset.union_eq_left.2 support,
+      Finset.union_eq_left.2 (Finset.Subset.trans supportQ hBA)]
+  have hP₂ : P₂.freeAtoms = C := by
+    simp only [P₂, Formula.freeAtoms_impl, freeAtoms_resultAt,
+      Formula.LogicVar.freeAtomSet_image_free, LogicVar.freeAtoms, Finset.union_empty]
+    rw [Finset.union_eq_left.2 retSupport,
+      Finset.union_eq_left.2 (Finset.Subset.trans supportQ Finset.subset_union_left)]
+  have hscope : A ∪ {y} ⊆ m.domain := by
+    have hs := Formula.models_scope hres
+    simpa only [freeAtoms_resultAt, Formula.LogicVar.freeAtomSet_image_free,
+      Finset.union_eq_left.2 support, LogicVar.freeAtoms] using hs
+  have scopeA : A ⊆ m.domain := Finset.Subset.trans Finset.subset_union_left hscope
+  have scopeC : C ⊆ m.domain := Finset.Subset.trans
+    (Finset.union_subset_union hBA (Finset.Subset.refl _)) hscope
+  have returns : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e σ.toAssignment).reaches v := by
+    intro σ hσ
+    obtain ⟨v, _, hv⟩ := models_resultAt_lookup (hclosed A) (hlogic e A closed support)
+      (by simpa using fresh) hres σ hσ
+    exact ⟨v, hv⟩
+  have hopen : ∀ (X : Finset Atom) (e : Term) (z : Atom),
+      e.locallyClosed → e.support ⊆ X → z ∉ X →
+      (resultAt (X.image LogicVar.free) e (.bound 0)).openAt 0 z =
+        resultAt (X.image LogicVar.free) e (.free z) := by
+    intro X e z he hs hz
+    have hi := resultAt_shift_openAt (X.image LogicVar.free) e z (hclosed X) he
+      (hlogic e X he hs) (by simpa using hz)
+    rw [LogicVar.image_shiftFrom_eq_of_locallyClosed _ 0 (hclosed X),
+      shiftTerm_eq_of_locallyClosed e he] at hi
+    exact hi
+  obtain ⟨_, L, hall⟩ := (Formula.models_all_iff_refines m P₁).1 hsource
+  apply (Formula.models_all_iff_refines m P₂).2
+  refine ⟨by
+    rw [hP₂]
+    exact scopeC, L ∪ A, ?_⟩
+  intro z hzL hzP n href hndom
+  have hzL' : z ∉ L := fun hz => hzL (Finset.mem_union_left A hz)
+  have hzA : z ∉ A := fun hz => hzL (Finset.mem_union_right L hz)
+  have hzC : z ∉ C := by rwa [hP₂] at hzP
+  have hQscope : (Q.openAt 0 z).freeAtoms ⊆ B ∪ {z} := by
+    intro x hx
+    rcases Finset.mem_union.1 (Formula.freeAtoms_openAt_subset Q 0 z hx) with hx | hx
+    · exact Finset.mem_union_right _ hx
+    · exact Finset.mem_union_left _ (supportQ hx)
+  have hRfree : (resultAt (C.image LogicVar.free) (.ret (.free y)) (.free z)).freeAtoms =
+      C ∪ {z} := by
+    simp only [freeAtoms_resultAt, Formula.LogicVar.freeAtomSet_image_free,
+      Finset.union_eq_left.2 retSupport, LogicVar.freeAtoms]
+  have hn : n.domain = C ∪ {z} := by rwa [hP₂] at hndom
+  change n ⊨ ((resultAt (C.image LogicVar.free) (.ret (.free y)) (.bound 0)).openAt 0 z ⇒ᶜ
+    Q.openAt 0 z)
+  rw [hopen C (.ret (.free y)) z retClosed retSupport hzC]
+  have hQC : (Q.openAt 0 z).freeAtoms ⊆ C ∪ {z} :=
+    Finset.Subset.trans hQscope (Finset.union_subset_union Finset.subset_union_left
+      (Finset.Subset.refl _))
+  apply Formula.models_impl_intro
+  · simp only [Formula.freeAtoms_impl, hRfree, hn]
+    exact Finset.union_subset (Finset.Subset.refl _) hQC
+  · intro k hnk hret
+    have hnk' : n ⊑ k := by
+      simp only [Formula.freeAtoms_impl, hRfree,
+        Finset.union_eq_left.2 hQC] at hnk
+      rw [← hn, Capability.restrict_domain_self] at hnk
+      exact hnk
+    have hmk : m.restrict C ⊑ k := Capability.refines_trans
+      (by rwa [hP₂] at href) hnk'
+    have base : k.restrict C = m.restrict C := by
+      change m.restrict C = k.restrict (m.restrict C).domain at hmk
+      rw [Capability.restrict_domain, Finset.inter_eq_right.2 scopeC] at hmk
+      exact hmk.symm
+    let g := resultCapability m A e z scopeA returns
+    have hg : g ⊨ resultAt (A.image LogicVar.free) e (.free z) :=
+      models_resultCapability m A e z scopeA returns closed support hzA
+    have hgbase : m.restrict P₁.freeAtoms ⊑ g := by
+      rw [hP₁]
+      change m.restrict A = g.restrict (m.restrict A).domain
+      rw [Capability.restrict_domain, Finset.inter_eq_right.2 scopeA]
+      exact (resultCapability_restrict m A e z scopeA returns).symm
+    have hgdom : g.domain = P₁.freeAtoms ∪ {z} := by
+      rw [hP₁]
+      rfl
+    have hbody := hall z hzL' (by rwa [hP₁]) g hgbase hgdom
+    change g ⊨ ((resultAt (A.image LogicVar.free) e (.bound 0)).openAt 0 z ⇒ᶜ
+      Q.openAt 0 z) at hbody
+    rw [hopen A e z closed support hzA] at hbody
+    have hQ := Formula.models_impl_elim hbody hg
+    have same := resultCapability_projection_alias scopeA returns (hlogic e A closed support)
+      hBA fresh hzA hres base
+      (models_resultAt_ret_free_lookup (hclosed C) (hlogic _ C retClosed retSupport)
+        (by simpa using hzC) hret)
+    exact (Formula.models_projection (B ∪ {z}) hQscope same).1 hQ
+
 theorem models_resultAt_ret_lookup_eq_of_restrict_eq {m : Capability}
     {X : Finset LogicVar} {v : Value} {y : Atom}
     (closedX : LogicVar.LocallyClosed X)
@@ -3502,6 +3788,73 @@ theorem models_all_ret_alias_singleton {ρ : Store} {A B : Finset Atom}
             exact ⟨w, hw, (hlook w hw).symm.trans hυσ⟩
       exact (Formula.models_projection (B ∪ {z}) hQscope hproj).2 hQ
 
+
+/-- Transport result-first quantification along an exact nondeterministic
+result alias, including the change in relevant input observations. -/
+theorem models_resultFirst_result_alias
+    {m : Capability} {Δ : BasicEnv} {τ : ContextType} {e : Term} {y : Atom}
+    {X : Finset LogicVar} {Q : Formula}
+    (wfτ : τ.WellFormed Δ.domain) (closedE : e.locallyClosed)
+    (supportE : e.support ⊆ Δ.domain)
+    (closedX : LogicVar.LocallyClosed X) (supportX : e.logicSupport ⊆ X)
+    (typeSupport : τ.freeAtoms.image LogicVar.free ⊆ X)
+    (freshX : LogicVar.free y ∉ X) (freshΔ : y ∉ Δ.domain)
+    (supportQ : Q.freeAtoms ⊆ τ.freeAtoms)
+    (hres : m ⊨ resultAt X e (.free y))
+    (hsource : m ⊨ Formula.all
+      (resultFirst (relevantEnv Δ τ e) τ e ⇒ᶜ Q)) :
+    m ⊨ Formula.all
+      ((resultFirst (relevantEnv Δ τ (.ret (.bound 0))) τ
+        (.ret (.bound 0))).openAt 1 y ⇒ᶜ Q) := by
+  let A := τ.freeAtoms ∪ e.support
+  let B := τ.freeAtoms
+  have hAΔ : A ⊆ Δ.domain := Finset.union_subset wfτ.freeAtoms_subset supportE
+  have henv : (relevantEnv Δ τ e).domain = A := by
+    rw [relevantEnv_domain]
+    exact Finset.inter_eq_right.2 hAΔ
+  have henvB : (relevantEnv Δ τ (.ret (.bound 0))).domain = B := by
+    simp only [relevantEnv_domain, relevantAtoms, Term.support, Value.support,
+      Finset.union_empty]
+    exact Finset.inter_eq_right.2 wfτ.freeAtoms_subset
+  have hclosed := relevantSupport_locallyClosed (relevantEnv Δ τ e) τ e
+    wfτ.locallyClosedAt closedE
+  have hsupport : relevantSupport (relevantEnv Δ τ e) τ e =
+      A.image LogicVar.free := by
+    rw [LogicVar.eq_image_free_of_locallyClosed hclosed,
+      freeAtomSet_relevantSupport, relevantEnv_idem, henv]
+  have hclosedA : LogicVar.LocallyClosed (A.image LogicVar.free) := by
+    intro j hj
+    simp at hj
+  have hsourceR : resultFirst (relevantEnv Δ τ e) τ e =
+      resultAt (A.image LogicVar.free) e (.bound 0) := by
+    rw [resultFirst, hsupport,
+      LogicVar.image_shiftFrom_eq_of_locallyClosed _ 0 hclosedA,
+      shiftTerm_eq_of_locallyClosed e closedE]
+  rw [hsourceR] at hsource
+  have htargetR :
+      (resultFirst (relevantEnv Δ τ (.ret (.bound 0))) τ (.ret (.bound 0))).openAt 1 y =
+        resultAt (insert (.free y) (B.image LogicVar.free))
+          (.ret (.free y)) (.bound 0) := by
+    rw [resultFirst_ret_bound_openAt _ τ y wfτ.locallyClosedAt
+      (by rw [henvB]; exact fun hy => freshΔ (wfτ.freeAtoms_subset hy))]
+    rw [relevantEnv_idem, henvB]
+  rw [htargetR]
+  have heimage : e.logicSupport = e.support.image LogicVar.free := by
+    rw [LogicVar.eq_image_free_of_locallyClosed (termLogicSupport_locallyClosed e closedE),
+      freeAtomSet_term_logicSupport]
+  have hAX : A.image LogicVar.free ⊆ X := by
+    simp only [A, Finset.image_union]
+    exact Finset.union_subset typeSupport (by rwa [← heimage])
+  have heA : e.logicSupport ⊆ A.image LogicVar.free := by
+    rw [heimage]
+    exact Finset.image_subset_image Finset.subset_union_right
+  have hresA : m ⊨ resultAt (A.image LogicVar.free) e (.free y) := by
+    have hr := models_resultAt_restrict_support closedX hAX heA freshX hres
+    exact Formula.models_kripke (Capability.restrict_refines m _) hr
+  have h := models_all_result_alias closedE Finset.subset_union_right
+    Finset.subset_union_left supportQ (fun hy => freshΔ (hAΔ hy)) hresA hsource
+  simpa only [B, Finset.image_union, Finset.image_singleton,
+    Finset.union_singleton, Finset.image_insert] using h
 
 /-- Transport a result-first quantifier along a returned-value alias on a
 singleton capability, accounting for both relevant environments. -/
@@ -4773,6 +5126,206 @@ theorem models_interp_of_reaches_iff
         (Interp.instantiateTerm e₂ σ.toAssignment).reaches v)
     (h : m ⊨ interp Δ τ e₁) : m ⊨ interp Δ τ e₂ :=
   models_interpFuel_of_reaches_iff wfτ typed₁ typed₂ world terminates support heval h
+
+/-- Name every result of a nondeterministic term beneath a fresh binder,
+preserving the whole context-type interpretation. -/
+theorem models_interpFuel_result_alias
+    {m : Capability} {Δ : BasicEnv} {τ : ContextType}
+    {gas d : Nat} {e : Term} {y : Atom} {X : Finset LogicVar}
+    (closedX : LogicVar.LocallyClosed X) (closedE : e.locallyClosed)
+    (supportX : e.logicSupport ⊆ X)
+    (freshX : LogicVar.free y ∉ X) (freshΔ : y ∉ Δ.domain)
+    (wfτ : τ.WellFormed Δ.domain) (supportE : e.support ⊆ Δ.domain)
+    (typeSupport : τ.freeAtoms.image LogicVar.free ⊆ X)
+    (hres : m ⊨ Interp.resultAt X e (.free y))
+    (hsource : m ⊨ interpFuel gas d Δ τ e) :
+    m ⊨ (interpFuel gas (d + 1) Δ (τ.shiftFrom 0)
+      (.ret (.bound 0))).openAt 0 y := by
+  induction gas generalizing d Δ τ with
+  | zero =>
+      simp only [interpFuel, Formula.openAt]
+      apply Formula.models_and_intro
+      · exact Interp.models_guard_relevant_shift_openAt_result_alias (e := e) closedX closedE
+          supportX freshX freshΔ hres (models_interpFuel_guard hsource)
+      · exact Formula.models_top _
+  | succ gas ih =>
+      have hguard := models_interpFuel_guard hsource
+      have hbody := Formula.models_and_elim_right hsource
+      have hclosed := wfτ.locallyClosedAt
+      have hshift := τ.shiftFrom_eq_of_locallyClosedAt 0 hclosed
+      let Δe := Interp.relevantEnv Δ τ e
+      let Δτ := Interp.relevantEnv Δ τ (.ret (.bound 0))
+      have hΔτ : y ∉ Δτ.domain := by
+        rw [Interp.relevantEnv_domain]
+        exact fun hy => freshΔ (Finset.mem_inter.1 hy).1
+      have hall : ∀ Q : Formula, Q.freeAtoms ⊆ τ.freeAtoms →
+          m ⊨ Formula.all
+            (Interp.resultFirst Δe τ e ⇒ᶜ Q) →
+          m ⊨ Formula.all
+            ((Interp.resultFirst Δτ τ (.ret (.bound 0))).openAt 1 y ⇒ᶜ Q) := by
+        intro Q hQ h
+        exact Interp.models_resultFirst_result_alias wfτ closedE supportE
+          closedX supportX typeSupport freshX freshΔ hQ hres h
+      have hfuel : ∀ (υ : ContextType) (e : Term) (k n n' : Nat),
+          υ.LocallyClosedAt k → e.locallyClosedAt k → e.support = ∅ →
+          υ.freeAtoms ⊆ τ.freeAtoms → k ≤ n → k ≤ n' →
+          (interpFuel gas n' Δτ υ e).openAt k y = interpFuel gas n Δe υ e := by
+        intro υ e k n n' hυ he hefree hυτ hkn hkn'
+        have hfree : y ∉ υ.freeAtoms := fun hy => freshΔ (wfτ.freeAtoms_subset (hυτ hy))
+        rw [interpFuel_openAt_fresh gas n' Δτ υ e k y hυ he hΔτ hfree
+          (by rw [hefree]; exact Finset.notMem_empty _),
+          interpFuel_eq_of_locallyClosedAt gas Δτ υ e k n' n hυ hkn' hkn]
+        apply interpFuel_eq_of_agreeOn
+        intro x hx
+        have hxυ : x ∈ υ.freeAtoms := by simpa [hefree] using hx
+        have hxτ := hυτ hxυ
+        simp [Δτ, Δe, Interp.relevantEnv, Interp.relevantAtoms,
+          BasicEnv.lookup_restrict, hxτ, Term.support, Value.support]
+      have hscopeInner : ∀ (υ : ContextType) (e : Term) (n : Nat),
+          e.support = ∅ → υ.freeAtoms ⊆ τ.freeAtoms →
+          (interpFuel gas n Δe υ e).freeAtoms ⊆ τ.freeAtoms := by
+        intro υ e n he hυ
+        have hs := freeAtoms_interpFuel_subset gas n Δe υ e
+        rw [he, Finset.union_empty] at hs
+        exact Finset.Subset.trans hs hυ
+      have hTypeSupport (υ : ContextType) (hυ : υ.freeAtoms ⊆ τ.freeAtoms) :
+          υ.freeAtoms.image LogicVar.free ⊆ X :=
+        Finset.Subset.trans (Finset.image_subset_image hυ) typeSupport
+      have htargetGuard : m ⊨
+          (Interp.guard (d + 1) Δτ τ (.ret (.bound 0))).openAt 0 y := by
+        simpa only [hshift] using
+          Interp.models_guard_relevant_shift_openAt_result_alias (e := e) closedX closedE
+            supportX freshX freshΔ hres hguard
+      have hτScope : τ.freeAtoms ⊆ m.domain := by
+        have hwf := (Interp.models_wellFormed_iff m d Δe τ).1
+          (Formula.models_and_elim_left hguard)
+        exact Finset.Subset.trans hwf.2.freeAtoms_subset hwf.1
+      have hyScope : y ∈ m.domain := by
+        apply Formula.models_scope hres
+        rw [Interp.freeAtoms_resultAt]
+        simp [LogicVar.freeAtoms]
+      have scopeOpened : ∀ υ : ContextType, υ.freeAtoms ⊆ τ.freeAtoms →
+          ((interpFuel gas (d + 1) Δ υ (.ret (.bound 0))).openAt 0 y).freeAtoms ⊆ m.domain := by
+        intro υ hυ x hx
+        rcases Finset.mem_union.1
+          (Formula.freeAtoms_openAt_subset _ 0 y hx) with hx | hx
+        · have hxy := Finset.mem_singleton.1 hx
+          subst x
+          exact hyScope
+        · apply hτScope
+          apply hυ
+          have hs := freeAtoms_interpFuel_subset gas (d + 1) Δ υ (.ret (.bound 0)) hx
+          simpa [Term.support, Value.support] using hs
+      rw [hshift]
+      cases τ with
+      | inter τ₁ τ₂ =>
+          have hshift₁ := τ₁.shiftFrom_eq_of_locallyClosedAt 0 wfτ.1.locallyClosedAt
+          have hshift₂ := τ₂.shiftFrom_eq_of_locallyClosedAt 0 wfτ.2.1.locallyClosedAt
+          simp only [interpFuel, Formula.openAt]
+          apply Formula.models_and_intro htargetGuard
+          apply Formula.models_and_intro
+          · simpa only [hshift₁] using ih freshΔ wfτ.1 supportE (hTypeSupport τ₁ Finset.subset_union_left)
+              (Formula.models_and_elim_left hbody)
+          · simpa only [hshift₂] using ih freshΔ wfτ.2.1 supportE (hTypeSupport τ₂ Finset.subset_union_right)
+              (Formula.models_and_elim_right hbody)
+      | union τ₁ τ₂ =>
+          have hshift₁ := τ₁.shiftFrom_eq_of_locallyClosedAt 0 wfτ.1.locallyClosedAt
+          have hshift₂ := τ₂.shiftFrom_eq_of_locallyClosedAt 0 wfτ.2.1.locallyClosedAt
+          simp only [interpFuel, Formula.openAt]
+          apply Formula.models_and_intro htargetGuard
+          rcases (Formula.models_or_iff _ _ _ (Formula.models_scope hbody)).1 hbody with h₁ | h₂
+          · apply Formula.models_or_intro_left
+            · simpa only [hshift₁] using ih freshΔ wfτ.1 supportE (hTypeSupport τ₁ Finset.subset_union_left) h₁
+            · exact scopeOpened τ₂ Finset.subset_union_right
+          · apply Formula.models_or_intro_right
+            · exact scopeOpened τ₁ Finset.subset_union_left
+            · simpa only [hshift₂] using ih freshΔ wfτ.2.1 supportE (hTypeSupport τ₂ Finset.subset_union_right) h₂
+      | «over» b q =>
+          have hQ := Interp.overResultFiber_openAt_fresh b q 0 y hclosed
+            (fun hy => freshΔ (wfτ.freeAtoms_subset hy))
+          simp only [Formula.openAt] at hQ
+          simp only [interpFuel, Formula.openAt]
+          apply Formula.models_and_intro htargetGuard
+          rw [hQ]
+          exact hall _ (by rw [Interp.freeAtoms_overResultFiber]; exact Finset.Subset.refl _) hbody
+      | under b q =>
+          have hQ := Interp.underResultFiber_openAt_fresh b q 0 y hclosed
+            (fun hy => freshΔ (wfτ.freeAtoms_subset hy))
+          simp only [Formula.openAt] at hQ
+          simp only [interpFuel, Formula.openAt]
+          apply Formula.models_and_intro htargetGuard
+          rw [hQ]
+          exact hall _ (by rw [Interp.freeAtoms_underResultFiber]; exact Finset.Subset.refl _) hbody
+      | sum τ₁ τ₂ =>
+          have hs₁ : (τ₁.shiftFrom 0).freeAtoms ⊆ (τ₁.sum τ₂).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom] using
+              (Finset.subset_union_left : τ₁.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          have hs₂ : (τ₂.shiftFrom 0).freeAtoms ⊆ (τ₁.sum τ₂).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom] using
+              (Finset.subset_union_right : τ₂.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          have h₁ := hfuel (τ₁.shiftFrom 0) (.ret (.bound 0)) 1 (d + 1) (d + 1 + 1)
+            (wfτ.1.locallyClosedAt.shiftFrom 0)
+            (by simp [Term.locallyClosedAt, Value.locallyClosedAt]) rfl hs₁ (by omega) (by omega)
+          have h₂ := hfuel (τ₂.shiftFrom 0) (.ret (.bound 0)) 1 (d + 1) (d + 1 + 1)
+            (wfτ.2.1.locallyClosedAt.shiftFrom 0)
+            (by simp [Term.locallyClosedAt, Value.locallyClosedAt]) rfl hs₂ (by omega) (by omega)
+          simp only [interpFuel, Formula.openAt]
+          apply Formula.models_and_intro htargetGuard
+          rw [h₁, h₂]
+          apply hall _ ?_ hbody
+          simp only [Formula.freeAtoms_sum]
+          exact Finset.union_subset (hscopeInner _ _ _ rfl hs₁) (hscopeInner _ _ _ rfl hs₂)
+      | arrow τ₁ τ₂ =>
+          have hs₁ : ((τ₁.shiftFrom 0).shiftFrom 0).freeAtoms ⊆ (τ₁.arrow τ₂).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom] using
+              (Finset.subset_union_left : τ₁.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          have hs₂ : (τ₂.shiftFrom 1).freeAtoms ⊆ (τ₁.arrow τ₂).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom] using
+              (Finset.subset_union_right : τ₂.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          have h₁ := hfuel ((τ₁.shiftFrom 0).shiftFrom 0) (.ret (.bound 0)) 2 (d + 2) (d + 1 + 2)
+            ((wfτ.1.locallyClosedAt.shiftFrom 0).shiftFrom 0)
+            (by simp [Term.locallyClosedAt, Value.locallyClosedAt]) rfl hs₁ (by omega) (by omega)
+          have h₂ := hfuel (τ₂.shiftFrom 1) (.app (.bound 1) (.bound 0)) 2 (d + 2) (d + 1 + 2)
+            (wfτ.2.locallyClosedAt.shiftFrom 1)
+            (by simp [Term.locallyClosedAt, Value.locallyClosedAt]) rfl hs₂ (by omega) (by omega)
+          simp only [interpFuel, Formula.openAt]
+          apply Formula.models_and_intro htargetGuard
+          rw [h₁, h₂]
+          apply hall _ ?_ hbody
+          simp only [Formula.freeAtoms_all, Formula.freeAtoms_impl]
+          exact Finset.union_subset (hscopeInner _ _ _ rfl hs₁) (hscopeInner _ _ _ rfl hs₂)
+      | wand τ₁ τ₂ =>
+          have hs₁ : ((τ₁.shiftFrom 0).shiftFrom 0).freeAtoms ⊆ (τ₁.wand τ₂).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom] using
+              (Finset.subset_union_left : τ₁.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          have hs₂ : (τ₂.shiftFrom 1).freeAtoms ⊆ (τ₁.wand τ₂).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom] using
+              (Finset.subset_union_right : τ₂.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          have h₁ := hfuel ((τ₁.shiftFrom 0).shiftFrom 0) (.ret (.bound 0)) 2 (d + 2) (d + 1 + 2)
+            ((wfτ.1.locallyClosedAt.shiftFrom 0).shiftFrom 0)
+            (by simp [Term.locallyClosedAt, Value.locallyClosedAt]) rfl hs₁ (by omega) (by omega)
+          have h₂ := hfuel (τ₂.shiftFrom 1) (.app (.bound 1) (.bound 0)) 2 (d + 2) (d + 1 + 2)
+            (wfτ.2.locallyClosedAt.shiftFrom 1)
+            (by simp [Term.locallyClosedAt, Value.locallyClosedAt]) rfl hs₂ (by omega) (by omega)
+          simp only [interpFuel, Formula.openAt]
+          apply Formula.models_and_intro htargetGuard
+          rw [h₁, h₂]
+          apply hall _ ?_ hbody
+          simp only [Formula.freeAtoms_wand]
+          exact Finset.union_subset (hscopeInner _ _ _ rfl hs₁) (hscopeInner _ _ _ rfl hs₂)
+      | persist τ =>
+          have hs : (τ.shiftFrom 0).freeAtoms ⊆ (ContextType.persist τ).freeAtoms := by
+            rw [freeAtoms_shiftFrom]
+            exact Finset.Subset.refl _
+          have h := hfuel (τ.shiftFrom 0) (.ret (.bound 0)) 1 (d + 1) (d + 1 + 1)
+            (wfτ.locallyClosedAt.shiftFrom 0)
+            (by simp [Term.locallyClosedAt, Value.locallyClosedAt]) rfl hs (by omega) (by omega)
+          simp only [interpFuel, Formula.openAt]
+          apply Formula.models_and_intro htargetGuard
+          rw [h]
+          apply hall _ ?_ hbody
+          simp only [Formula.freeAtoms_persist]
+          exact hscopeInner _ _ _ rfl hs
 
 /-- Name a returned value beneath a fresh result binder without changing its
 type interpretation on a singleton capability. -/
