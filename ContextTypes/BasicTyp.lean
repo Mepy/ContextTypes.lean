@@ -780,6 +780,32 @@ theorem ScopedAt.shiftFrom {q : Qualifier} {d : Nat} {X : Finset Atom}
       · simp [LogicVar.shiftFrom, hkn]
         omega
 
+/-- Opening the outermost logical binder preserves scoping over its fresh name. -/
+theorem ScopedAt.openAt {q : Qualifier} {d : Nat} {X : Finset Atom}
+    (h : q.ScopedAt (d + 1) X) {y : Atom} (fresh : y ∉ q.freeAtoms) :
+    (q.openAt d y).ScopedAt d (X ∪ {y}) := by
+  intro ξ hξ
+  rw [Qualifier.support_openAt, LogicVar.mem_openSupport] at hξ
+  cases ξ with
+  | bound k =>
+      by_cases same : k = d
+      · subst k
+        have hy : y ∈ q.freeAtoms := by
+          rw [Qualifier.mem_freeAtoms_iff]
+          simpa [LogicVar.openBinder] using hξ
+        exact (fresh hy).elim
+      · have hk : LogicVar.bound k ∈ q.support := by
+          simpa [LogicVar.openBinder, LogicVar.swap, same] using hξ
+        have := h (.bound k) hk
+        dsimp at this ⊢
+        omega
+  | free x =>
+      by_cases same : x = y
+      · exact Finset.mem_union_right _ (Finset.mem_singleton.2 same)
+      · have hx : LogicVar.free x ∈ q.support := by
+          simpa [LogicVar.openBinder, LogicVar.swap, same] using hξ
+        exact Finset.mem_union_left _ (h (.free x) hx)
+
 end Qualifier
 
 namespace ContextType
@@ -980,6 +1006,33 @@ theorem WellFormedAt.shiftFrom {τ : ContextType} {d : Nat}
       rw [same]
       exact ⟨h.1, ih₂ h.2 (k + 1)⟩
   | persist τ ih => exact ih h k
+
+/-- A dependent context type remains well formed when its outer binder is opened. -/
+theorem WellFormedAt.openAt {τ : ContextType} {d : Nat}
+    {X : Finset Atom} (h : τ.WellFormedAt (d + 1) X) {y : Atom}
+    (fresh : y ∉ τ.freeAtoms) :
+    (τ.openAt d y).WellFormedAt d (X ∪ {y}) := by
+  induction τ generalizing d X with
+  | «over» b q => exact Qualifier.ScopedAt.openAt h fresh
+  | under b q => exact Qualifier.ScopedAt.openAt h fresh
+  | inter τ₁ τ₂ ih₁ ih₂ | union τ₁ τ₂ ih₁ ih₂ | sum τ₁ τ₂ ih₁ ih₂ =>
+      have hf : y ∉ τ₁.freeAtoms ∧ y ∉ τ₂.freeAtoms := by
+        simpa [ContextType.freeAtoms] using fresh
+      exact ⟨ih₁ h.1 hf.1, ih₂ h.2.1 hf.2, by simpa using h.2.2⟩
+  | arrow τ₁ τ₂ ih₁ ih₂ =>
+      have hf : y ∉ τ₁.freeAtoms ∧ y ∉ τ₂.freeAtoms := by
+        simpa [ContextType.freeAtoms] using fresh
+      exact ⟨ih₁ h.1 hf.1, ih₂ h.2 hf.2⟩
+  | wand τ₁ τ₂ ih₁ ih₂ =>
+      have hf : y ∉ τ₁.freeAtoms ∧ y ∉ τ₂.freeAtoms := by
+        simpa [ContextType.freeAtoms] using fresh
+      have hsame : τ₁.openAt d y = τ₁ := by
+        have closed := h.1.locallyClosedAt.mono (Nat.zero_le d)
+        have ho := ContextType.openAt_shiftFrom_eq τ₁ d y closed hf.1
+        rwa [τ₁.shiftFrom_eq_of_locallyClosedAt d closed] at ho
+      simp only [ContextType.openAt, ContextType.WellFormedAt, hsame]
+      exact ⟨h.1, ih₂ h.2 hf.2⟩
+  | persist τ ih => exact ih h fresh
 
 theorem wellFormedAt_iff_of_locallyClosedAt {τ : ContextType} {k d d' : Nat}
     {X : Finset Atom} (closed : τ.LocallyClosedAt k)
