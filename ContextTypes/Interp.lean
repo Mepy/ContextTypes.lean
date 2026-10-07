@@ -2044,6 +2044,166 @@ theorem models_basicTyping_openAt_of_world
     · intro x
       simp [a, s, hqfree]
 
+/-- A fully named input family gives the same basic-typing obligation in any
+typed extension of the original erased environment. -/
+theorem models_basicTyping_openManyAt_iff
+    {m : Capability} {Δ Δ' : BasicEnv} {e : Term} {T : SimpleType}
+    {k d : Nat} {η : Fin d → Atom}
+    (inj : Function.Injective η) (freshΔ : ∀ i, η i ∉ Δ.domain)
+    (support : e.support ⊆ Δ.domain) (embed : Δ.Subset Δ')
+    (closed : (e.openManyAt k d η).locallyClosed)
+    (scope : (e.openManyAt k d η).support ⊆ Δ'.domain)
+    (world : m ⊨ basicWorld Δ') :
+    m ⊨ (basicTyping Δ e T).openManyAt k d η ↔
+      m ⊨ basicTyping Δ' (e.openManyAt k d η) T := by
+  let e' := e.openManyAt k d η
+  let q := (basicTypingQualifier Δ e T).openManyAt k d η
+  let X := Δ.domain ∪ e'.support
+  have freshE : ∀ i, η i ∉ e.support := fun i hx => freshΔ i (support hx)
+  have hlogic : e'.logicSupport = e'.support.image LogicVar.free := by
+    rw [← freeAtomSet_term_logicSupport e']
+    exact LogicVar.eq_image_free_of_locallyClosed (termLogicSupport_locallyClosed e' closed)
+  have hq : q.support = X.image LogicVar.free := by
+    rw [basicTypingQualifier_openManyAt_support Δ e T k d η inj freshΔ freshE, hlogic]
+    exact (Finset.image_union _ _).symm
+  have hqfree : q.freeAtoms = X := by
+    change LogicVar.freeAtomSet q.support = X
+    rw [hq, Formula.LogicVar.freeAtomSet_image_free]
+  have hw := (models_basicWorld_iff m Δ').1 world
+  have scopeX : X ⊆ m.domain := by
+    apply Finset.Subset.trans _ hw.1
+    apply Finset.union_subset
+    · intro x hx
+      obtain ⟨U, hU⟩ := (BasicEnv.mem_domain_iff Δ x).1 hx
+      exact (BasicEnv.mem_domain_iff Δ' x).2 ⟨U, embed x U hU⟩
+    · exact scope
+  have form : (basicTyping Δ e T).openManyAt k d η = Formula.fiberAtom q := by
+    simp only [basicTyping, Formula.fiberAtom, Formula.openManyAt_fiber,
+      Formula.openManyAt_atom, q, Qualifier.support_openManyAt]
+  rw [form]
+  constructor
+  · intro h
+    apply models_basicTyping_of_term closed scope world
+    intro σ hσ
+    obtain ⟨_, a, ha, hlook⟩ := (Formula.models_fiberAtom_iff m q).1 h |>.2.2 σ hσ
+    have ht := (basicTypingQualifier_openManyAt_holds_iff
+      Δ e T k d η inj freshΔ freshE a).1 ha |>.2.2
+    have hagree : ∀ ξ, ξ ∈ e'.logicSupport →
+        a.assignment.lookup ξ = σ.toAssignment.lookup ξ := by
+      intro ξ hξ
+      cases ξ with
+      | bound j => exact (termLogicSupport_locallyClosed e' closed j hξ).elim
+      | free x =>
+          have hx : x ∈ e'.support := by
+            rw [← freeAtomSet_term_logicSupport, LogicVar.mem_freeAtomSet_iff]
+            exact hξ
+          rw [hlook x, Store.lookup_restrict, if_pos (by simp [hqfree, X, hx]),
+            Store.toAssignment_lookup_free]
+    rw [← instantiateTerm_eq_of_agreeOn e' hagree]
+    exact ht
+  · intro h
+    apply (Formula.models_fiberAtom_iff m q).2
+    refine ⟨?_, by rwa [hqfree], ?_⟩
+    · intro j hj
+      rw [hq] at hj
+      simp at hj
+    · intro σ hσ
+      let s := σ.restrict X
+      have hsdom : s.domain = X := by
+        rw [Store.domain_restrict, m.mem_domain hσ, Finset.inter_eq_right.2 scopeX]
+      let a : AssignmentOn q.support :=
+        { assignment := s.toAssignment
+          domain_eq := by rw [Store.toAssignment_domain, hsdom, hq] }
+      refine ⟨by rw [hqfree]; exact hsdom, a, ?_, ?_⟩
+      · apply (basicTypingQualifier_openManyAt_holds_iff Δ e T k d η inj freshΔ freshE a).2
+        refine ⟨support, ?_, ?_⟩
+        · intro ξ U hU
+          cases ξ with
+          | bound j => simp at hU
+          | free x =>
+              have hx : x ∈ Δ.domain := (BasicEnv.mem_domain_iff Δ x).2 ⟨U, hU⟩
+              obtain ⟨u, hu, huT⟩ := hw.2 σ hσ x U (embed x U hU)
+              refine ⟨u, ?_, huT⟩
+              simp [a, s, Store.toAssignment_lookup_free, X, hx, hu]
+        · have hagree : ∀ ξ, ξ ∈ e'.logicSupport →
+              a.assignment.lookup ξ = σ.toAssignment.lookup ξ := by
+            intro ξ hξ
+            cases ξ with
+            | bound j => exact (termLogicSupport_locallyClosed e' closed j hξ).elim
+            | free x =>
+                have hx : x ∈ e'.support := by
+                  rw [← freeAtomSet_term_logicSupport, LogicVar.mem_freeAtomSet_iff]
+                  exact hξ
+                simp [a, s, Store.toAssignment_lookup_free, X, hx]
+          rw [instantiateTerm_eq_of_agreeOn e' hagree]
+          exact models_basicTyping_term closed h hσ
+      · intro x
+        simp [a, s, hqfree]
+
+/-- Static formation atoms do not observe fresh external binder names. -/
+theorem wellFormed_openManyAt_eq (n : Nat) (Δ : BasicEnv)
+    (τ : ContextType) (k d : Nat) (η : Fin d → Atom) (fresh : ∀ i, η i ∉ Δ.domain) :
+    (wellFormed n Δ τ).openManyAt k d η = wellFormed n Δ τ := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      rw [Formula.openManyAt, ih _ (fun i => fresh i.castSucc),
+        wellFormed_openAt_eq _ _ _ _ _ (fresh (Fin.last d))]
+
+/-- Fresh finite opening preserves the typed-world atom of the original free inputs. -/
+theorem basicWorld_openManyAt_eq (Δ : BasicEnv) (k d : Nat) (η : Fin d → Atom)
+    (fresh : ∀ i, η i ∉ Δ.domain) :
+    (basicWorld Δ).openManyAt k d η = basicWorld Δ := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      rw [Formula.openManyAt, ih _ (fun i => fresh i.castSucc),
+        basicWorld_openAt_eq _ _ _ (fresh (Fin.last d))]
+
+/-- Finite opening transports the complete guard without assuming that its
+basic-typing obligation is already satisfied. -/
+theorem models_guard_openManyAt_iff
+    {m : Capability} {Δ : BasicEnv} {τ : ContextType} {e : Term}
+    {n d : Nat} {η : Fin d → Atom} {T : Fin d → SimpleType}
+    (wfτ : τ.WellFormedAt (n + d) Δ.domain)
+    (inj : Function.Injective η) (freshΔ : ∀ i, η i ∉ Δ.domain)
+    (support : e.support ⊆ Δ.domain)
+    (closed : (e.openManyAt n d η).locallyClosed)
+    (scope : (e.openManyAt n d η).support ⊆ (Δ.insertMany d η T).domain)
+    (world : m ⊨ basicWorld (Δ.insertMany d η T)) :
+    m ⊨ (guard (n + d) Δ τ e).openManyAt n d η ↔
+      m ⊨ guard n (Δ.insertMany d η T) (τ.openManyAt n d η) (e.openManyAt n d η) := by
+  let Δ' := Δ.insertMany d η T
+  have embed : Δ.Subset Δ' := by
+    intro x U hx
+    have hxΔ : x ∈ Δ.domain := (BasicEnv.mem_domain_iff Δ x).2 ⟨U, hx⟩
+    rw [BasicEnv.lookup_insertMany_of_apart Δ d η T x
+      (fun i hi => freshΔ i (hi ▸ hxΔ))]
+    exact hx
+  have hw := (models_basicWorld_iff m Δ').1 world
+  have scopeΔ : Δ.domain ⊆ m.domain := by
+    apply Finset.Subset.trans _ hw.1
+    rw [BasicEnv.domain_insertMany]
+    exact Finset.subset_union_left
+  have worldΔ : m ⊨ basicWorld Δ := by
+    apply (models_basicWorld_iff m Δ).2
+    exact ⟨scopeΔ, fun σ hσ x U hx => hw.2 σ hσ x U (embed x U hx)⟩
+  have formed : m ⊨ wellFormed (n + d) Δ τ :=
+    (models_wellFormed_iff m _ _ _).2 ⟨scopeΔ, wfτ⟩
+  have wfOpen : (τ.openManyAt n d η).WellFormedAt n Δ'.domain := by
+    simpa only [Δ', BasicEnv.domain_insertMany] using wfτ.openManyAt η inj freshΔ
+  have formedOpen : m ⊨ wellFormed n Δ' (τ.openManyAt n d η) :=
+    (models_wellFormed_iff m _ _ _).2 ⟨hw.1, wfOpen⟩
+  have freshE : ∀ i, η i ∉ e.support := fun i hx => freshΔ i (support hx)
+  have basic := models_basicTyping_openManyAt_iff inj freshΔ support embed closed scope world
+    (T := τ.erase)
+  dsimp only [Δ'] at formedOpen basic
+  simp only [guard, Formula.openManyAt_and, ContextType.erase_openManyAt]
+  rw [wellFormed_openManyAt_eq _ _ _ _ _ _ freshΔ,
+    basicWorld_openManyAt_eq _ _ _ _ freshΔ, total_openManyAt e n d η inj freshE]
+  simp only [Formula.models_and_iff, formed, worldΔ, formedOpen, world, true_and]
+  rw [basic]
+
 /-- Opening the outermost dependent input transports all guard obligations,
 provided the named input environment realizes the opened term's erased typing. -/
 theorem models_guard_openAt_iff
