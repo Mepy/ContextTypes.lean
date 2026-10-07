@@ -5525,6 +5525,174 @@ theorem models_interpFuel_ret_alias_singleton
           simp only [Formula.freeAtoms_persist]
           exact hscopeInner _ _ _ rfl hs
 
+/-- Additive input splitting and branch interpretations establish the
+result-first sum type, retaining the complete result graph in each branch. -/
+theorem models_interp_sum_intro {m m₁ m₂ : Capability} {Δ : BasicEnv}
+    {τ₁ τ₂ : ContextType} {e : Term}
+    (defined : Capability.SumDefined m₁ m₂) (same : Capability.sum m₁ m₂ defined = m)
+    (wfτ : (τ₁.sum τ₂).WellFormed Δ.domain)
+    (typed : Δ ⊢ₑ e ⋮ (τ₁.sum τ₂).erase)
+    (world : m ⊨ Interp.basicWorld Δ)
+    (h₁ : m₁ ⊨ interp Δ τ₁ e) (h₂ : m₂ ⊨ interp Δ τ₂ e) :
+    m ⊨ interp Δ (τ₁.sum τ₂) e := by
+  let τ := τ₁.sum τ₂
+  let A := τ.freeAtoms ∪ e.support
+  let Δ' := Interp.relevantEnv Δ τ e
+  let gas := max τ₁.measure τ₂.measure
+  let Q := interpFuel gas 1 Δ' (τ₁.shiftFrom 0) (.ret (.bound 0)) ⊕
+    interpFuel gas 1 Δ' (τ₂.shiftFrom 0) (.ret (.bound 0))
+  let P := Interp.resultAt (A.image LogicVar.free) e (.bound 0) ⇒ᶜ Q
+  have hAΔ : A ⊆ Δ.domain := Finset.union_subset wfτ.freeAtoms_subset typed.support_subset
+  have scope : A ⊆ m.domain := Finset.Subset.trans hAΔ
+    ((Interp.models_basicWorld_iff m Δ).1 world).1
+  have domain₁ : m₁.domain = m.domain := by
+    rw [← same]
+    rfl
+  have domain₂ : m₂.domain = m.domain := by
+    rw [← same]
+    exact defined.symm
+  have scope₁ : A ⊆ m₁.domain := by rwa [domain₁]
+  have scope₂ : A ⊆ m₂.domain := by rwa [domain₂]
+  have support₁ : τ₁.freeAtoms ∪ e.support ⊆ A :=
+    Finset.union_subset
+      (Finset.Subset.trans Finset.subset_union_left Finset.subset_union_left)
+      Finset.subset_union_right
+  have support₂ : τ₂.freeAtoms ∪ e.support ⊆ A :=
+    Finset.union_subset
+      (Finset.Subset.trans Finset.subset_union_right Finset.subset_union_left)
+      Finset.subset_union_right
+  have supportE : e.support ⊆ A := Finset.subset_union_right
+  have closedA : LogicVar.LocallyClosed (A.image LogicVar.free) := by
+    intro j hj
+    simp at hj
+  have logicA : e.logicSupport ⊆ A.image LogicVar.free := by
+    rw [LogicVar.eq_image_free_of_locallyClosed
+      (Interp.termLogicSupport_locallyClosed e typed.locallyClosed),
+      Interp.freeAtomSet_term_logicSupport]
+    exact Finset.image_subset_image Finset.subset_union_right
+  have hQfree : Q.freeAtoms ⊆ τ.freeAtoms := by
+    simp only [Q, Formula.freeAtoms_sum]
+    apply Finset.union_subset
+    · have hs := freeAtoms_interpFuel_subset gas 1 Δ' (τ₁.shiftFrom 0) (.ret (.bound 0))
+      simp only [freeAtoms_shiftFrom, Term.support, Value.support, Finset.union_empty] at hs
+      exact Finset.Subset.trans hs Finset.subset_union_left
+    · have hs := freeAtoms_interpFuel_subset gas 1 Δ' (τ₂.shiftFrom 0) (.ret (.bound 0))
+      simp only [freeAtoms_shiftFrom, Term.support, Value.support, Finset.union_empty] at hs
+      exact Finset.Subset.trans hs Finset.subset_union_right
+  have hPfree : P.freeAtoms = A := by
+    simp only [P, Formula.freeAtoms_impl, Interp.freeAtoms_resultAt,
+      Formula.LogicVar.freeAtomSet_image_free, LogicVar.freeAtoms, Finset.union_empty]
+    rw [Finset.union_eq_left.2 Finset.subset_union_right,
+      Finset.union_eq_left.2 (Finset.Subset.trans hQfree Finset.subset_union_left)]
+  have resultFirst : Interp.resultFirst Δ' τ e =
+      Interp.resultAt (A.image LogicVar.free) e (.bound 0) := by
+    have henv : Δ'.domain = A := by
+      rw [Interp.relevantEnv_domain]
+      change Δ.domain ∩ A = A
+      exact Finset.inter_eq_right.2 hAΔ
+    have hclosed := Interp.relevantSupport_locallyClosed Δ' τ e
+      wfτ.locallyClosedAt typed.locallyClosed
+    have hsupport : Interp.relevantSupport Δ' τ e = A.image LogicVar.free := by
+      rw [LogicVar.eq_image_free_of_locallyClosed hclosed, Interp.freeAtomSet_relevantSupport,
+        Interp.relevantEnv_idem, henv]
+    rw [Interp.resultFirst, hsupport,
+      LogicVar.image_shiftFrom_eq_of_locallyClosed _ 0 closedA,
+      Interp.shiftTerm_eq_of_locallyClosed e typed.locallyClosed]
+  have terminates : m ⊨ Interp.total e := by
+    rw [← same]
+    exact Interp.models_total_sum defined typed.locallyClosed
+      (models_interp_total h₁) (models_interp_total h₂)
+  unfold interp
+  rw [show (τ₁.sum τ₂).measure = gas + 1 by simp [measure, gas, Nat.add_comm]]
+  simp only [interpFuel, Nat.zero_add]
+  apply Formula.models_and_intro
+    (Interp.models_guard_relevant_of_world wfτ typed world terminates)
+  change m ⊨ Formula.all (Interp.resultFirst Δ' τ e ⇒ᶜ Q)
+  rw [resultFirst]
+  apply (Formula.models_all_iff_refines m P).2
+  refine ⟨by rw [hPfree]; exact scope, Δ.domain, ?_⟩
+  intro y hy _ n href hndom
+  have freshA : y ∉ A := fun hm => hy (hAΔ hm)
+  have hQopen : (Q.openAt 0 y).freeAtoms ⊆ A ∪ {y} := by
+    intro x hx
+    rcases Finset.mem_union.1 (Formula.freeAtoms_openAt_subset Q 0 y hx) with hx | hx
+    · exact Finset.mem_union_right _ hx
+    · exact Finset.mem_union_left _ (Finset.subset_union_left (hQfree hx))
+  have hopen : (Interp.resultAt (A.image LogicVar.free) e (.bound 0)).openAt 0 y =
+      Interp.resultAt (A.image LogicVar.free) e (.free y) := by
+    have hi := Interp.resultAt_shift_openAt (A.image LogicVar.free) e y closedA
+      typed.locallyClosed logicA (by simpa using freshA)
+    rw [LogicVar.image_shiftFrom_eq_of_locallyClosed _ 0 closedA,
+      Interp.shiftTerm_eq_of_locallyClosed e typed.locallyClosed] at hi
+    exact hi
+  have hRfree : (Interp.resultAt (A.image LogicVar.free) e (.free y)).freeAtoms = A ∪ {y} := by
+    simp only [Interp.freeAtoms_resultAt, Formula.LogicVar.freeAtomSet_image_free,
+      Finset.union_eq_left.2 supportE, LogicVar.freeAtoms]
+  have hn : n.domain = A ∪ {y} := by rwa [hPfree] at hndom
+  change n ⊨ ((Interp.resultAt (A.image LogicVar.free) e (.bound 0)).openAt 0 y ⇒ᶜ
+    Q.openAt 0 y)
+  rw [hopen]
+  apply Formula.models_impl_intro
+  · simp only [Formula.freeAtoms_impl, hRfree]
+    rw [hn]
+    exact Finset.union_subset (Finset.Subset.refl _) hQopen
+  · intro k hnk hres
+    have hnk' : n ⊑ k := by
+      simp only [Formula.freeAtoms_impl, hRfree, Finset.union_eq_left.2 hQopen] at hnk
+      rwa [← hn, Capability.restrict_domain_self] at hnk
+    have hmk : m.restrict A ⊑ k := Capability.refines_trans
+      (by rwa [hPfree] at href) hnk'
+    have defA : Capability.SumDefined (m₁.restrict A) (m₂.restrict A) := by
+      simp only [Capability.SumDefined, Capability.restrict_domain, domain₁, domain₂]
+    have sumA : Capability.sum (m₁.restrict A) (m₂.restrict A) defA = m.restrict A := by
+      rw [← same, Capability.restrict_sum]
+    obtain ⟨sub₁, sub₂, split⟩ := Capability.sum_pullback defA (by rwa [sumA])
+    let k₁ := Capability.pullback k (m₁.restrict A) sub₁
+    let k₂ := Capability.pullback k (m₂.restrict A) sub₂
+    have hsource₁ : k₁ ⊨ interp Δ τ₁ e := by
+      apply Formula.models_kripke
+        (m := m₁.restrict A) (n := k₁)
+        (Capability.restrict_pullback k (m₁.restrict A) sub₁).symm
+      exact (models_interp_restrict support₁).1 h₁
+    have hsource₂ : k₂ ⊨ interp Δ τ₂ e := by
+      apply Formula.models_kripke
+        (m := m₂.restrict A) (n := k₂)
+        (Capability.restrict_pullback k (m₂.restrict A) sub₂).symm
+      exact (models_interp_restrict support₂).1 h₂
+    have hres₁ : k₁ ⊨ Interp.resultAt (A.image LogicVar.free) e (.free y) :=
+      Interp.models_resultAt_pullback closedA logicA (by simpa using freshA)
+        (by simp [Finset.inter_eq_right.2 scope₁]) sub₁ hres
+    have hres₂ : k₂ ⊨ Interp.resultAt (A.image LogicVar.free) e (.free y) :=
+      Interp.models_resultAt_pullback closedA logicA (by simpa using freshA)
+        (by simp [Finset.inter_eq_right.2 scope₂]) sub₂ hres
+    have child (υ : ContextType) (wfυ : υ.WellFormed Δ.domain)
+        (supportυ : υ.freeAtoms ⊆ τ.freeAtoms) (measureυ : υ.measure ≤ gas)
+        (r : Capability) (hsource : r ⊨ interp Δ υ e)
+        (result : r ⊨ Interp.resultAt (A.image LogicVar.free) e (.free y)) :
+        r ⊨ (interpFuel gas 1 Δ' (υ.shiftFrom 0) (.ret (.bound 0))).openAt 0 y := by
+      have h := models_interpFuel_result_alias closedA typed.locallyClosed logicA
+        (by simpa using freshA) hy wfυ typed.support_subset
+        (Finset.image_subset_image (Finset.Subset.trans supportυ Finset.subset_union_left))
+        result hsource
+      have heq : interpFuel gas 1 Δ' (υ.shiftFrom 0) (.ret (.bound 0)) =
+          interpFuel υ.measure 1 Δ (υ.shiftFrom 0) (.ret (.bound 0)) := by
+        rw [interpFuel_eq_of_measure_le gas υ.measure 1 Δ' (υ.shiftFrom 0)
+          (.ret (.bound 0)) (by simpa only [measure_shiftFrom] using measureυ)
+          (by simpa only [measure_shiftFrom] using Nat.le_refl υ.measure)]
+        apply interpFuel_eq_of_agreeOn
+        intro x hx
+        have hxυ : x ∈ υ.freeAtoms := by
+          simpa only [freeAtoms_shiftFrom, Term.support, Value.support, Finset.union_empty] using hx
+        have hxA : x ∈ A := Finset.subset_union_left (supportυ hxυ)
+        change (Δ.restrict A).lookup x = Δ.lookup x
+        rw [BasicEnv.lookup_restrict, if_pos hxA]
+      rw [heq]
+      exact h
+    apply (Formula.models_sum_iff_eq _ _ _).2
+    refine ⟨k₁, k₂, rfl, split, ?_, ?_⟩
+    · exact child τ₁ wfτ.1 Finset.subset_union_left (Nat.le_max_left _ _) k₁ hsource₁ hres₁
+    · exact child τ₂ wfτ.2.1 Finset.subset_union_right (Nat.le_max_right _ _) k₂ hsource₂ hres₂
+
 theorem interp_eq_of_agreeOn {Δ₁ Δ₂ : BasicEnv} {τ : ContextType}
     {e : Term}
     (h : BasicEnv.AgreeOn (τ.freeAtoms ∪ e.support) Δ₁ Δ₂) :

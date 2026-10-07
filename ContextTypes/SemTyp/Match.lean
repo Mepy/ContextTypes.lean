@@ -81,6 +81,35 @@ theorem matchFalse
     Φ ; «Σ» ; Γ ⊨ (.matchBool (.free x) e₁ e₂) ⋮ τ :=
   matchBool (b := false) wf value branch
 
+/-- Precise Boolean branches of an additive context combine their complete
+result capabilities into the corresponding additive result type. -/
+theorem matchBoth
+    {Φ : PrimitiveContext} {«Σ» : BasicEnv} {Γ₁ Γ₂ : Context}
+    {x : Atom} {τ₁ τ₂ : ContextType} {e₁ e₂ : Term}
+    (wf : SynTyp.WellFormed «Σ» (.sum Γ₁ Γ₂) (.matchBool (.free x) e₁ e₂) (.sum τ₁ τ₂))
+    (trueValue : Φ ; «Σ» ; Γ₁ ⊨ (.ret (.free x)) ⋮ ContextType.boolPrecise true)
+    (falseValue : Φ ; «Σ» ; Γ₂ ⊨ (.ret (.free x)) ⋮ ContextType.boolPrecise false)
+    (trueBranch : Φ ; «Σ» ; Γ₁ ⊨ e₁ ⋮ τ₁)
+    (falseBranch : Φ ; «Σ» ; Γ₂ ⊨ e₂ ⋮ τ₂) :
+    Φ ; «Σ» ; (.sum Γ₁ Γ₂) ⊨ (.matchBool (.free x) e₁ e₂) ⋮ (.sum τ₁ τ₂) := by
+  have eraseΓ : Γ₁.erase = Γ₂.erase := wf.1.2.2.2
+  have eraseτ : τ₁.erase = τ₂.erase := wf.2.1.2.2
+  have wf₁ : SynTyp.WellFormed «Σ» Γ₁ (.matchBool (.free x) e₁ e₂) τ₁ :=
+    ⟨wf.1.1, wf.2.1.1, wf.2.2⟩
+  have wf₂ : SynTyp.WellFormed «Σ» Γ₂ (.matchBool (.free x) e₁ e₂) τ₂ := by
+    refine ⟨wf.1.2.1, ?_, ?_⟩
+    · rw [← eraseΓ]
+      exact wf.2.1.2.1
+    · rw [← eraseΓ, ← eraseτ]
+      exact wf.2.2
+  intro m hΓ
+  obtain ⟨m₁, m₂, defined, same, hΓ₁, hΓ₂⟩ := Context.models_interpUnder_sum_elim hΓ
+  have h₁ := matchTrue wf₁ trueValue trueBranch m₁ hΓ₁
+  have h₂ := matchFalse wf₂ falseValue falseBranch m₂ hΓ₂
+  rw [← eraseΓ] at h₂
+  exact ContextType.models_interp_sum_intro defined same wf.2.1 wf.2.2
+    (Context.models_interpUnder_erase_basicWorld wf.1 hΓ) h₁ h₂
+
 end SemTyp
 
 end ContextTypes
