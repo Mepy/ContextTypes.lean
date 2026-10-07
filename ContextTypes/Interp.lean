@@ -6369,6 +6369,144 @@ theorem models_interp_of_resultsEquivOn
     (h : m ⊨ interp Δ₁ τ e₁) : n ⊨ interp Δ₂ τ e₂ :=
   models_interpFuel_of_resultsEquivOn wf₁ wf₂ typed₁ typed₂ world terminates env results h
 
+/-- A well-typed lambda application has exactly the interpretation of its
+beta reduct, including universal termination and nondeterministic results. -/
+theorem models_interp_beta_iff {m : Capability} {Δ : BasicEnv}
+    {τ : ContextType} {T : SimpleType} {e : Term} {u : Value}
+    (wfτ : τ.WellFormed Δ.domain)
+    (typed : Δ ⊢ₑ (.app (.lam T e) u) ⋮ τ.erase)
+    (world : m ⊨ Interp.basicWorld Δ) :
+    m ⊨ interp Δ τ (.app (.lam T e) u) ↔ m ⊨ interp Δ τ (e.openAt 0 u) := by
+  have closed := typed.locallyClosed
+  have step : HeadStep (.app (.lam T e) u) (e.openAt 0 u) :=
+    .beta T e u closed
+  have typed' := step.preserve typed
+  have inputs : ∀ σ, σ ∈ m → ∀ x, x ∈ e.support →
+      ∀ v, σ.lookup x = some v → v.locallyClosed := by
+    intro σ hσ x hx v hv
+    have hxΔ : x ∈ Δ.domain := typed.support_subset (Finset.mem_union_left _ hx)
+    obtain ⟨U, hU⟩ := (BasicEnv.mem_domain_iff Δ x).1 hxΔ
+    obtain ⟨w, hw, hwT⟩ := (Interp.models_basicWorld_iff m Δ).1 world |>.2 σ hσ x U hU
+    have same : w = v := Option.some.inj (hw.symm.trans hv)
+    exact same ▸ hwT.locallyClosed
+  have normalize (σ : Store) (hσ : σ ∈ m) :
+      Interp.instantiateTerm (e.openAt 0 u) σ.toAssignment =
+        (Interp.instantiateTermAt e 1 σ.toAssignment).openAt 0
+          (Interp.instantiateValueAt u 0 σ.toAssignment) := by
+    rw [Interp.instantiateTerm, Interp.instantiateTermAt_store_openAt e u σ 0 0 (inputs σ hσ),
+      Interp.instantiateTermAt_store_depth e σ 0 1]
+  have eval (σ : Store) (hσ : σ ∈ m) (v : Value) :
+      (Interp.instantiateTerm (.app (.lam T e) u) σ.toAssignment).reaches v ↔
+        (Interp.instantiateTerm (e.openAt 0 u) σ.toAssignment).reaches v := by
+    have hc := (Interp.instantiateTerm_typed typed
+      ((Interp.models_basicWorld_iff m Δ).1 world |>.2 σ hσ)).locallyClosed
+    rw [normalize σ hσ]
+    simp only [Interp.instantiateTerm, Interp.instantiateTermAt, Interp.instantiateValueAt] at hc ⊢
+    exact Term.beta_reaches_iff hc.1 hc.2
+  have term (σ : Store) (hσ : σ ∈ m) :
+      (Interp.instantiateTerm (.app (.lam T e) u) σ.toAssignment).MustTerminate ↔
+        (Interp.instantiateTerm (e.openAt 0 u) σ.toAssignment).MustTerminate := by
+    have hc := (Interp.instantiateTerm_typed typed
+      ((Interp.models_basicWorld_iff m Δ).1 world |>.2 σ hσ)).locallyClosed
+    rw [normalize σ hσ]
+    simp only [Interp.instantiateTerm, Interp.instantiateTermAt, Interp.instantiateValueAt] at hc ⊢
+    exact Term.beta_mustTerminate_iff hc.1 hc.2
+  have scope : (.app (.lam T e) u : Term).support ⊆ m.domain :=
+    Finset.Subset.trans typed.support_subset ((Interp.models_basicWorld_iff m Δ).1 world).1
+  have scope' := Finset.Subset.trans step.support_subset scope
+  have total : m ⊨ Interp.total (.app (.lam T e) u) ↔ m ⊨ Interp.total (e.openAt 0 u) := by
+    rw [Interp.models_total_iff closed, Interp.models_total_iff typed'.locallyClosed]
+    constructor
+    · rintro ⟨_, h⟩
+      exact ⟨scope', fun σ hσ => (term σ hσ).1 (h σ hσ)⟩
+    · rintro ⟨_, h⟩
+      exact ⟨scope, fun σ hσ => (term σ hσ).2 (h σ hσ)⟩
+  constructor
+  · intro h
+    apply models_interp_of_resultsEquivOn wfτ wfτ typed typed' world
+      (total.1 (models_interp_total h)) (fun _ _ => rfl) ?_ h
+    intro s v
+    constructor
+    · rintro ⟨σ, hσ, same, hv⟩
+      exact ⟨σ, hσ, same, (eval σ hσ v).1 hv⟩
+    · rintro ⟨σ, hσ, same, hv⟩
+      exact ⟨σ, hσ, same, (eval σ hσ v).2 hv⟩
+  · intro h
+    exact models_interp_of_reaches_iff wfτ typed' typed world
+      (total.2 (models_interp_total h)) step.support_subset
+      (fun σ hσ v => (eval σ hσ v).symm) h
+
+/-- A well-typed fixed-point application has exactly the interpretation of
+its unfolding, including universal termination and nondeterministic results. -/
+theorem models_interp_fix_iff {m : Capability} {Δ : BasicEnv}
+    {τ : ContextType} {T : SimpleType} {vf u : Value}
+    (wfτ : τ.WellFormed Δ.domain)
+    (typed : Δ ⊢ₑ (.app (.fix T vf) u) ⋮ τ.erase)
+    (world : m ⊨ Interp.basicWorld Δ) :
+    m ⊨ interp Δ τ (.app (.fix T vf) u) ↔
+      m ⊨ interp Δ τ (.app (vf.openAt 0 u) (.fix T vf)) := by
+  have closed := typed.locallyClosed
+  have step : HeadStep (.app (.fix T vf) u) (.app (vf.openAt 0 u) (.fix T vf)) :=
+    .fix T vf u closed
+  have typed' := step.preserve typed
+  have inputs : ∀ σ, σ ∈ m → ∀ x, x ∈ vf.support →
+      ∀ v, σ.lookup x = some v → v.locallyClosed := by
+    intro σ hσ x hx v hv
+    have hxΔ : x ∈ Δ.domain := typed.support_subset (Finset.mem_union_left _ hx)
+    obtain ⟨U, hU⟩ := (BasicEnv.mem_domain_iff Δ x).1 hxΔ
+    obtain ⟨w, hw, hwT⟩ := (Interp.models_basicWorld_iff m Δ).1 world |>.2 σ hσ x U hU
+    have same : w = v := Option.some.inj (hw.symm.trans hv)
+    exact same ▸ hwT.locallyClosed
+  have normalize (σ : Store) (hσ : σ ∈ m) :
+      Interp.instantiateTerm (.app (vf.openAt 0 u) (.fix T vf)) σ.toAssignment =
+        .app ((Interp.instantiateValueAt vf 1 σ.toAssignment).openAt 0
+          (Interp.instantiateValueAt u 0 σ.toAssignment))
+          (.fix T (Interp.instantiateValueAt vf 1 σ.toAssignment)) := by
+    simp only [Interp.instantiateTerm, Interp.instantiateTermAt, Interp.instantiateValueAt]
+    rw [Interp.instantiateValueAt_store_openAt vf u σ 0 0 (inputs σ hσ),
+      Interp.instantiateValueAt_store_depth vf σ 0 1]
+  have eval (σ : Store) (hσ : σ ∈ m) (v : Value) :
+      (Interp.instantiateTerm (.app (.fix T vf) u) σ.toAssignment).reaches v ↔
+        (Interp.instantiateTerm (.app (vf.openAt 0 u) (.fix T vf)) σ.toAssignment).reaches v := by
+    have hc := (Interp.instantiateTerm_typed typed
+      ((Interp.models_basicWorld_iff m Δ).1 world |>.2 σ hσ)).locallyClosed
+    rw [normalize σ hσ]
+    simp only [Interp.instantiateTerm, Interp.instantiateTermAt, Interp.instantiateValueAt] at hc ⊢
+    exact Term.fix_reaches_iff hc.1 hc.2
+  have term (σ : Store) (hσ : σ ∈ m) :
+      (Interp.instantiateTerm (.app (.fix T vf) u) σ.toAssignment).MustTerminate ↔
+        (Interp.instantiateTerm (.app (vf.openAt 0 u) (.fix T vf)) σ.toAssignment).MustTerminate := by
+    have hc := (Interp.instantiateTerm_typed typed
+      ((Interp.models_basicWorld_iff m Δ).1 world |>.2 σ hσ)).locallyClosed
+    rw [normalize σ hσ]
+    simp only [Interp.instantiateTerm, Interp.instantiateTermAt, Interp.instantiateValueAt] at hc ⊢
+    exact Term.fix_mustTerminate_iff hc.1 hc.2
+  have scope : (.app (.fix T vf) u : Term).support ⊆ m.domain :=
+    Finset.Subset.trans typed.support_subset ((Interp.models_basicWorld_iff m Δ).1 world).1
+  have scope' := Finset.Subset.trans step.support_subset scope
+  have total : m ⊨ Interp.total (.app (.fix T vf) u) ↔
+      m ⊨ Interp.total (.app (vf.openAt 0 u) (.fix T vf)) := by
+    rw [Interp.models_total_iff closed, Interp.models_total_iff typed'.locallyClosed]
+    constructor
+    · rintro ⟨_, h⟩
+      exact ⟨scope', fun σ hσ => (term σ hσ).1 (h σ hσ)⟩
+    · rintro ⟨_, h⟩
+      exact ⟨scope, fun σ hσ => (term σ hσ).2 (h σ hσ)⟩
+  constructor
+  · intro h
+    apply models_interp_of_resultsEquivOn wfτ wfτ typed typed' world
+      (total.1 (models_interp_total h)) (fun _ _ => rfl) ?_ h
+    intro s v
+    constructor
+    · rintro ⟨σ, hσ, same, hv⟩
+      exact ⟨σ, hσ, same, (eval σ hσ v).1 hv⟩
+    · rintro ⟨σ, hσ, same, hv⟩
+      exact ⟨σ, hσ, same, (eval σ hσ v).2 hv⟩
+  · intro h
+    exact models_interp_of_reaches_iff wfτ typed' typed world
+      (total.2 (models_interp_total h)) step.support_subset
+      (fun σ hσ v => (eval σ hσ v).symm) h
+
 /-- Every result of a term may be named in the erased environment while
 preserving the complete result-first context-type interpretation. -/
 theorem models_interpFuel_named_result
