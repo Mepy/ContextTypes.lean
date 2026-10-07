@@ -1872,6 +1872,95 @@ theorem basicTypingQualifier_openAt_holds_iff
   · rintro ⟨scope, hw, ht⟩
     exact ⟨scope, world.2 hw, ht⟩
 
+/-- Finite opening names term keys while preserving the original free erased environment. -/
+theorem basicTypingQualifier_openManyAt_support (Δ : BasicEnv) (e : Term) (T : SimpleType)
+    (k d : Nat) (η : Fin d → Atom) (inj : Function.Injective η)
+    (freshΔ : ∀ i, η i ∉ Δ.domain) (freshE : ∀ i, η i ∉ e.support) :
+    ((basicTypingQualifier Δ e T).openManyAt k d η).support =
+      Δ.domain.image LogicVar.free ∪ (e.openManyAt k d η).logicSupport := by
+  rw [Qualifier.support_openManyAt]
+  change (Δ.domain.image LogicVar.free ∪ e.logicSupport).image (LogicVar.openManyAt k d η) = _
+  rw [Finset.image_union]
+  have hΔ : (Δ.domain.image LogicVar.free).image (LogicVar.openManyAt k d η) =
+      Δ.domain.image LogicVar.free := by
+    rw [Finset.image_image]
+    apply Finset.image_congr
+    intro x hx
+    exact LogicVar.openManyAt_free_of_apart k d η x (fun i hi => freshΔ i (hi ▸ hx))
+  have he := e.logicSupportAt_openManyAt 0 k d η inj freshE
+  simp only [Nat.add_zero] at he
+  change (e.openManyAt k d η).logicSupport = e.logicSupport.image (LogicVar.openManyAt k d η) at he
+  rw [hΔ, ← he]
+
+/-- Finite opening changes the instantiated term, not its original static
+free-support test or erased obligations on the original free inputs. -/
+theorem basicTypingQualifier_openManyAt_holds_iff
+    (Δ : BasicEnv) (e : Term) (T : SimpleType) (k d : Nat) (η : Fin d → Atom)
+    (inj : Function.Injective η) (freshΔ : ∀ i, η i ∉ Δ.domain) (freshE : ∀ i, η i ∉ e.support)
+    (ρ : AssignmentOn ((basicTypingQualifier Δ e T).openManyAt k d η).support) :
+    ((basicTypingQualifier Δ e T).openManyAt k d η).holds ρ ↔
+      e.support ⊆ Δ.domain ∧
+      storeTyped (fun ξ => match ξ with | .bound _ => none | .free x => Δ.lookup x)
+        ρ.assignment ∧
+      (∅ ⊢ₑ instantiateTerm (e.openManyAt k d η) ρ.assignment ⋮ T) := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      let η' := fun i : Fin d => η i.castSucc
+      have inj' : Function.Injective η' := fun i j hi => Fin.castSucc_injective d (inj hi)
+      have freshΔ' : ∀ i, η' i ∉ Δ.domain := fun i => freshΔ i.castSucc
+      have freshE' : ∀ i, η' i ∉ e.support := fun i => freshE i.castSucc
+      have apart : ∀ i : Fin d, η (Fin.last d) ≠ η' i := by
+        intro i hi
+        have := congrArg Fin.val (inj hi)
+        simp at this
+        omega
+      have freshLast := e.fresh_openManyAt k d η' (freshE (Fin.last d)) apart
+      have hs := basicTypingQualifier_openManyAt_support Δ e T k d η' inj' freshΔ' freshE'
+      have lookup : LogicVar.bound (k + d) ∈ (e.openManyAt k d η').logicSupport →
+          ∃ u, ρ.assignment.lookup (.free (η (Fin.last d))) = some u := by
+        intro hb
+        apply (Assignment.mem_domain_iff ρ.assignment (.free (η (Fin.last d)))).1
+        rw [ρ.domain_eq]
+        change .free (η (Fin.last d)) ∈ LogicVar.openSupport (k + d) (η (Fin.last d))
+          ((basicTypingQualifier Δ e T).openManyAt k d η').support
+        rw [LogicVar.mem_openSupport]
+        simpa [LogicVar.openBinder, LogicVar.swap, hs] using hb
+      have inst := instantiateTermAt_openAt_swap (e.openManyAt k d η') 0 (k + d)
+        (η (Fin.last d)) (Nat.zero_le _) freshLast (by simpa using lookup)
+      have world : storeTyped
+          (fun ξ => match ξ with | .bound _ => none | .free x => Δ.lookup x)
+          (ρ.assignment.swap (.bound (k + d)) (.free (η (Fin.last d)))) ↔
+          storeTyped (fun ξ => match ξ with | .bound _ => none | .free x => Δ.lookup x)
+            ρ.assignment := by
+        constructor <;> intro h ξ U hU
+        all_goals cases ξ with
+        | bound j => simp at hU
+        | free x =>
+            have hx : x ∈ Δ.domain := (BasicEnv.mem_domain_iff Δ x).2 ⟨U, hU⟩
+            have hxy : x ≠ η (Fin.last d) := fun hi => freshΔ (Fin.last d) (hi ▸ hx)
+            simpa [Assignment.lookup_swap, LogicVar.swap, hxy] using h (.free x) U hU
+      let a := ρ.swapBack (.bound (k + d)) (.free (η (Fin.last d)))
+      change ((basicTypingQualifier Δ e T).openManyAt k d η').holds a ↔ _
+      rw [ih η' inj' freshΔ' freshE' a]
+      change (e.support ⊆ Δ.domain ∧
+        storeTyped (fun ξ => match ξ with | .bound _ => none | .free x => Δ.lookup x)
+          (ρ.assignment.swap (.bound (k + d)) (.free (η (Fin.last d)))) ∧
+        BasicTermTyp ∅ (instantiateTermAt (e.openManyAt k d η') 0
+          (ρ.assignment.swap (.bound (k + d)) (.free (η (Fin.last d))))) T) ↔
+        (e.support ⊆ Δ.domain ∧
+          storeTyped (fun ξ => match ξ with | .bound _ => none | .free x => Δ.lookup x)
+            ρ.assignment ∧
+          BasicTermTyp ∅ (instantiateTermAt
+            ((e.openManyAt k d η').openAt (k + d) (.free (η (Fin.last d)))) 0 ρ.assignment) T)
+      simp only [Nat.sub_zero] at inst
+      rw [← inst]
+      constructor
+      · rintro ⟨scope, hw, ht⟩
+        exact ⟨scope, world.1 hw, ht⟩
+      · rintro ⟨scope, hw, ht⟩
+        exact ⟨scope, world.2 hw, ht⟩
+
 /-- A typed fresh named input realizes the opened symbolic basic-typing atom. -/
 theorem models_basicTyping_openAt_of_world
     {m : Capability} {Δ : BasicEnv} {e : Term} {T U : SimpleType} {k : Nat} {y : Atom}

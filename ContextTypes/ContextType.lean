@@ -407,6 +407,19 @@ theorem openManyAt_wand (τ₁ τ₂ : ContextType) (k d : Nat) (η : Fin d → 
   | succ d ih =>
       simp [openManyAt, openAt, ih, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
 
+/-- Independent type openings commute with an entire finite family. -/
+theorem openManyAt_openAt_comm (τ : ContextType) (k d : Nat) (η : Fin d → Atom)
+    (l : Nat) (x : Atom) (apart : ∀ i : Fin d, k + i.val ≠ l) (names : ∀ i, η i ≠ x) :
+    (τ.openManyAt k d η).openAt l x = (τ.openAt l x).openManyAt k d η := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      rw [openManyAt, ContextType.openAt_comm _ (k + d) l _ x
+        (by simpa using apart (Fin.last d)) (names (Fin.last d)),
+        ih (fun i => η i.castSucc) (fun i => by simpa using apart i.castSucc)
+          (fun i => names i.castSucc)]
+      rfl
+
 /-- Finite opening adds only selected names to the context type's free support. -/
 theorem freeAtoms_openManyAt_subset (τ : ContextType) (k d : Nat) (η : Fin d → Atom) :
     (τ.openManyAt k d η).freeAtoms ⊆ τ.freeAtoms ∪ Finset.univ.image η := by

@@ -916,6 +916,31 @@ theorem openManyAt_cons (e : Term) (k d : Nat) (x : Atom) (η : Fin d → Atom) 
       congr 1
       omega
 
+/-- Opening a distinct external binder commutes with opening a finite family. -/
+theorem openManyAt_openAt_free_comm (e : Term) (k d : Nat) (η : Fin d → Atom)
+    (l : Nat) (x : Atom) (apart : ∀ i : Fin d, k + i.val ≠ l) :
+    (e.openManyAt k d η).openAt l (.free x) =
+      (e.openAt l (.free x)).openManyAt k d η := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      rw [openManyAt, Term.openAt_free_comm _ (k + d) l _ x
+        (by simpa using apart (Fin.last d)),
+        ih (fun i => η i.castSucc) (fun i => by simpa using apart i.castSucc)]
+      rfl
+
+/-- Opening all selected external binders leaves exactly the enclosing `n` binders. -/
+theorem locallyClosedAt_openManyAt (e : Term) (n d : Nat) (η : Fin d → Atom)
+    (closed : e.locallyClosedAt (n + d)) :
+    (e.openManyAt n d η).locallyClosedAt n := by
+  induction d generalizing e with
+  | zero => simpa [openManyAt] using closed
+  | succ d ih =>
+      rw [openManyAt, openManyAt_openAt_free_comm e n d (fun i => η i.castSucc)
+        (n + d) (η (Fin.last d)) (fun i => by omega)]
+      exact ih _ (fun i => η i.castSucc) (Term.locallyClosedAt_openAt e (n + d)
+        (.free (η (Fin.last d))) closed trivial)
+
 /-- A finite opening adds only the selected names to the term's support. -/
 theorem support_openManyAt_subset (e : Term) (k d : Nat) (η : Fin d → Atom) :
     (e.openManyAt k d η).support ⊆ e.support ∪ Finset.univ.image η := by
@@ -972,6 +997,13 @@ theorem logicSupportAt_openManyAt (e : Term) (n k d : Nat) (η : Fin d → Atom)
 end Term
 
 namespace Value
+
+/-- Finite opening eliminates external value binders without capturing internal ones. -/
+theorem locallyClosedAt_openManyAt (v : Value) (n d : Nat) (η : Fin d → Atom)
+    (closed : v.locallyClosedAt (n + d)) :
+    (v.openManyAt n d η).locallyClosedAt n := by
+  have h := Term.locallyClosedAt_openManyAt (.ret v) n d η closed
+  simpa only [Term.openManyAt_ret, Term.locallyClosedAt] using h
 
 theorem openManyAt_lam (T : SimpleType) (e : Term) (k d : Nat) (η : Fin d → Atom) :
     (Value.lam T e).openManyAt k d η = .lam T (e.openManyAt (k + 1) d η) := by

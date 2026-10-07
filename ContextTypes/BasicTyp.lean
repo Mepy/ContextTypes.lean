@@ -1194,6 +1194,50 @@ theorem WellFormedAt.regularize {τ : ContextType} {d : Nat}
       exact Finset.Subset.trans Finset.subset_union_right hY
   | persist τ ih => exact ih h hY
 
+/-- Formation is preserved by opening a fresh injective family of external binders. -/
+theorem WellFormedAt.openManyAt {τ : ContextType} {n d : Nat} {X : Finset Atom}
+    (h : τ.WellFormedAt (n + d) X) (η : Fin d → Atom)
+    (inj : Function.Injective η) (fresh : ∀ i, η i ∉ X) :
+    (τ.openManyAt n d η).WellFormedAt n (X ∪ Finset.univ.image η) := by
+  induction d generalizing τ X with
+  | zero => simpa [ContextType.openManyAt] using h
+  | succ d ih =>
+      have names : ∀ i : Fin d, η i.castSucc ≠ η (Fin.last d) := by
+        intro i hi
+        have := congrArg Fin.val (inj hi)
+        simp at this
+        omega
+      have freshLast : η (Fin.last d) ∉ τ.freeAtoms := fun hx =>
+        fresh (Fin.last d) (h.freeAtoms_subset hx)
+      have hlast := h.openAt freshLast
+      have fresh' : ∀ i : Fin d, η i.castSucc ∉ X ∪ {η (Fin.last d)} := by
+        intro i hx
+        rcases Finset.mem_union.1 hx with hx | hx
+        · exact fresh i.castSucc hx
+        · exact names i (by simpa using hx)
+      have hbody := ih hlast (fun i : Fin d => η i.castSucc)
+        (fun i j hi => Fin.castSucc_injective d (inj hi)) fresh'
+      have hX : (X ∪ {η (Fin.last d)}) ∪ Finset.univ.image (fun i : Fin d => η i.castSucc) =
+          X ∪ Finset.univ.image η := by
+        ext x
+        simp only [Finset.mem_union, Finset.mem_singleton, Finset.mem_image,
+          Finset.mem_univ, true_and]
+        constructor
+        · rintro ((hx | hx) | ⟨i, hi⟩)
+          · exact Or.inl hx
+          · exact Or.inr ⟨Fin.last d, hx.symm⟩
+          · exact Or.inr ⟨i.castSucc, hi⟩
+        · rintro (hx | ⟨i, hi⟩)
+          · exact Or.inl (Or.inl hx)
+          · refine Fin.lastCases ?_ (fun j => ?_) i hi
+            · intro hi
+              exact Or.inl (Or.inr hi.symm)
+            · intro hi
+              exact Or.inr ⟨j, hi⟩
+      rw [ContextType.openManyAt, openManyAt_openAt_comm τ n d (fun i => η i.castSucc)
+        (n + d) (η (Fin.last d)) (fun i => by omega) names]
+      simpa only [hX] using hbody
+
 end ContextType
 
 namespace Context
