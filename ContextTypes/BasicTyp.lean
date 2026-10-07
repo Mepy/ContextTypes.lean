@@ -116,6 +116,30 @@ theorem subset_insert_of_fresh (Δ : BasicEnv) (y : Atom) (U : SimpleType)
   rw [lookup_insert_of_ne _ U hzy]
   exact hz
 
+/-- Erased-environment composition is associative. -/
+theorem merge_assoc (Δ₁ Δ₂ Δ₃ : BasicEnv) :
+    (Δ₁.merge Δ₂).merge Δ₃ = Δ₁.merge (Δ₂.merge Δ₃) := by
+  exact Finmap.union_assoc
+
+/-- A fresh singleton extension agrees with erased-environment insertion. -/
+theorem merge_singleton_eq_insert {Δ : BasicEnv} {x : Atom} {T : SimpleType}
+    (fresh : x ∉ Δ.domain) : Δ.merge (singleton x T) = Δ.insert x T := by
+  apply Finmap.ext_lookup
+  intro y
+  change (Δ.merge (singleton x T)).lookup y = (Δ.insert x T).lookup y
+  by_cases hxy : y = x
+  · subst y
+    rw [lookup_merge_right _ _ fresh, lookup_singleton, lookup_insert]
+  · rw [lookup_insert_of_ne _ _ hxy]
+    by_cases hy : y ∈ Δ.domain
+    · exact lookup_merge_left _ _ hy
+    · rw [lookup_merge_right _ _ hy]
+      have h₁ : (singleton x T).lookup y = none := Finmap.lookup_eq_none.2 (by
+        change y ∉ (singleton x T).domain
+        simpa using hxy)
+      have h₂ : Δ.lookup y = none := Finmap.lookup_eq_none.2 hy
+      rw [h₁, h₂]
+
 end BasicEnv
 
 namespace Primitive

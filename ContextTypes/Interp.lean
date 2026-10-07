@@ -6675,6 +6675,95 @@ theorem models_constantPrecise_ret_free_lookup
 
 end ContextType
 
+namespace Context
+
+/-- A named result and a context model establish their entangled extension. -/
+theorem models_interpUnder_comma_bind
+    {m : Capability} {«Σ» : BasicEnv} {Γ : Context} {τ : ContextType} {x : Atom}
+    (wfΓ : Γ.WellFormedUnder «Σ».domain)
+    (wfτ : τ.WellFormed Γ.erase.domain)
+    (fresh : x ∉ (erasureUnder «Σ» Γ).domain)
+    (hΓ : m ⊨ interpUnder «Σ» Γ)
+    (hτ : m ⊨ ContextType.interp (Γ.erase.insert x τ.erase) τ (.ret (.free x))) :
+    m ⊨ interpUnder «Σ» (Γ ,, (x ∷ τ)) := by
+  let Δ := erasureUnder «Σ» Γ
+  have hτΓ : τ.freeAtoms ⊆ Γ.domain := by
+    rw [← wfΓ.erase_domain]
+    exact wfτ.freeAtoms_subset
+  have hfree : (Γ ,, (x ∷ τ) : Context).freeAtoms = Γ.freeAtoms := by
+    simp only [Context.freeAtoms]
+    rw [Finset.sdiff_eq_empty_iff_subset.2 hτΓ, Finset.union_empty]
+  have hworld := models_interpUnder_basicWorld hΓ
+  have hworldτ := ContextType.models_interp_basicWorld hτ
+  have lookup := BasicEnv.lookup_insert Γ.erase x τ.erase
+  have hxtyped : ∀ σ, σ ∈ m → ∃ v, σ.lookup x = some v ∧ BasicValTyp ∅ v τ.erase := by
+    intro σ hσ
+    apply ((Interp.models_basicWorld_iff m _).1 hworldτ).2 σ hσ x τ.erase
+    simp [Interp.relevantEnv, Interp.relevantAtoms, Term.support, Value.support, lookup]
+  have hxM : x ∈ m.domain := by
+    obtain ⟨σ, hσ⟩ := m.nonempty
+    obtain ⟨v, hv, _⟩ := hxtyped σ hσ
+    rw [← m.mem_domain hσ]
+    exact (Store.mem_domain_iff σ x).2 ⟨v, hv⟩
+  have hworld' := Interp.models_basicWorld_insert hworld hxM hxtyped
+  have henv :
+      («Σ».restrict Γ.freeAtoms).merge (Γ.erase.merge (BasicEnv.singleton x τ.erase)) =
+        Δ.insert x τ.erase := by
+    rw [← BasicEnv.merge_assoc]
+    exact BasicEnv.merge_singleton_eq_insert fresh
+  have hbind : m ⊨ interpUnder Δ (x ∷ τ) := by
+    have hxτ : x ∉ τ.freeAtoms := by
+      intro hx
+      apply fresh
+      rw [erasureUnder, BasicEnv.domain_merge]
+      exact Finset.mem_union_right _ (wfτ.freeAtoms_subset hx)
+    have hΔτ : x ∉ (Δ.restrict τ.freeAtoms).domain := by simp [hxτ]
+    have agree : BasicEnv.AgreeOn
+        (τ.freeAtoms ∪ (.ret (.free x) : Term).support)
+        (Γ.erase.insert x τ.erase) ((Δ.restrict τ.freeAtoms).insert x τ.erase) := by
+      intro y hy
+      by_cases hxy : y = x
+      · subst y
+        simp
+      · rw [BasicEnv.lookup_insert_of_ne _ _ hxy, BasicEnv.lookup_insert_of_ne _ _ hxy]
+        have hyτ : y ∈ τ.freeAtoms := by
+          rcases Finset.mem_union.1 hy with hy | hy
+          · exact hy
+          · exact (hxy (by simpa [Term.support, Value.support] using hy)).elim
+        rw [BasicEnv.lookup_restrict, if_pos hyτ]
+        have hyΓ := wfτ.freeAtoms_subset hyτ
+        have hambient : y ∉ («Σ».restrict Γ.freeAtoms).domain := by
+          intro h
+          rw [BasicEnv.domain_restrict] at h
+          exact Finset.disjoint_left.1 wfΓ.domain_disjoint
+            (by rwa [wfΓ.erase_domain] at hyΓ) (Finset.mem_inter.1 h).1
+        exact (BasicEnv.lookup_merge_right _ _ hambient).symm
+    have hτ' : m ⊨ ContextType.interp ((Δ.restrict τ.freeAtoms).insert x τ.erase)
+        τ (.ret (.free x)) := by
+      rw [← ContextType.interp_eq_of_agreeOn agree]
+      exact hτ
+    apply Formula.models_and_intro ?_ hτ'
+    rw [BasicEnv.merge_singleton_eq_insert hΔτ]
+    apply (Interp.models_basicWorld_iff m _).2
+    refine ⟨?_, ?_⟩
+    · simp only [BasicEnv.domain_insert, BasicEnv.domain_restrict]
+      exact Finset.union_subset (by simpa using hxM)
+        (Finset.Subset.trans Finset.inter_subset_left ((Interp.models_basicWorld_iff m Δ).1 hworld).1)
+    · intro σ hσ y T hy
+      by_cases hxy : y = x
+      · subst y
+        rw [BasicEnv.lookup_insert] at hy
+        cases Option.some.inj hy
+        exact hxtyped σ hσ
+      · rw [BasicEnv.lookup_insert_of_ne _ _ hxy, BasicEnv.lookup_restrict] at hy
+        split_ifs at hy with hyτ
+        exact ((Interp.models_basicWorld_iff m Δ).1 hworld).2 σ hσ y T hy
+  simp only [interpUnder, hfree, Context.erase]
+  rw [henv, interpUnder_restrict «Σ» Γ (Finset.Subset.refl _)]
+  exact Formula.models_and_intro hworld' (Formula.models_and_intro hΓ hbind)
+
+end Context
+
 def SubCtxUnder («Σ» : BasicEnv) (X : Finset Atom) (Γ₁ Γ₂ : Context) : Prop :=
   Γ₁.WellFormedUnder («Σ»).domain ∧
   Γ₂.WellFormedUnder («Σ»).domain ∧
