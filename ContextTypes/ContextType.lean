@@ -197,6 +197,42 @@ def shiftFrom : ContextType → Nat → ContextType
   | .wand τ₁ τ₂, k => .wand (τ₁.shiftFrom k) (τ₂.shiftFrom (k + 1))
   | .persist τ, k => .persist (τ.shiftFrom k)
 
+/-- Opening above an inserted binder commutes with context-type shifting. -/
+theorem openAt_shiftFrom_of_le (τ : ContextType) (k n : Nat) (y : Atom)
+    (hk : k ≤ n) :
+    (τ.shiftFrom k).openAt (n + 1) y = (τ.openAt n y).shiftFrom k := by
+  induction τ generalizing k n with
+  | «over» b q | under b q =>
+      simp only [ContextType.shiftFrom, ContextType.openAt]
+      rw [Qualifier.openAt_shiftFrom_of_le q (k + 1) (n + 1) y (by omega)]
+  | inter τ₁ τ₂ ih₁ ih₂ | union τ₁ τ₂ ih₁ ih₂ | sum τ₁ τ₂ ih₁ ih₂ =>
+      simp only [ContextType.shiftFrom, ContextType.openAt]
+      rw [ih₁ k n hk, ih₂ k n hk]
+  | arrow τ₁ τ₂ ih₁ ih₂ | wand τ₁ τ₂ ih₁ ih₂ =>
+      simp only [ContextType.shiftFrom, ContextType.openAt]
+      rw [ih₁ k n hk, ih₂ (k + 1) (n + 1) (by omega)]
+  | persist τ ih =>
+      simp only [ContextType.shiftFrom, ContextType.openAt]
+      rw [ih k n hk]
+
+/-- Opening below an inserted binder commutes with context-type shifting. -/
+theorem openAt_shiftFrom_of_lt (τ : ContextType) (k n : Nat) (y : Atom)
+    (hk : n < k) :
+    (τ.shiftFrom k).openAt n y = (τ.openAt n y).shiftFrom k := by
+  induction τ generalizing k n with
+  | «over» b q | under b q =>
+      simp only [ContextType.shiftFrom, ContextType.openAt]
+      rw [Qualifier.openAt_shiftFrom_of_lt q (k + 1) (n + 1) y (by omega)]
+  | inter τ₁ τ₂ ih₁ ih₂ | union τ₁ τ₂ ih₁ ih₂ | sum τ₁ τ₂ ih₁ ih₂ =>
+      simp only [ContextType.shiftFrom, ContextType.openAt]
+      rw [ih₁ k n hk, ih₂ k n hk]
+  | arrow τ₁ τ₂ ih₁ ih₂ | wand τ₁ τ₂ ih₁ ih₂ =>
+      simp only [ContextType.shiftFrom, ContextType.openAt]
+      rw [ih₁ k n hk, ih₂ (k + 1) (n + 1) (by omega)]
+  | persist τ ih =>
+      simp only [ContextType.shiftFrom, ContextType.openAt]
+      rw [ih k n hk]
+
 /-- Substitute a finite logical-variable assignment. -/
 def substitute : ContextType → Assignment → ContextType
   | .over b q, ρ => .over b (q.substitute ρ)

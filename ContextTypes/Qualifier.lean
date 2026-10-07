@@ -293,6 +293,41 @@ theorem shiftFrom_injective (k : Nat) : Function.Injective (shiftFrom k) := by
           by_cases hn : k ≤ n <;> by_cases hm : k ≤ m <;>
             simp [hn, hm] at same ⊢ <;> omega
 
+/-- Opening a binder at or above the inserted cutoff advances its index. -/
+theorem openBinder_shiftFrom (k n : Nat) (y : Atom)
+    (hk : k ≤ n) (ξ : LogicVar) :
+    LogicVar.openBinder (n + 1) y (LogicVar.shiftFrom k ξ) =
+      LogicVar.shiftFrom k (LogicVar.openBinder n y ξ) := by
+  cases ξ with
+  | free x =>
+      by_cases hxy : x = y <;> simp [LogicVar.openBinder, LogicVar.swap, LogicVar.shiftFrom, hxy, hk]
+  | bound j =>
+      by_cases hj : j = n
+      · subst j
+        simp [LogicVar.openBinder, LogicVar.swap, LogicVar.shiftFrom, hk]
+      · by_cases hkj : k ≤ j
+        · simp [LogicVar.openBinder, LogicVar.swap, LogicVar.shiftFrom, hj, hkj]
+        · have hjn : j ≠ n + 1 := by omega
+          simp [LogicVar.openBinder, LogicVar.swap, LogicVar.shiftFrom, hj, hkj, hjn]
+
+/-- Opening a binder below the inserted cutoff keeps its index. -/
+theorem openBinder_shiftFrom_of_lt (k n : Nat) (y : Atom)
+    (hk : n < k) (ξ : LogicVar) :
+    LogicVar.openBinder n y (LogicVar.shiftFrom k ξ) =
+      LogicVar.shiftFrom k (LogicVar.openBinder n y ξ) := by
+  cases ξ with
+  | free x =>
+      by_cases hxy : x = y
+      all_goals simp [LogicVar.openBinder, LogicVar.swap, LogicVar.shiftFrom, hxy, Nat.not_le_of_lt hk]
+  | bound j =>
+      by_cases hj : j = n
+      · subst j
+        simp [LogicVar.openBinder, LogicVar.swap, LogicVar.shiftFrom, Nat.not_le_of_lt hk]
+      · by_cases hkj : k ≤ j
+        · have hjn : j + 1 ≠ n := by omega
+          simp [LogicVar.openBinder, LogicVar.swap, LogicVar.shiftFrom, hj, hkj, hjn]
+        · simp [LogicVar.openBinder, LogicVar.swap, LogicVar.shiftFrom, hj, hkj]
+
 end LogicVar
 
 /-- A semantic predicate with an explicit finite logical-variable support. -/
@@ -663,6 +698,67 @@ theorem openAt_shiftFrom_eq (q : Qualifier) (k : Nat) (x : Atom)
   · intro h
     exact (Nat.lt_irrefl k (closed k h)).elim
   · exact fresh
+
+/-- A supported injective renaming transports opening when the key maps commute. -/
+theorem rename_openAt (q : Qualifier) (f : LogicVar → LogicVar)
+    (inj : Function.Injective f) (n j : Nat) (y : Atom)
+    (comm : ∀ ξ, LogicVar.openBinder j y (f ξ) = f (LogicVar.openBinder n y ξ)) :
+    (q.rename f inj).openAt j y = (q.openAt n y).rename f inj := by
+  apply Qualifier.ext
+  · simp only [Qualifier.support_openAt, Qualifier.rename,
+      LogicVar.openSupport, Finset.image_image]
+    congr 1
+    funext ξ
+    exact comm ξ
+  · intro ρ σ same
+    change (∃ a : AssignmentOn q.support, q.holds a ∧ ∀ ξ,
+        a.assignment.lookup ξ =
+          (ρ.swapBack (.bound j) (.free y)).assignment.lookup (f ξ)) ↔
+      ∃ b : AssignmentOn (q.openAt n y).support,
+        q.holds (b.swapBack (.bound n) (.free y)) ∧ ∀ ξ,
+          b.assignment.lookup ξ = σ.assignment.lookup (f ξ)
+    constructor
+    · rintro ⟨a, ha, hlook⟩
+      let b : AssignmentOn (q.openAt n y).support := a.swapFront (.bound n) (.free y)
+      refine ⟨b, ?_, ?_⟩
+      · simpa only [b, AssignmentOn.swapBack_swapFront] using ha
+      · intro ξ
+        calc
+          b.assignment.lookup ξ = a.assignment.lookup (LogicVar.openBinder n y ξ) := by
+            simp [b, AssignmentOn.swapFront, Assignment.lookup_swap, LogicVar.openBinder]
+          _ = ρ.assignment.lookup (LogicVar.openBinder j y
+              (f (LogicVar.openBinder n y ξ))) := by
+            simpa only [AssignmentOn.swapBack, Assignment.lookup_swap, LogicVar.openBinder] using
+              hlook (LogicVar.openBinder n y ξ)
+          _ = σ.assignment.lookup (f ξ) := by
+            rw [comm]
+            simp only [LogicVar.openBinder, LogicVar.swap_involutive, same]
+    · rintro ⟨b, hb, hlook⟩
+      let a : AssignmentOn q.support := b.swapBack (.bound n) (.free y)
+      refine ⟨a, hb, ?_⟩
+      intro ξ
+      calc
+        a.assignment.lookup ξ = b.assignment.lookup (LogicVar.openBinder n y ξ) := by
+          simp [a, AssignmentOn.swapBack, Assignment.lookup_swap, LogicVar.openBinder]
+        _ = σ.assignment.lookup (f (LogicVar.openBinder n y ξ)) := hlook _
+        _ = ρ.assignment.lookup (LogicVar.openBinder j y (f ξ)) := by
+          rw [comm, same]
+        _ = (ρ.swapBack (.bound j) (.free y)).assignment.lookup (f ξ) := by
+          simp [AssignmentOn.swapBack, Assignment.lookup_swap, LogicVar.openBinder]
+
+/-- Opening above an inserted binder commutes with qualifier shifting. -/
+theorem openAt_shiftFrom_of_le (q : Qualifier) (k n : Nat) (y : Atom)
+    (hk : k ≤ n) :
+    (q.shiftFrom k).openAt (n + 1) y = (q.openAt n y).shiftFrom k :=
+  q.rename_openAt (LogicVar.shiftFrom k) (LogicVar.shiftFrom_injective k)
+    n (n + 1) y (LogicVar.openBinder_shiftFrom k n y hk)
+
+/-- Opening below an inserted binder commutes with qualifier shifting. -/
+theorem openAt_shiftFrom_of_lt (q : Qualifier) (k n : Nat) (y : Atom)
+    (hk : n < k) :
+    (q.shiftFrom k).openAt n y = (q.openAt n y).shiftFrom k :=
+  q.rename_openAt (LogicVar.shiftFrom k) (LogicVar.shiftFrom_injective k)
+    n n y (LogicVar.openBinder_shiftFrom_of_lt k n y hk)
 
 theorem substitute_fresh (q : Qualifier) (ρ : Assignment)
     (h : Disjoint q.support ρ.domain) : q.substitute ρ = q := by
