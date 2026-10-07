@@ -854,6 +854,26 @@ theorem openManyAt_cons (k d : Nat) (x : Atom) (η : Fin d → Atom) (ξ : Logic
       congr 1
       omega
 
+/-- A finite external opening leaves every binder below its cutoff untouched. -/
+theorem openManyAt_bound_of_lt (k d : Nat) (η : Fin d → Atom) (j : Nat) (hj : j < k) :
+    openManyAt k d η (.bound j) = .bound j := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      rw [openManyAt, ih]
+      have apart : j ≠ k + d := by omega
+      simp [openBinder, swap, apart]
+
+/-- A free key distinct from all selected names is unaffected by finite opening. -/
+theorem openManyAt_free_of_apart (k d : Nat) (η : Fin d → Atom) (x : Atom)
+    (apart : ∀ i, x ≠ η i) :
+    openManyAt k d η (.free x) = .free x := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      rw [openManyAt, ih _ (fun i => apart i.castSucc)]
+      simp [openBinder, swap, apart (Fin.last d)]
+
 end LogicVar
 
 namespace Value

@@ -328,6 +328,18 @@ theorem openBinder_shiftFrom_of_lt (k n : Nat) (y : Atom)
           simp [LogicVar.openBinder, LogicVar.swap, LogicVar.shiftFrom, hj, hkj, hjn]
         · simp [LogicVar.openBinder, LogicVar.swap, LogicVar.shiftFrom, hj, hkj]
 
+/-- Finite opening above an inserted cutoff commutes with logical-key shifting. -/
+theorem openManyAt_shiftFrom (n k d : Nat) (η : Fin d → Atom)
+    (hk : n ≤ k) (ξ : LogicVar) :
+    openManyAt (k + 1) d η (shiftFrom n ξ) =
+      shiftFrom n (openManyAt k d η ξ) := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      rw [openManyAt, ih, show k + 1 + d = (k + d) + 1 by omega,
+        openBinder_shiftFrom n (k + d) _ (by omega)]
+      rfl
+
 end LogicVar
 
 /-- A semantic predicate with an explicit finite logical-variable support. -/

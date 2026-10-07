@@ -472,6 +472,17 @@ theorem shiftTermAt_openAt (e : Term) (d k : Nat) (y : Atom) (hk : d ≤ k) :
         shiftTermAt_openAt e₁ d k y hk, shiftTermAt_openAt e₂ d k y hk]
 end
 
+/-- A finite family of input names commutes with insertion of a core-term binder. -/
+theorem shiftTermAt_openManyAt (e : Term) (n k d : Nat) (η : Fin d → Atom) (hk : n ≤ k) :
+    (shiftTermAt e n).openManyAt (k + 1) d η =
+      shiftTermAt (e.openManyAt k d η) n := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      rw [Term.openManyAt, ih, show k + 1 + d = (k + d) + 1 by omega,
+        shiftTermAt_openAt _ n (k + d) _ (by omega)]
+      rfl
+
 mutual
 
   theorem shiftValueAt_eq_of_locallyClosedAt (v : Value) (d : Nat)
@@ -1270,6 +1281,65 @@ theorem resultFirst_openAt_input (Δ : BasicEnv) (τ : ContextType) (e : Term)
   rw [hX, relevantSupport_openAt Δ τ e k y T freshΔ freshτ freshE]
   simp only [shiftTerm, shiftTermAt_openAt e 0 k y (Nat.zero_le k)]
   simp [LogicVar.openBinder, LogicVar.swap]
+
+/-- A finite fresh injective family transports exactly the relevant inputs,
+with their erased bindings inserted in the named environment. -/
+theorem relevantSupport_openManyAt (Δ : BasicEnv) (τ : ContextType) (e : Term)
+    (k d : Nat) (η : Fin d → Atom) (T : Fin d → SimpleType)
+    (inj : Function.Injective η) (freshΔ : ∀ i, η i ∉ Δ.domain)
+    (freshτ : ∀ i, η i ∉ τ.freeAtoms) (freshE : ∀ i, η i ∉ e.support) :
+    (relevantSupport Δ τ e).image (LogicVar.openManyAt k d η) =
+      relevantSupport (Δ.insertMany d η T) (τ.openManyAt k d η) (e.openManyAt k d η) := by
+  induction d with
+  | zero => simp [LogicVar.openManyAt, BasicEnv.insertMany, ContextType.openManyAt, Term.openManyAt]
+  | succ d ih =>
+      have apart : ∀ i : Fin d, η (Fin.last d) ≠ η i.castSucc := by
+        intro i h
+        have := congrArg Fin.val (inj h)
+        simp at this
+        omega
+      have freshLastΔ : η (Fin.last d) ∉
+          (Δ.insertMany d (fun i => η i.castSucc) (fun i => T i.castSucc)).domain := by
+        rw [BasicEnv.domain_insertMany]
+        intro hx
+        rcases Finset.mem_union.1 hx with hx | hx
+        · exact freshΔ (Fin.last d) hx
+        · obtain ⟨i, _, hi⟩ := Finset.mem_image.1 hx
+          exact apart i hi.symm
+      have freshLastτ := τ.fresh_openManyAt k d (fun i => η i.castSucc) (freshτ (Fin.last d)) apart
+      have freshLastE := e.fresh_openManyAt k d (fun i => η i.castSucc) (freshE (Fin.last d)) apart
+      rw [show (relevantSupport Δ τ e).image (LogicVar.openManyAt k (d + 1) η) =
+        LogicVar.openSupport (k + d) (η (Fin.last d))
+          ((relevantSupport Δ τ e).image (LogicVar.openManyAt k d (fun i => η i.castSucc))) by
+            simp only [LogicVar.openManyAt, LogicVar.openSupport, Finset.image_image]
+            rfl,
+        ih (fun i : Fin d => η i.castSucc) (fun i : Fin d => T i.castSucc)
+          (fun i j h => Fin.castSucc_injective d (inj h))
+          (fun i => freshΔ i.castSucc) (fun i => freshτ i.castSucc) (fun i => freshE i.castSucc),
+        relevantSupport_openAt _ _ _ _ _ (T (Fin.last d)) freshLastΔ freshLastτ freshLastE]
+      rfl
+
+/-- Opening any finite input family underneath the distinguished result binder
+preserves the complete result-first graph in the corresponding named environment. -/
+theorem resultFirst_openManyAt_inputs (Δ : BasicEnv) (τ : ContextType) (e : Term)
+    (k d : Nat) (η : Fin d → Atom) (T : Fin d → SimpleType)
+    (inj : Function.Injective η) (freshΔ : ∀ i, η i ∉ Δ.domain)
+    (freshτ : ∀ i, η i ∉ τ.freeAtoms) (freshE : ∀ i, η i ∉ e.support) :
+    (resultFirst Δ τ e).openManyAt (k + 1) d η =
+      resultFirst (Δ.insertMany d η T) (τ.openManyAt k d η) (e.openManyAt k d η) := by
+  unfold resultFirst
+  rw [resultAt_openManyAt _ _ _ _ _ η inj (by simpa using freshE)]
+  have hX : ((relevantSupport Δ τ e).image (LogicVar.shiftFrom 0)).image
+      (LogicVar.openManyAt (k + 1) d η) =
+      ((relevantSupport Δ τ e).image (LogicVar.openManyAt k d η)).image (LogicVar.shiftFrom 0) := by
+    simp only [Finset.image_image]
+    congr 1
+    funext ξ
+    exact LogicVar.openManyAt_shiftFrom 0 k d η (Nat.zero_le k) ξ
+  rw [hX, relevantSupport_openManyAt Δ τ e k d η T inj freshΔ freshτ freshE,
+    LogicVar.openManyAt_bound_of_lt (k + 1) d η 0 (by omega)]
+  simp only [shiftTerm]
+  rw [shiftTermAt_openManyAt e 0 k d η (Nat.zero_le k)]
 
 def guard (d : Nat) (Δ : BasicEnv) (τ : ContextType) (e : Term) : Formula :=
   wellFormed d Δ τ ∧ᶜ
