@@ -173,6 +173,158 @@ theorem instantiateTerm_eq_of_restrict_eq (e : Term) (X : Finset LogicVar)
         (LogicVar.mem_freeAtomSet_iff X x).2 hξX
       simpa [Store.lookup_restrict, hx] using hs
 
+mutual
+  theorem instantiateValueAt_eq_of_closed_support_empty (v : Value) (d : Nat)
+      (ρ : Assignment) (closed : v.locallyClosedAt d) (support : v.support = ∅) :
+      instantiateValueAt v d ρ = v := by
+    cases v with
+    | const c => rfl
+    | free x => simp [Value.support] at support
+    | bound k => simp only [Value.locallyClosedAt] at closed; simp [instantiateValueAt, closed]
+    | lam T e =>
+        simp only [instantiateValueAt]
+        rw [instantiateTermAt_eq_of_closed_support_empty e (d + 1) ρ closed support]
+    | fix T v =>
+        simp only [instantiateValueAt]
+        rw [instantiateValueAt_eq_of_closed_support_empty v (d + 1) ρ closed support]
+
+  theorem instantiateTermAt_eq_of_closed_support_empty (e : Term) (d : Nat)
+      (ρ : Assignment) (closed : e.locallyClosedAt d) (support : e.support = ∅) :
+      instantiateTermAt e d ρ = e := by
+    cases e with
+    | ret v =>
+        simp only [instantiateTermAt]
+        rw [instantiateValueAt_eq_of_closed_support_empty v d ρ closed support]
+    | letE e₁ e₂ =>
+        have hs : e₁.support = ∅ ∧ e₂.support = ∅ := by simpa [Term.support] using support
+        simp only [instantiateTermAt]
+        rw [instantiateTermAt_eq_of_closed_support_empty e₁ d ρ closed.1 hs.1,
+          instantiateTermAt_eq_of_closed_support_empty e₂ (d + 1) ρ closed.2 hs.2]
+    | primitive op v =>
+        simp only [instantiateTermAt]
+        rw [instantiateValueAt_eq_of_closed_support_empty v d ρ closed support]
+    | app v₁ v₂ =>
+        have hs : v₁.support = ∅ ∧ v₂.support = ∅ := by simpa [Term.support] using support
+        simp only [instantiateTermAt]
+        rw [instantiateValueAt_eq_of_closed_support_empty v₁ d ρ closed.1 hs.1,
+          instantiateValueAt_eq_of_closed_support_empty v₂ d ρ closed.2 hs.2]
+    | matchBool v e₁ e₂ =>
+        have hs : v.support = ∅ ∧ e₁.support = ∅ ∧ e₂.support = ∅ := by
+          simpa [Term.support] using support
+        simp only [instantiateTermAt]
+        rw [instantiateValueAt_eq_of_closed_support_empty v d ρ closed.1 hs.1,
+          instantiateTermAt_eq_of_closed_support_empty e₁ d ρ closed.2.1 hs.2.1,
+          instantiateTermAt_eq_of_closed_support_empty e₂ d ρ closed.2.2 hs.2.2]
+end
+
+mutual
+  theorem instantiateValueAt_substitute_of_lookup (v : Value) (d : Nat)
+      {ρ : Assignment} {x : Atom} {u : Value}
+      (lookup : ρ.lookup (.free x) = some u)
+      (closed : u.locallyClosed) (support : u.support = ∅) :
+      instantiateValueAt (v.substitute x u) d ρ = instantiateValueAt v d ρ := by
+    cases v with
+    | const c => rfl
+    | free y =>
+        by_cases h : y = x
+        · subst y
+          simp only [Value.substitute, instantiateValueAt, lookup, Option.getD_some]
+          exact instantiateValueAt_eq_of_closed_support_empty u d ρ
+            (u.locallyClosedAt_mono closed (Nat.zero_le d)) support
+        · simp [Value.substitute, instantiateValueAt, h]
+    | bound k => rfl
+    | lam T e =>
+        simp only [Value.substitute, instantiateValueAt]
+        rw [instantiateTermAt_substitute_of_lookup e (d + 1) lookup closed support]
+    | fix T v =>
+        simp only [Value.substitute, instantiateValueAt]
+        rw [instantiateValueAt_substitute_of_lookup v (d + 1) lookup closed support]
+
+  theorem instantiateTermAt_substitute_of_lookup (e : Term) (d : Nat)
+      {ρ : Assignment} {x : Atom} {u : Value}
+      (lookup : ρ.lookup (.free x) = some u)
+      (closed : u.locallyClosed) (support : u.support = ∅) :
+      instantiateTermAt (e.substitute x u) d ρ = instantiateTermAt e d ρ := by
+    cases e with
+    | ret v =>
+        simp only [Term.substitute, instantiateTermAt]
+        rw [instantiateValueAt_substitute_of_lookup v d lookup closed support]
+    | letE e₁ e₂ =>
+        simp only [Term.substitute, instantiateTermAt]
+        rw [instantiateTermAt_substitute_of_lookup e₁ d lookup closed support,
+          instantiateTermAt_substitute_of_lookup e₂ (d + 1) lookup closed support]
+    | primitive op v =>
+        simp only [Term.substitute, instantiateTermAt]
+        rw [instantiateValueAt_substitute_of_lookup v d lookup closed support]
+    | app v₁ v₂ =>
+        simp only [Term.substitute, instantiateTermAt]
+        rw [instantiateValueAt_substitute_of_lookup v₁ d lookup closed support,
+          instantiateValueAt_substitute_of_lookup v₂ d lookup closed support]
+    | matchBool v e₁ e₂ =>
+        simp only [Term.substitute, instantiateTermAt]
+        rw [instantiateValueAt_substitute_of_lookup v d lookup closed support,
+          instantiateTermAt_substitute_of_lookup e₁ d lookup closed support,
+          instantiateTermAt_substitute_of_lookup e₂ d lookup closed support]
+end
+
+/-- Substituting a well-typed store preserves erased term typing. -/
+theorem instantiateTerm_typed {Δ : BasicEnv} {e : Term} {T : SimpleType} {σ : Store}
+    (typed : Δ ⊢ₑ e ⋮ T)
+    (world : ∀ x U, Δ.lookup x = some U →
+      ∃ u, σ.lookup x = some u ∧ BasicValTyp ∅ u U) :
+    ∅ ⊢ₑ instantiateTerm e σ.toAssignment ⋮ T := by
+  have aux : ∀ n (Δ : BasicEnv) (e : Term), Δ.domain.card = n →
+      BasicTermTyp Δ e T →
+      (∀ x U, Δ.lookup x = some U →
+        ∃ u, σ.lookup x = some u ∧ BasicValTyp ∅ u U) →
+      BasicTermTyp ∅ (instantiateTerm e σ.toAssignment) T := by
+    intro n
+    induction n using Nat.strong_induction_on with
+    | h n ih =>
+        intro Δ e hcard typed world
+        by_cases hΔ : Δ.domain = ∅
+        · have he : Δ = ∅ := by
+            calc
+              Δ = Δ.restrict Δ.domain := (BasicEnv.restrict_domain_self Δ).symm
+              _ = ∅ := by rw [hΔ, BasicEnv.restrict_empty]
+          subst Δ
+          have hs : e.support = ∅ :=
+            Finset.Subset.antisymm (by simpa using typed.support_subset) (Finset.empty_subset _)
+          change BasicTermTyp ∅ (instantiateTermAt e 0 σ.toAssignment) T
+          rw [instantiateTermAt_eq_of_closed_support_empty e 0 σ.toAssignment typed.locallyClosed hs]
+          exact typed
+        · obtain ⟨x, hx⟩ := Finset.nonempty_iff_ne_empty.2 hΔ
+          obtain ⟨U, hU⟩ := (BasicEnv.mem_domain_iff Δ x).1 hx
+          obtain ⟨u, hu, huT⟩ := world x U hU
+          have husupp : u.support = ∅ :=
+            Finset.Subset.antisymm (by simpa using huT.support_subset) (Finset.empty_subset _)
+          have harg : BasicValTyp (Δ.erase x) u U := huT.weaken (by
+            intro y V hy
+            simp at hy)
+          have he : (Δ.erase x).insert x U = Δ := BasicEnv.insert_erase_of_lookup hU
+          have htyped : BasicTermTyp (Δ.erase x) (e.substitute x u) T := by
+            rw [← he] at typed
+            exact typed.substitute harg (by simp)
+          have hworld : ∀ y V, (Δ.erase x).lookup y = some V →
+              ∃ u, σ.lookup y = some u ∧ BasicValTyp ∅ u V := by
+            intro y V hy
+            by_cases hxy : y = x
+            · subst y
+              simp at hy
+            · rw [BasicEnv.lookup_erase_of_ne Δ hxy] at hy
+              exact world y V hy
+          have hlt : (Δ.erase x).domain.card < n := by
+            rw [BasicEnv.domain_erase, ← hcard]
+            exact Finset.card_erase_lt_of_mem hx
+          have hout := ih (Δ.erase x).domain.card hlt (Δ.erase x) (e.substitute x u)
+            rfl htyped hworld
+          change BasicTermTyp ∅ (instantiateTermAt (e.substitute x u) 0 σ.toAssignment) T at hout
+          rw [instantiateTermAt_substitute_of_lookup e 0
+            (ρ := σ.toAssignment) (x := x)
+            (by simpa using hu) huT.locallyClosed husupp] at hout
+          exact hout
+  exact aux Δ.domain.card Δ e rfl typed world
+
 /-! ## Binder insertion for result-first formulas -/
 
 mutual
@@ -964,6 +1116,147 @@ theorem models_total_term {m : Capability} {e : Term}
     (total e).freeAtoms = LogicVar.freeAtomSet e.logicSupport := by
   rw [total, Formula.freeAtoms_fiberAtom]
   rfl
+
+/-- Totality is the pointwise universal termination obligation over stores. -/
+theorem models_total_iff {m : Capability} {e : Term} (closed : e.locallyClosed) :
+    m ⊨ total e ↔ e.support ⊆ m.domain ∧
+      ∀ σ, σ ∈ m → (instantiateTerm e σ.toAssignment).MustTerminate := by
+  constructor
+  · intro h
+    refine ⟨?_, fun σ hσ => models_total_term closed h hσ⟩
+    simpa only [freeAtoms_total, freeAtomSet_term_logicSupport] using Formula.models_scope h
+  · rintro ⟨scope, hterm⟩
+    let q := totalQualifier e
+    have hqfree : q.freeAtoms = e.support := freeAtomSet_term_logicSupport e
+    have hqsupp : q.support = e.support.image LogicVar.free := by
+      change e.logicSupport = e.support.image LogicVar.free
+      rw [← freeAtomSet_term_logicSupport e]
+      exact LogicVar.eq_image_free_of_locallyClosed (termLogicSupport_locallyClosed e closed)
+    apply (Formula.models_fiberAtom_iff m q).2
+    refine ⟨?_, by simpa [hqfree] using scope, ?_⟩
+    · intro k hk
+      exact (termLogicSupport_locallyClosed e closed k hk).elim
+    · intro σ hσ
+      let s := σ.restrict q.freeAtoms
+      have hsdom : s.domain = q.freeAtoms := by
+        rw [Store.domain_restrict, m.mem_domain hσ,
+          Finset.inter_eq_right.2 (by simpa [hqfree] using scope)]
+      let a : AssignmentOn q.support :=
+        { assignment := s.toAssignment
+          domain_eq := by rw [Store.toAssignment_domain, hsdom, hqfree, hqsupp] }
+      refine ⟨hsdom, a, ?_, ?_⟩
+      · change (instantiateTerm e a.assignment).MustTerminate
+        have heq : instantiateTerm e a.assignment = instantiateTerm e σ.toAssignment := by
+          apply instantiateTerm_eq_of_agreeOn
+          intro ξ hξ
+          cases ξ with
+          | bound k => exact (termLogicSupport_locallyClosed e closed k hξ).elim
+          | free x =>
+              have hx : x ∈ e.support := by
+                rw [← freeAtomSet_term_logicSupport, LogicVar.mem_freeAtomSet_iff]
+                exact hξ
+              simp [a, s, Store.toAssignment_lookup_free, hqfree, hx]
+        rw [heq]
+        exact hterm σ hσ
+      · intro x
+        simp [a, s]
+
+/-- Pointwise erased typing and a typed input world realize the supported
+basic-typing atom. -/
+theorem models_basicTyping_of_term {m : Capability} {Δ : BasicEnv}
+    {e : Term} {T : SimpleType} (closed : e.locallyClosed)
+    (support : e.support ⊆ Δ.domain) (world : m ⊨ basicWorld Δ)
+    (typed : ∀ σ, σ ∈ m → BasicTermTyp ∅ (instantiateTerm e σ.toAssignment) T) :
+    m ⊨ basicTyping Δ e T := by
+  let q := basicTypingQualifier Δ e T
+  have hlogic : e.logicSupport = e.support.image LogicVar.free := by
+    rw [← freeAtomSet_term_logicSupport e]
+    exact LogicVar.eq_image_free_of_locallyClosed (termLogicSupport_locallyClosed e closed)
+  have hqsupp : q.support = Δ.domain.image LogicVar.free := by
+    change Δ.domain.image LogicVar.free ∪ e.logicSupport = _
+    rw [hlogic, Finset.union_eq_left.2 (Finset.image_subset_image support)]
+  have hqfree : q.freeAtoms = Δ.domain := by
+    change LogicVar.freeAtomSet q.support = _
+    rw [hqsupp, Formula.LogicVar.freeAtomSet_image_free]
+  have hw := (models_basicWorld_iff m Δ).1 world
+  apply (Formula.models_fiberAtom_iff m q).2
+  refine ⟨?_, by simpa [hqfree] using hw.1, ?_⟩
+  · intro k hk
+    rw [hqsupp] at hk
+    simp at hk
+  · intro σ hσ
+    let s := σ.restrict q.freeAtoms
+    have hsdom : s.domain = q.freeAtoms := by
+      rw [Store.domain_restrict, m.mem_domain hσ,
+        Finset.inter_eq_right.2 (by simpa [hqfree] using hw.1)]
+    let a : AssignmentOn q.support :=
+      { assignment := s.toAssignment
+        domain_eq := by rw [Store.toAssignment_domain, hsdom, hqfree, hqsupp] }
+    refine ⟨hsdom, a, ?_, ?_⟩
+    · change e.support ⊆ Δ.domain ∧ _ ∧ _
+      refine ⟨support, ?_, ?_⟩
+      · intro ξ U hU
+        cases ξ with
+        | bound k => simp at hU
+        | free x =>
+            obtain ⟨v, hv, hvT⟩ := hw.2 σ hσ x U hU
+            refine ⟨v, ?_, hvT⟩
+            have hx : x ∈ Δ.domain :=
+              (BasicValTyp.free hU).support_subset (by simp [Value.support])
+            simp [a, s, Store.toAssignment_lookup_free, hqfree, hx, hv]
+      · have heq : instantiateTerm e a.assignment = instantiateTerm e σ.toAssignment := by
+          apply instantiateTerm_eq_of_agreeOn
+          intro ξ hξ
+          cases ξ with
+          | bound k => exact (termLogicSupport_locallyClosed e closed k hξ).elim
+          | free x =>
+              have hx : x ∈ e.support := by
+                rw [← freeAtomSet_term_logicSupport, LogicVar.mem_freeAtomSet_iff]
+                exact hξ
+              simp [a, s, Store.toAssignment_lookup_free, hqfree, support hx]
+        rw [heq]
+        exact typed σ hσ
+    · intro x
+      simp [a, s]
+
+/-- A typed world realizes the basic-typing atom of every syntactically
+well-typed term. -/
+theorem models_basicTyping_of_world {m : Capability} {Δ : BasicEnv}
+    {e : Term} {T : SimpleType} (typed : Δ ⊢ₑ e ⋮ T)
+    (world : m ⊨ basicWorld Δ) : m ⊨ basicTyping Δ e T :=
+  models_basicTyping_of_term typed.locallyClosed typed.support_subset world
+    (fun σ hσ => instantiateTerm_typed typed
+      ((models_basicWorld_iff m Δ).1 world |>.2 σ hσ))
+
+/-- Static formation and typing, a typed input world, and totality establish
+the guard after restricting the environment to its relevant variables. -/
+theorem models_guard_relevant_of_world {m : Capability} {Δ : BasicEnv}
+    {τ : ContextType} {e : Term} {d : Nat}
+    (wfτ : τ.WellFormedAt d Δ.domain) (typed : Δ ⊢ₑ e ⋮ τ.erase)
+    (world : m ⊨ basicWorld Δ) (terminates : m ⊨ total e) :
+    m ⊨ guard d (relevantEnv Δ τ e) τ e := by
+  let Δ' := relevantEnv Δ τ e
+  have hτ : τ.freeAtoms ⊆ Δ'.domain := by
+    intro x hx
+    simp only [Δ', relevantEnv_domain, relevantAtoms]
+    exact Finset.mem_inter.2
+      ⟨wfτ.freeAtoms_subset hx, Finset.mem_union_left _ hx⟩
+  have he : e.support ⊆ Δ'.domain := by
+    intro x hx
+    simp only [Δ', relevantEnv_domain, relevantAtoms]
+    exact Finset.mem_inter.2
+      ⟨typed.support_subset hx, Finset.mem_union_right _ hx⟩
+  have hworld : m ⊨ basicWorld Δ' :=
+    models_basicWorld_restrict (relevantAtoms τ e) world
+  have hbasic : m ⊨ basicTyping Δ' e τ.erase :=
+    models_basicTyping_of_term typed.locallyClosed he hworld
+      (fun σ hσ => instantiateTerm_typed typed
+        ((models_basicWorld_iff m Δ).1 world |>.2 σ hσ))
+  have hformed : m ⊨ wellFormed d Δ' τ :=
+    (models_wellFormed_iff m d Δ' τ).2
+      ⟨(models_basicWorld_iff m Δ').1 hworld |>.1, wfτ.regularize hτ⟩
+  exact Formula.models_and_intro hformed
+    (Formula.models_and_intro hworld (Formula.models_and_intro hbasic terminates))
 
 @[simp] theorem freeAtoms_guard (d : Nat) (Δ : BasicEnv)
     (τ : ContextType) (e : Term) :

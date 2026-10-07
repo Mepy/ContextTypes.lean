@@ -45,9 +45,27 @@ theorem lookup_insert_of_ne (Δ : BasicEnv) {x y : Atom} (T : SimpleType)
     (Δ.erase x).lookup x = none :=
   Finmap.lookup_erase x Δ
 
+@[simp] theorem domain_erase (Δ : BasicEnv) (x : Atom) :
+    (Δ.erase x).domain = Δ.domain.erase x :=
+  Finmap.keys_erase x Δ
+
+theorem mem_domain_iff (Δ : BasicEnv) (x : Atom) :
+    x ∈ Δ.domain ↔ ∃ T, Δ.lookup x = some T := by
+  exact Finmap.mem_iff
+
 theorem lookup_erase_of_ne (Δ : BasicEnv) {x y : Atom} (h : y ≠ x) :
     (Δ.erase x).lookup y = Δ.lookup y :=
   Finmap.lookup_erase_ne h
+
+theorem insert_erase_of_lookup {Δ : BasicEnv} {x : Atom} {T : SimpleType}
+    (lookup : Δ.lookup x = some T) : (Δ.erase x).insert x T = Δ := by
+  apply Finmap.ext_lookup
+  intro y
+  change ((Δ.erase x).insert x T).lookup y = Δ.lookup y
+  by_cases h : y = x
+  · subst y
+    rw [lookup_insert, lookup]
+  · rw [lookup_insert_of_ne _ T h, lookup_erase_of_ne _ h]
 
 theorem subset_refl (Δ : BasicEnv) : Δ.Subset Δ :=
   fun _ _ h => h
