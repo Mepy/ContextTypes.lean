@@ -3765,6 +3765,201 @@ theorem models_guard_relevant_shift_openAt_result_alias
       · exact models_resultTotal_openAt closedX closedE support fresh
           hres hbasic
 
+/-- Closed syntax has only free input observations in its result graph. -/
+theorem resultFirst_eq_of_locallyClosed (Δ : BasicEnv) (τ : ContextType) (e : Term)
+    (closedτ : τ.LocallyClosed) (closedE : e.locallyClosed) :
+    resultFirst Δ τ e =
+      resultAt ((relevantEnv Δ τ e).domain.image LogicVar.free) e (.bound 0) := by
+  have hs := LogicVar.eq_image_free_of_locallyClosed
+    (relevantSupport_locallyClosed Δ τ e closedτ closedE)
+  rw [freeAtomSet_relevantSupport] at hs
+  have closedX : LogicVar.LocallyClosed ((relevantEnv Δ τ e).domain.image LogicVar.free) := by
+    intro k hk
+    simp at hk
+  rw [resultFirst, hs, LogicVar.image_shiftFrom_eq_of_locallyClosed _ 0 closedX,
+    shiftTerm_eq_of_locallyClosed e closedE]
+
+/-- Relevant inputs of a freshly named return consist of the type's inputs
+and that returned name. -/
+theorem relevantEnv_insert_ret_free (Δ : BasicEnv) (τ : ContextType) (y : Atom) (T : SimpleType) :
+    relevantEnv (Δ.insert y T) τ (.ret (.free y)) =
+      (Δ.restrict τ.freeAtoms).insert y T := by
+  apply Finmap.ext_lookup
+  intro x
+  change (relevantEnv (Δ.insert y T) τ (.ret (.free y))).lookup x =
+    ((Δ.restrict τ.freeAtoms).insert y T).lookup x
+  by_cases hxy : x = y
+  · subst x
+    simp [relevantEnv, relevantAtoms, Term.support, Value.support]
+  · simp [relevantEnv, relevantAtoms, Term.support, Value.support,
+      BasicEnv.lookup_insert_of_ne _ _ hxy, hxy]
+
+/-- Opening a typed returned binder supplies exactly the typed-world fact
+for the freshly named value and the original erased environment. -/
+theorem basicTyping_ret_bound_openAt_eq (Δ : BasicEnv) (T : SimpleType) (y : Atom)
+    (fresh : y ∉ Δ.domain) :
+    (basicTyping Δ (.ret (.bound 0)) T).openAt 0 y = basicWorld (Δ.insert y T) := by
+  have hopen : LogicVar.openSupport 0 y (Δ.domain.image LogicVar.free) =
+      Δ.domain.image LogicVar.free := by
+    apply LogicVar.openSupport_eq_self_of_fresh
+    · simp
+    · simpa using fresh
+  have hq : (basicTypingQualifier Δ (.ret (.bound 0)) T).openAt 0 y =
+      basicWorldQualifier (Δ.insert y T) := by
+    apply Qualifier.ext
+    · simp only [Qualifier.openAt, basicTypingQualifier, basicWorldQualifier,
+        Term.logicSupportAt, Value.logicSupportAt,
+        boundLogicSupportAt, BasicEnv.domain_insert, Finset.image_union,
+        Finset.image_singleton, Nat.le_refl, if_pos, Nat.sub_self]
+      rw [show LogicVar.openSupport 0 y (Δ.domain.image LogicVar.free ∪ {.bound 0}) =
+        LogicVar.openSupport 0 y (Δ.domain.image LogicVar.free) ∪
+          LogicVar.openSupport 0 y {.bound 0} by simp [LogicVar.openSupport], hopen]
+      simp [LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap, Finset.union_comm]
+    · intro ρ σ same
+      have hy : LogicVar.free y ∈ σ.assignment.domain := by
+        rw [σ.domain_eq]
+        simp [basicWorldQualifier]
+      obtain ⟨v, hv⟩ := (Assignment.mem_domain_iff σ.assignment (.free y)).1 hy
+      change
+        (∅ ⊆ Δ.domain ∧
+          storeTyped (fun ξ => match ξ with | .bound _ => none | .free x => Δ.lookup x)
+            (ρ.swapBack (.bound 0) (.free y)).assignment ∧
+          BasicTermTyp ∅ (instantiateTerm (.ret (.bound 0))
+            (ρ.swapBack (.bound 0) (.free y)).assignment) T) ↔
+        storeTyped (fun ξ => match ξ with
+          | .bound _ => none
+          | .free x => (Δ.insert y T).lookup x) σ.assignment
+      have hret : instantiateTerm (.ret (.bound 0))
+          (ρ.swapBack (.bound 0) (.free y)).assignment = .ret v := by
+        simp [AssignmentOn.swapBack, Assignment.lookup_swap, LogicVar.swap,
+          instantiateTerm, instantiateTermAt, instantiateValueAt, same, hv]
+      rw [hret]
+      constructor
+      · rintro ⟨_, world, typed⟩
+        have hvT : BasicValTyp ∅ v T := by cases typed with | ret typed => exact typed
+        intro ξ U hU
+        cases ξ with
+        | bound k => simp at hU
+        | free x =>
+            change (Δ.insert y T).lookup x = some U at hU
+            by_cases hxy : x = y
+            · subst x
+              rw [BasicEnv.lookup_insert] at hU
+              cases Option.some.inj hU
+              exact ⟨v, hv, hvT⟩
+            · rw [BasicEnv.lookup_insert_of_ne _ _ hxy] at hU
+              obtain ⟨u, hu, huT⟩ := world (.free x) U hU
+              refine ⟨u, ?_, huT⟩
+              simpa [AssignmentOn.swapBack, Assignment.lookup_swap, LogicVar.swap,
+                hxy, same] using hu
+      · intro world
+        refine ⟨Finset.empty_subset _, ?_, ?_⟩
+        · intro ξ U hU
+          cases ξ with
+          | bound k => simp at hU
+          | free x =>
+              change Δ.lookup x = some U at hU
+              have hx : x ∈ Δ.domain := (BasicEnv.mem_domain_iff Δ x).2 ⟨U, hU⟩
+              have hxy : x ≠ y := fun h => fresh (h ▸ hx)
+              obtain ⟨u, hu, huT⟩ := world (.free x) U
+                (by
+                  change (Δ.insert y T).lookup x = some U
+                  rw [BasicEnv.lookup_insert_of_ne _ _ hxy]
+                  exact hU)
+              refine ⟨u, ?_, huT⟩
+              simpa [AssignmentOn.swapBack, Assignment.lookup_swap, LogicVar.swap,
+                hxy, same] using hu
+        · obtain ⟨u, hu, huT⟩ := world (.free y) T (BasicEnv.lookup_insert _ _ _)
+          have hsame : u = v := Option.some.inj (hu.symm.trans hv)
+          exact BasicTermTyp.ret (hsame ▸ huT)
+  simp only [basicTyping, basicWorld, Formula.fiberAtom, Formula.openAt]
+  change Formula.fiberAtom ((basicTypingQualifier Δ (.ret (.bound 0)) T).openAt 0 y) = _
+  rw [hq]
+  rfl
+
+/-- Opening a returned binder names the same value in the totality atom. -/
+theorem total_ret_bound_openAt_eq (y : Atom) :
+    (total (.ret (.bound 0))).openAt 0 y = total (.ret (.free y)) := by
+  have hq : (totalQualifier (.ret (.bound 0))).openAt 0 y =
+      totalQualifier (.ret (.free y)) := by
+    apply Qualifier.ext
+    · simp [totalQualifier, Term.logicSupportAt,
+        Value.logicSupportAt, boundLogicSupportAt,
+        LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap]
+    · intro ρ σ same
+      have hy : LogicVar.free y ∈ σ.assignment.domain := by
+        rw [σ.domain_eq]
+        simp [totalQualifier, Term.logicSupportAt, Value.logicSupportAt]
+      obtain ⟨v, hv⟩ := (Assignment.mem_domain_iff σ.assignment (.free y)).1 hy
+      simp [Qualifier.openAt, totalQualifier, instantiateTermAt,
+        instantiateValueAt, AssignmentOn.swapBack, Assignment.lookup_swap,
+        LogicVar.swap, same, hv]
+  simp only [total, Formula.fiberAtom, Formula.openAt]
+  change Formula.fiberAtom ((totalQualifier (.ret (.bound 0))).openAt 0 y) = _
+  rw [hq]
+  rfl
+
+/-- The opened symbolic-return guard and the actual named-return guard have
+the same models; insertion accounts for the newly typed result value. -/
+theorem models_guard_relevant_ret_bound_openAt_iff
+    {m : Capability} {Δ : BasicEnv} {τ : ContextType} {y : Atom} {d : Nat}
+    (wfτ : τ.WellFormed Δ.domain) (fresh : y ∉ Δ.domain) :
+    m ⊨ (guard d (relevantEnv Δ τ (.ret (.bound 0))) τ (.ret (.bound 0))).openAt 0 y ↔
+      m ⊨ guard 0 (relevantEnv (Δ.insert y τ.erase) τ (.ret (.free y))) τ (.ret (.free y)) := by
+  let Δτ := Δ.restrict τ.freeAtoms
+  have env : relevantEnv Δ τ (.ret (.bound 0)) = Δτ := by
+    simp [relevantEnv, relevantAtoms, Term.support, Value.support, Δτ]
+  have freshτ : y ∉ τ.freeAtoms := fun h => fresh (wfτ.freeAtoms_subset h)
+  have freshΔτ : y ∉ Δτ.domain := by
+    simp only [Δτ, BasicEnv.domain_restrict, Finset.mem_inter]
+    exact fun h => fresh h.1
+  have wf : τ.WellFormed Δτ.domain := wfτ.regularize (by
+    simp only [Δτ, BasicEnv.domain_restrict]
+    exact Finset.subset_inter wfτ.freeAtoms_subset (Finset.Subset.refl _))
+  have wfDepth : τ.WellFormedAt d Δτ.domain :=
+    (ContextType.wellFormedAt_iff_of_locallyClosedAt wfτ.locallyClosedAt
+      (Nat.zero_le 0) (Nat.zero_le d)).1 wf
+  have scopeΔ : Δτ.domain ⊆ (Δτ.insert y τ.erase).domain := by
+    simp [BasicEnv.domain_insert]
+  have restrict : (Δτ.insert y τ.erase).restrict τ.freeAtoms = Δτ := by
+    apply Finmap.ext_lookup
+    intro x
+    change ((Δτ.insert y τ.erase).restrict τ.freeAtoms).lookup x = Δτ.lookup x
+    rw [BasicEnv.lookup_restrict]
+    by_cases hx : x ∈ τ.freeAtoms
+    · have hxy : x ≠ y := fun h => freshτ (h ▸ hx)
+      rw [if_pos hx, BasicEnv.lookup_insert_of_ne _ _ hxy]
+    · simp [hx, Δτ]
+  rw [env, relevantEnv_insert_ret_free]
+  change m ⊨ (guard d Δτ τ (.ret (.bound 0))).openAt 0 y ↔
+    m ⊨ guard 0 (Δτ.insert y τ.erase) τ (.ret (.free y))
+  simp only [guard, Formula.openAt]
+  rw [wellFormed_openAt_eq d Δτ τ 0 y freshΔτ,
+    basicWorld_openAt_eq Δτ 0 y freshΔτ, basicTyping_ret_bound_openAt_eq Δτ τ.erase y freshΔτ,
+    total_ret_bound_openAt_eq]
+  constructor
+  · intro h
+    have hworld := Formula.models_and_elim_left
+      (Formula.models_and_elim_right (Formula.models_and_elim_right h))
+    have scope := (models_basicWorld_iff m (Δτ.insert y τ.erase)).1 hworld |>.1
+    apply Formula.models_and_intro
+      ((models_wellFormed_iff m 0 _ τ).2 ⟨scope, wf.mono scopeΔ⟩)
+    apply Formula.models_and_intro hworld
+    apply Formula.models_and_intro (models_basicTyping_ret_free hworld (BasicEnv.lookup_insert _ _ _))
+    exact Formula.models_and_elim_right
+      (Formula.models_and_elim_right (Formula.models_and_elim_right h))
+  · intro h
+    have hworld := Formula.models_and_elim_left (Formula.models_and_elim_right h)
+    have hworldΔ := models_basicWorld_restrict τ.freeAtoms hworld
+    rw [restrict] at hworldΔ
+    apply Formula.models_and_intro
+      ((models_wellFormed_iff m d Δτ τ).2
+        ⟨(models_basicWorld_iff m Δτ).1 hworldΔ |>.1, wfDepth⟩)
+    apply Formula.models_and_intro hworldΔ
+    apply Formula.models_and_intro hworld
+    exact Formula.models_and_elim_right
+      (Formula.models_and_elim_right (Formula.models_and_elim_right h))
+
 theorem models_guard_result_alias {m : Capability} {d : Nat}
     {Δ : BasicEnv} {τ : ContextType} {e : Term} {y : Atom}
     {X : Finset LogicVar}
