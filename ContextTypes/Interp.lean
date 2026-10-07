@@ -1102,6 +1102,25 @@ theorem models_basicWorld_restrict {m : Capability} {Δ : BasicEnv}
   split_ifs at hx with hxX
   exact typed σ hσ x T hx
 
+/-- Typed bindings can be added to a capability's erased environment. -/
+theorem models_basicWorld_insert {m : Capability} {Δ : BasicEnv} {y : Atom} {T : SimpleType}
+    (world : m ⊨ basicWorld Δ) (scope : y ∈ m.domain)
+    (typed : ∀ σ, σ ∈ m → ∃ v, σ.lookup y = some v ∧ BasicValTyp ∅ v T) :
+    m ⊨ basicWorld (Δ.insert y T) := by
+  obtain ⟨hΔ, htyped⟩ := (models_basicWorld_iff m Δ).1 world
+  apply (models_basicWorld_iff m (Δ.insert y T)).2
+  refine ⟨?_, ?_⟩
+  · rw [BasicEnv.domain_insert]
+    exact Finset.union_subset (by simpa using scope) hΔ
+  · intro σ hσ x U hx
+    by_cases hxy : x = y
+    · subst x
+      rw [BasicEnv.lookup_insert] at hx
+      cases Option.some.inj hx
+      exact typed σ hσ
+    · rw [BasicEnv.lookup_insert_of_ne _ T hxy] at hx
+      exact htyped σ hσ x U hx
+
 theorem models_basicTyping_ret_free {m : Capability} {Δ : BasicEnv}
     {y : Atom} {T : SimpleType} (hworld : m ⊨ basicWorld Δ)
     (hlookup : Δ.lookup y = some T) :
@@ -2895,6 +2914,34 @@ theorem ResultsEquivOn.mono {X Y : Finset Atom} {m n : Capability} {e₁ e₂ : 
   intro s v
   exact ⟨forward h s v, forward h.symm s v⟩
 
+/-- An exact result alias preserves the result graph correlated with every
+observed input in its support, rather than fixing one result per input. -/
+theorem resultsEquivOn_result_alias
+    {m : Capability} {X : Finset LogicVar} {C : Finset Atom} {e : Term} {y : Atom}
+    (closedX : LogicVar.LocallyClosed X) (support : e.logicSupport ⊆ X)
+    (fresh : LogicVar.free y ∉ X) (observed : C ⊆ LogicVar.freeAtomSet X)
+    (hres : m ⊨ resultAt X e (.free y)) :
+    ResultsEquivOn C m m e (.ret (.free y)) := by
+  intro s v
+  constructor
+  · rintro ⟨σ, hσ, same, hv⟩
+    obtain ⟨ρ, hρ, hbase, hlookup⟩ :=
+      models_resultAt_complete closedX support fresh hres σ hσ v hv
+    refine ⟨ρ, hρ, ?_, ?_⟩
+    · calc
+        ρ.restrict C = (ρ.restrict (LogicVar.freeAtomSet X)).restrict C := by
+          rw [Store.restrict_restrict, Finset.inter_eq_right.2 observed]
+        _ = (σ.restrict (LogicVar.freeAtomSet X)).restrict C := by rw [hbase]
+        _ = s := by rw [Store.restrict_restrict, Finset.inter_eq_right.2 observed, same]
+    · simpa [instantiateTerm, instantiateTermAt, instantiateValueAt, hlookup] using
+        (Steps.refl (.ret v) hv.target_closed)
+  · rintro ⟨σ, hσ, same, hv⟩
+    obtain ⟨u, hu, heval⟩ := models_resultAt_lookup closedX support fresh hres σ hσ
+    have huv : u = v := by
+      simp only [instantiateTerm, instantiateTermAt, instantiateValueAt,
+        Store.toAssignment_lookup_free, hu, Option.getD_some] at hv
+      exact Term.ret.inj hv.ret_eq.symm
+    exact ⟨σ, hσ, same, huv ▸ heval⟩
 /-- Correlated result equivalence yields matching canonical result
 projections on the observed input atoms and named output. -/
 theorem resultCapability_projection_of_resultsEquivOn
@@ -5827,6 +5874,56 @@ theorem models_interp_of_resultsEquivOn
     (results : Interp.ResultsEquivOn τ.freeAtoms m n e₁ e₂)
     (h : m ⊨ interp Δ₁ τ e₁) : n ⊨ interp Δ₂ τ e₂ :=
   models_interpFuel_of_resultsEquivOn wf₁ wf₂ typed₁ typed₂ world terminates env results h
+
+/-- Every result of a term may be named in the erased environment while
+preserving the complete result-first context-type interpretation. -/
+theorem models_interpFuel_named_result
+    {m : Capability} {Δ : BasicEnv} {τ : ContextType} {e : Term}
+    {gas : Nat} {y : Atom} {X : Finset LogicVar}
+    (wfτ : τ.WellFormed Δ.domain) (typed : Δ ⊢ₑ e ⋮ τ.erase)
+    (world : m ⊨ Interp.basicWorld Δ)
+    (closedX : LogicVar.LocallyClosed X) (supportX : e.logicSupport ⊆ X)
+    (typeSupport : τ.freeAtoms.image LogicVar.free ⊆ X)
+    (freshX : LogicVar.free y ∉ X) (freshΔ : y ∉ Δ.domain)
+    (hres : m ⊨ Interp.resultAt X e (.free y))
+    (hsource : m ⊨ interpFuel gas 0 Δ τ e) :
+    m ⊨ interpFuel gas 0 (Δ.insert y τ.erase) τ (.ret (.free y)) := by
+  have hy : y ∈ m.domain := by
+    apply Formula.models_scope hres
+    rw [Interp.freeAtoms_resultAt]
+    simp [LogicVar.freeAtoms]
+  have htyped := Formula.models_and_elim_left
+    (Formula.models_and_elim_right (Formula.models_and_elim_right (models_interpFuel_guard hsource)))
+  have world' := Interp.models_basicWorld_insert world hy
+    (Interp.models_resultAt_typed closedX typed.locallyClosed supportX freshX hres htyped)
+  have lookup := BasicEnv.lookup_insert Δ y τ.erase
+  apply models_interpFuel_of_resultsEquivOn wfτ
+    (wfτ.mono (by simp [BasicEnv.domain_insert])) typed
+    (BasicTermTyp.ret (BasicValTyp.free lookup)) world'
+    (Interp.models_total_ret_free world' lookup)
+    ?_ ?_ hsource
+  · intro x hx
+    rw [BasicEnv.lookup_insert_of_ne _ τ.erase]
+    intro hxy
+    subst x
+    exact freshΔ (wfτ.freeAtoms_subset hx)
+  · apply Interp.resultsEquivOn_result_alias closedX supportX freshX ?_ hres
+    intro x hx
+    exact (LogicVar.mem_freeAtomSet_iff X x).2 (typeSupport (Finset.mem_image.2 ⟨x, hx, rfl⟩))
+
+/-- Naming every result also preserves the full type interpretation. -/
+theorem models_interp_named_result
+    {m : Capability} {Δ : BasicEnv} {τ : ContextType} {e : Term}
+    {y : Atom} {X : Finset LogicVar}
+    (wfτ : τ.WellFormed Δ.domain) (typed : Δ ⊢ₑ e ⋮ τ.erase)
+    (world : m ⊨ Interp.basicWorld Δ)
+    (closedX : LogicVar.LocallyClosed X) (supportX : e.logicSupport ⊆ X)
+    (typeSupport : τ.freeAtoms.image LogicVar.free ⊆ X)
+    (freshX : LogicVar.free y ∉ X) (freshΔ : y ∉ Δ.domain)
+    (hres : m ⊨ Interp.resultAt X e (.free y))
+    (hsource : m ⊨ interp Δ τ e) :
+    m ⊨ interp (Δ.insert y τ.erase) τ (.ret (.free y)) :=
+  models_interpFuel_named_result wfτ typed world closedX supportX typeSupport freshX freshΔ hres hsource
 
 /-- Name every result of a nondeterministic term beneath a fresh binder,
 preserving the whole context-type interpretation. -/
