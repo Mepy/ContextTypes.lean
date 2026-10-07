@@ -6787,6 +6787,64 @@ end ContextType
 
 namespace Context
 
+/-- Separating contexts expose compatible factors whose product projects
+to the original capability, retaining any additional observations. -/
+theorem models_interpUnder_star_elim
+    {m : Capability} {«Σ» : BasicEnv} {Γ₁ Γ₂ : Context}
+    (h : m ⊨ interpUnder «Σ» (Γ₁ ∗ Γ₂)) :
+    ∃ (m₁ m₂ : Capability) (compat : Capability.Compatible m₁ m₂),
+      Capability.product m₁ m₂ compat ⊑ m ∧
+        m₁ ⊨ interpUnder «Σ» Γ₁ ∧ m₂ ⊨ interpUnder «Σ» Γ₂ := by
+  have hbody := Formula.models_and_elim_right h
+  change m ⊨
+    (interpUnder («Σ».restrict (Γ₁.freeAtoms ∪ Γ₂.freeAtoms)) Γ₁ ∗
+      interpUnder («Σ».restrict (Γ₁.freeAtoms ∪ Γ₂.freeAtoms)) Γ₂) at hbody
+  rw [interpUnder_restrict «Σ» Γ₁ Finset.subset_union_left,
+    interpUnder_restrict «Σ» Γ₂ Finset.subset_union_right] at hbody
+  obtain ⟨_, m₁, m₂, compat, href, h₁, h₂⟩ := (Formula.models_star_iff m _ _).1 hbody
+  exact ⟨m₁, m₂, compat,
+    Capability.refines_trans href (Capability.restrict_refines m _), h₁, h₂⟩
+
+/-- A closed result type can be bound independently of a compatible context. -/
+theorem models_interpUnder_star_bind_closed
+    {m n : Capability} {«Σ» : BasicEnv} {Γ : Context} {τ : ContextType} {x : Atom}
+    (compat : Capability.Compatible m n) (closed : τ.freeAtoms = ∅)
+    (fresh : x ∉ (erasureUnder «Σ» Γ).domain)
+    (hΓ : m ⊨ interpUnder «Σ» Γ)
+    (hτ : n ⊨ ContextType.interp (BasicEnv.singleton x τ.erase) τ (.ret (.free x))) :
+    Capability.product m n compat ⊨ interpUnder «Σ» (Γ ∗ (x ∷ τ)) := by
+  let p := Capability.product m n compat
+  have hworldτ := ContextType.models_interp_basicWorld hτ
+  have relevant : Interp.relevantEnv (BasicEnv.singleton x τ.erase) τ (.ret (.free x)) =
+      BasicEnv.singleton x τ.erase := by
+    simp only [Interp.relevantEnv, Interp.relevantAtoms, closed, Term.support,
+      Value.support, Finset.empty_union]
+    exact BasicEnv.restrict_domain_self _
+  rw [relevant] at hworldτ
+  have hworldΓ := Formula.models_kripke (Capability.product_refines_left compat)
+    (models_interpUnder_basicWorld hΓ)
+  have hworldX := Formula.models_kripke (Capability.product_refines_right compat) hworldτ
+  have hX := (Interp.models_basicWorld_iff p (BasicEnv.singleton x τ.erase)).1 hworldX
+  have hxP : x ∈ p.domain := by
+    simpa only [BasicEnv.domain_singleton, Finset.singleton_subset_iff] using hX.1
+  have hworld := Interp.models_basicWorld_insert hworldΓ hxP
+    (fun σ hσ => hX.2 σ hσ x τ.erase (BasicEnv.lookup_singleton _ _))
+  have hbind : n ⊨ interpUnder «Σ» (x ∷ τ) := by
+    have := Formula.models_and_intro hworldτ hτ
+    simpa [interpUnder, closed, BasicEnv.merge, BasicEnv.insert, BasicEnv.singleton] using this
+  have hfree : (Γ ∗ (x ∷ τ) : Context).freeAtoms = Γ.freeAtoms := by
+    simp only [Context.freeAtoms, closed, Finset.union_empty]
+  have henv : («Σ».restrict Γ.freeAtoms).merge
+      (Γ.erase.merge (BasicEnv.singleton x τ.erase)) =
+      (erasureUnder «Σ» Γ).insert x τ.erase := by
+    rw [← BasicEnv.merge_assoc]
+    exact BasicEnv.merge_singleton_eq_insert fresh
+  simp only [interpUnder, hfree, Context.erase]
+  rw [henv, interpUnder_restrict «Σ» Γ (Finset.Subset.refl _)]
+  apply Formula.models_and_intro hworld
+  have h := Formula.models_star_product compat hΓ hbind
+  simpa [interpUnder, closed, BasicEnv.merge, BasicEnv.insert, BasicEnv.singleton] using h
+
 /-- A named result and a context model establish their entangled extension. -/
 theorem models_interpUnder_comma_bind
     {m : Capability} {«Σ» : BasicEnv} {Γ : Context} {τ : ContextType} {x : Atom}
