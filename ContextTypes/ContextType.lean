@@ -334,6 +334,79 @@ def precise (b : BaseType) (q : Qualifier) : ContextType :=
     (τ.openAt k x).erase = τ.erase := by
   induction τ generalizing k <;> simp_all [openAt, erase]
 
+/-- Open a finite consecutive family of external context-type binders. -/
+def openManyAt (k : Nat) : (d : Nat) → (Fin d → Atom) → ContextType → ContextType
+  | 0, _, τ => τ
+  | d + 1, η, τ => (openManyAt k d (fun i => η i.castSucc) τ).openAt
+      (k + d) (η (Fin.last d))
+
+theorem supportAt_openManyAt (τ : ContextType) (n k d : Nat) (η : Fin d → Atom) :
+    (τ.openManyAt (k + n) d η).supportAt n =
+      (τ.supportAt n).image (LogicVar.openManyAt k d η) := by
+  induction d with
+  | zero => simp [openManyAt, LogicVar.openManyAt]
+  | succ d ih =>
+      simp only [openManyAt]
+      rw [show k + n + d = (k + d) + n by omega, supportAt_openAt, ih]
+      simp only [LogicVar.openSupport, Finset.image_image]
+      rfl
+
+@[simp] theorem erase_openManyAt (τ : ContextType) (k d : Nat) (η : Fin d → Atom) :
+    (τ.openManyAt k d η).erase = τ.erase := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openManyAt, ih]
+
+theorem openManyAt_cons (τ : ContextType) (k d : Nat) (x : Atom) (η : Fin d → Atom) :
+    τ.openManyAt k (d + 1) (Fin.cons x η) =
+      (τ.openAt k x).openManyAt (k + 1) d η := by
+  induction d generalizing k τ with
+  | zero => simp [openManyAt]
+  | succ d ih =>
+      have hη : (fun i : Fin (d + 1) => Fin.cons (α := fun _ => Atom) x η i.castSucc) =
+          Fin.cons (α := fun _ => Atom) x (fun i : Fin d => η i.castSucc) := by
+        funext i
+        refine Fin.cases ?_ (fun j => ?_) i <;> simp
+      rw [openManyAt, hη, ih]
+      conv_rhs => rw [openManyAt]
+      simp only [Fin.cons_last]
+      congr 1
+      omega
+
+theorem openManyAt_over (b : BaseType) (q : Qualifier) (k d : Nat) (η : Fin d → Atom) :
+    (ContextType.over b q).openManyAt k d η =
+      .over b (q.openManyAt (k + 1) d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      simp [openManyAt, openAt, ih, Qualifier.openManyAt,
+        Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+
+theorem openManyAt_under (b : BaseType) (q : Qualifier) (k d : Nat) (η : Fin d → Atom) :
+    (ContextType.under b q).openManyAt k d η =
+      .under b (q.openManyAt (k + 1) d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      simp [openManyAt, openAt, ih, Qualifier.openManyAt,
+        Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+
+theorem openManyAt_arrow (τ₁ τ₂ : ContextType) (k d : Nat) (η : Fin d → Atom) :
+    (ContextType.arrow τ₁ τ₂).openManyAt k d η =
+      .arrow (τ₁.openManyAt k d η) (τ₂.openManyAt (k + 1) d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      simp [openManyAt, openAt, ih, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+
+theorem openManyAt_wand (τ₁ τ₂ : ContextType) (k d : Nat) (η : Fin d → Atom) :
+    (ContextType.wand τ₁ τ₂).openManyAt k d η =
+      .wand (τ₁.openManyAt k d η) (τ₂.openManyAt (k + 1) d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      simp [openManyAt, openAt, ih, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+
 @[simp] theorem erase_shiftFrom (τ : ContextType) (k : Nat) :
     (τ.shiftFrom k).erase = τ.erase := by
   induction τ generalizing k <;> simp_all [shiftFrom, erase]

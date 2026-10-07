@@ -830,4 +830,134 @@ mutual
 end
 
 
+namespace LogicVar
+
+/-- Open a finite consecutive family of logical keys, beginning at `k`. -/
+def openManyAt (k : Nat) : (d : Nat) → (Fin d → Atom) → LogicVar → LogicVar
+  | 0, _, ξ => ξ
+  | d + 1, η, ξ => openBinder (k + d) (η (Fin.last d))
+      (openManyAt k d (fun i => η i.castSucc) ξ)
+
+theorem openManyAt_cons (k d : Nat) (x : Atom) (η : Fin d → Atom) (ξ : LogicVar) :
+    openManyAt k (d + 1) (Fin.cons x η) ξ =
+      openManyAt (k + 1) d η (openBinder k x ξ) := by
+  induction d generalizing k ξ with
+  | zero => simp [openManyAt]
+  | succ d ih =>
+      have hη : (fun i : Fin (d + 1) => Fin.cons (α := fun _ => Atom) x η i.castSucc) =
+          Fin.cons (α := fun _ => Atom) x (fun i : Fin d => η i.castSucc) := by
+        funext i
+        refine Fin.cases ?_ (fun j => ?_) i <;> simp
+      rw [openManyAt, hη, ih]
+      conv_rhs => rw [openManyAt]
+      simp only [Fin.cons_last]
+      congr 1
+      omega
+
+end LogicVar
+
+namespace Value
+
+/-- Name a finite consecutive family of external core-value binders. -/
+def openManyAt (k : Nat) : (d : Nat) → (Fin d → Atom) → Value → Value
+  | 0, _, v => v
+  | d + 1, η, v => (openManyAt k d (fun i => η i.castSucc) v).openAt
+      (k + d) (.free (η (Fin.last d)))
+
+end Value
+
+namespace Term
+
+/-- Name a finite consecutive family of external core-term binders. -/
+def openManyAt (k : Nat) : (d : Nat) → (Fin d → Atom) → Term → Term
+  | 0, _, e => e
+  | d + 1, η, e => (openManyAt k d (fun i => η i.castSucc) e).openAt
+      (k + d) (.free (η (Fin.last d)))
+
+theorem openManyAt_ret (v : Value) (k d : Nat) (η : Fin d → Atom) :
+    (Term.ret v).openManyAt k d η = .ret (v.openManyAt k d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openManyAt, ih, Value.openManyAt, Term.openAt]
+
+theorem openManyAt_cons (e : Term) (k d : Nat) (x : Atom) (η : Fin d → Atom) :
+    e.openManyAt k (d + 1) (Fin.cons x η) =
+      (e.openAt k (.free x)).openManyAt (k + 1) d η := by
+  induction d generalizing k e with
+  | zero => simp [openManyAt]
+  | succ d ih =>
+      have hη : (fun i : Fin (d + 1) => Fin.cons (α := fun _ => Atom) x η i.castSucc) =
+          Fin.cons (α := fun _ => Atom) x (fun i : Fin d => η i.castSucc) := by
+        funext i
+        refine Fin.cases ?_ (fun j => ?_) i <;> simp
+      rw [openManyAt, hη, ih]
+      conv_rhs => rw [openManyAt]
+      simp only [Fin.cons_last]
+      congr 1
+      omega
+
+/-- A finite opening adds only the selected names to the term's support. -/
+theorem support_openManyAt_subset (e : Term) (k d : Nat) (η : Fin d → Atom) :
+    (e.openManyAt k d η).support ⊆ e.support ∪ Finset.univ.image η := by
+  induction d with
+  | zero => simp [openManyAt]
+  | succ d ih =>
+      intro x hx
+      have h := Term.support_openAt_subset
+        (e.openManyAt k d (fun i => η i.castSucc)) (k + d) (.free (η (Fin.last d))) hx
+      rcases Finset.mem_union.1 h with h | h
+      · rcases Finset.mem_union.1 (ih _ h) with h | h
+        · exact Finset.mem_union_left _ h
+        · obtain ⟨i, _, rfl⟩ := Finset.mem_image.1 h
+          exact Finset.mem_union_right _ (Finset.mem_image.2 ⟨i.castSucc, Finset.mem_univ _, rfl⟩)
+      · have hx : x = η (Fin.last d) := by simpa [Value.support] using h
+        subst x
+        exact Finset.mem_union_right _ (Finset.mem_image.2 ⟨Fin.last d, Finset.mem_univ _, rfl⟩)
+
+/-- A fresh injective opening transports all externally visible term keys. -/
+theorem logicSupportAt_openManyAt (e : Term) (n k d : Nat) (η : Fin d → Atom)
+    (inj : Function.Injective η) (fresh : ∀ i, η i ∉ e.support) :
+    (e.openManyAt (k + n) d η).logicSupportAt n =
+      (e.logicSupportAt n).image (LogicVar.openManyAt k d η) := by
+  induction d with
+  | zero => simp [openManyAt, LogicVar.openManyAt]
+  | succ d ih =>
+      have freshLast : η (Fin.last d) ∉
+          (e.openManyAt (k + n) d (fun i => η i.castSucc)).support := by
+        intro hx
+        rcases Finset.mem_union.1 (support_openManyAt_subset e (k + n) d _ hx) with hx | hx
+        · exact fresh (Fin.last d) hx
+        · obtain ⟨i, _, hi⟩ := Finset.mem_image.1 hx
+          have same := inj hi
+          have := congrArg Fin.val same
+          simp at this
+          omega
+      rw [openManyAt, show k + n + d = (k + d) + n by omega,
+        Term.logicSupportAt_openAt _ n (k + d) _ freshLast,
+        ih (fun i : Fin d => η i.castSucc)
+          (fun i j h => Fin.castSucc_injective d (inj h)) (fun i => fresh i.castSucc)]
+      simp only [LogicVar.openSupport, Finset.image_image]
+      rfl
+
+end Term
+
+namespace Value
+
+theorem openManyAt_lam (T : SimpleType) (e : Term) (k d : Nat) (η : Fin d → Atom) :
+    (Value.lam T e).openManyAt k d η = .lam T (e.openManyAt (k + 1) d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      simp [openManyAt, Value.openAt, ih, Term.openManyAt,
+        Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+
+theorem openManyAt_fix (T : SimpleType) (v : Value) (k d : Nat) (η : Fin d → Atom) :
+    (Value.fix T v).openManyAt k d η = .fix T (v.openManyAt (k + 1) d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      simp [openManyAt, Value.openAt, ih, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+
+end Value
+
 end ContextTypes

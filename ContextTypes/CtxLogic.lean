@@ -585,6 +585,80 @@ theorem openAt_comm (P : Formula) (k l : Nat) (x y : Atom)
       simp only [openAt, ih k l hkl,
         LogicVar.openSupport_comm l k y x (Ne.symm hkl) (Ne.symm hxy) X]
 
+/-- Open a finite consecutive family of external formula binders. -/
+def openManyAt (k : Nat) : (d : Nat) → (Fin d → Atom) → Formula → Formula
+  | 0, _, P => P
+  | d + 1, η, P => (openManyAt k d (fun i => η i.castSucc) P).openAt
+      (k + d) (η (Fin.last d))
+
+theorem openMany_eq_openManyAt (P : Formula) (d : Nat) (η : Fin d → Atom) :
+    P.openMany d η = P.openManyAt 0 d η := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openMany, openManyAt, ih]
+
+theorem openManyAt_cons (P : Formula) (k d : Nat) (x : Atom) (η : Fin d → Atom) :
+    P.openManyAt k (d + 1) (Fin.cons x η) =
+      (P.openAt k x).openManyAt (k + 1) d η := by
+  induction d generalizing k P with
+  | zero => simp [openManyAt]
+  | succ d ih =>
+      have hη : (fun i : Fin (d + 1) => Fin.cons (α := fun _ => Atom) x η i.castSucc) =
+          Fin.cons (α := fun _ => Atom) x (fun i : Fin d => η i.castSucc) := by
+        funext i
+        refine Fin.cases ?_ (fun j => ?_) i <;> simp
+      rw [openManyAt, hη, ih]
+      conv_rhs => rw [openManyAt]
+      simp only [Fin.cons_last]
+      congr 1
+      omega
+
+theorem openManyAt_all (P : Formula) (k d : Nat) (η : Fin d → Atom) :
+    (Formula.all P).openManyAt k d η = .all (P.openManyAt (k + 1) d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openManyAt, openAt, ih, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+
+theorem openManyAt_wand (P Q : Formula) (n k d : Nat) (η : Fin d → Atom) :
+    (P -∗[n] Q).openManyAt k d η =
+      (P.openManyAt (k + n) d η -∗[n] Q.openManyAt (k + n) d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openManyAt, openAt, ih, Nat.add_comm, Nat.add_left_comm]
+
+theorem openManyAt_atom (q : Qualifier) (k d : Nat) (η : Fin d → Atom) :
+    (Atom(q) : Formula).openManyAt k d η = Atom(q.openManyAt k d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openManyAt, openAt, ih, Qualifier.openManyAt]
+
+theorem openManyAt_and (P Q : Formula) (k d : Nat) (η : Fin d → Atom) :
+    (P ∧ᶜ Q).openManyAt k d η = (P.openManyAt k d η ∧ᶜ Q.openManyAt k d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openManyAt, openAt, ih]
+
+theorem openManyAt_impl (P Q : Formula) (k d : Nat) (η : Fin d → Atom) :
+    (P ⇒ᶜ Q).openManyAt k d η = (P.openManyAt k d η ⇒ᶜ Q.openManyAt k d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openManyAt, openAt, ih]
+
+theorem openManyAt_fiber (X : Finset LogicVar) (P : Formula) (k d : Nat) (η : Fin d → Atom) :
+    (Formula.fiber X P).openManyAt k d η =
+      .fiber (X.image (LogicVar.openManyAt k d η)) (P.openManyAt k d η) := by
+  induction d with
+  | zero => simp [openManyAt, LogicVar.openManyAt]
+  | succ d ih =>
+      simp only [openManyAt, ih, openAt, LogicVar.openSupport, Finset.image_image]
+      rfl
+
+@[simp] theorem measure_openManyAt (P : Formula) (k d : Nat) (η : Fin d → Atom) :
+    (P.openManyAt k d η).measure = P.measure := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openManyAt, ih]
+
 @[simp] theorem swap_involutive (P : Formula) (x y : Atom) :
     (P.swap x y).swap x y = P := by
   induction P <;> simp_all [swap]

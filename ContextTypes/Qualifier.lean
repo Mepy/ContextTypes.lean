@@ -580,6 +580,20 @@ theorem openAt_comm (q : Qualifier) (k l : Nat) (x y : Atom)
       rw [LogicVar.openBinder_comm l k y x (Ne.symm hkl) (Ne.symm hxy)]
     rw [back]
 
+/-- Open a finite consecutive family of qualifier binders. -/
+def openManyAt (k : Nat) : (d : Nat) → (Fin d → Atom) → Qualifier → Qualifier
+  | 0, _, q => q
+  | d + 1, η, q => (openManyAt k d (fun i => η i.castSucc) q).openAt
+      (k + d) (η (Fin.last d))
+
+theorem support_openManyAt (q : Qualifier) (k d : Nat) (η : Fin d → Atom) :
+    (q.openManyAt k d η).support = q.support.image (LogicVar.openManyAt k d η) := by
+  induction d with
+  | zero => simp [openManyAt, LogicVar.openManyAt]
+  | succ d ih =>
+      simp only [openManyAt, support_openAt, ih, LogicVar.openSupport, Finset.image_image]
+      rfl
+
 @[simp] theorem swap_involutive (q : Qualifier) (x y : Atom) :
     (q.swap x y).swap x y = q := by
   apply ext
