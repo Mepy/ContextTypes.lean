@@ -1715,6 +1715,71 @@ theorem models_resultAt_complete {m : Capability} {X : Finset LogicVar}
     rw [Store.lookup_restrict, if_pos (by simp)] at hρy
     simpa [o, Store.lookup] using hυy.trans hρy
 
+/-- Pointwise equality of reachable results preserves an exact result graph. -/
+theorem models_resultAt_of_reaches_iff {m : Capability}
+    {X : Finset LogicVar} {e₁ e₂ : Term} {y : Atom}
+    (closedX : LogicVar.LocallyClosed X)
+    (support₁ : e₁.logicSupport ⊆ X) (support₂ : e₂.logicSupport ⊆ X)
+    (fresh : LogicVar.free y ∉ X)
+    (heval : ∀ σ, σ ∈ m → ∀ v,
+      (instantiateTerm e₁ σ.toAssignment).reaches v ↔
+        (instantiateTerm e₂ σ.toAssignment).reaches v)
+    (h : m ⊨ resultAt X e₁ (.free y)) :
+    m ⊨ resultAt X e₂ (.free y) := by
+  apply models_resultAt_intro closedX support₂ fresh
+  · intro x hx
+    apply Formula.models_scope h
+    rw [freeAtoms_resultAt]
+    rcases Finset.mem_union.1 hx with hx | hx
+    · exact Finset.mem_union_left _ (Finset.mem_union_left _ hx)
+    · have hxy : x = y := Finset.mem_singleton.1 hx
+      subst x
+      simp [LogicVar.freeAtoms]
+  · intro σ hσ
+    obtain ⟨v, hv, reaches⟩ := models_resultAt_lookup closedX support₁ fresh h σ hσ
+    exact ⟨v, hv, (heval σ hσ v).1 reaches⟩
+  · intro σ hσ v reaches
+    exact models_resultAt_complete closedX support₁ fresh h σ hσ v
+      ((heval σ hσ v).2 reaches)
+
+/-- A Boolean lookup reduces an instantiated match to exactly its selected
+branch, including both directions of the nondeterministic result relation. -/
+theorem instantiateTerm_matchBool_reaches_iff
+    {σ : Store} {x : Atom} {b : Bool} {e₁ e₂ : Term} {v : Value}
+    (lookup : σ.lookup x = some (.const (.bool b)))
+    (closed : (instantiateTerm (.matchBool (.free x) e₁ e₂)
+      σ.toAssignment).locallyClosed) :
+    (instantiateTerm (.matchBool (.free x) e₁ e₂) σ.toAssignment).reaches v ↔
+      (instantiateTerm (if b then e₁ else e₂) σ.toAssignment).reaches v := by
+  have he : instantiateTerm (.matchBool (.free x) e₁ e₂) σ.toAssignment =
+      .matchBool (.const (.bool b))
+        (instantiateTerm e₁ σ.toAssignment) (instantiateTerm e₂ σ.toAssignment) := by
+    simp [instantiateTerm, instantiateTermAt, instantiateValueAt,
+      Store.toAssignment_lookup_free, lookup]
+  rw [he] at closed ⊢
+  cases b with
+  | false => exact Term.match_false_reaches_iff closed.2.1 closed.2.2
+  | true => exact Term.match_true_reaches_iff closed.2.1 closed.2.2
+
+/-- Boolean lookup also preserves the universal termination obligation, not
+only the set of reachable results. -/
+theorem instantiateTerm_matchBool_mustTerminate_iff
+    {σ : Store} {x : Atom} {b : Bool} {e₁ e₂ : Term}
+    (lookup : σ.lookup x = some (.const (.bool b)))
+    (closed : (instantiateTerm (.matchBool (.free x) e₁ e₂)
+      σ.toAssignment).locallyClosed) :
+    (instantiateTerm (.matchBool (.free x) e₁ e₂) σ.toAssignment).MustTerminate ↔
+      (instantiateTerm (if b then e₁ else e₂) σ.toAssignment).MustTerminate := by
+  have he : instantiateTerm (.matchBool (.free x) e₁ e₂) σ.toAssignment =
+      .matchBool (.const (.bool b))
+        (instantiateTerm e₁ σ.toAssignment) (instantiateTerm e₂ σ.toAssignment) := by
+    simp [instantiateTerm, instantiateTermAt, instantiateValueAt,
+      Store.toAssignment_lookup_free, lookup]
+  rw [he] at closed ⊢
+  cases b with
+  | false => exact Term.match_false_mustTerminate_iff closed.2.1 closed.2.2
+  | true => exact Term.match_true_mustTerminate_iff closed.2.1 closed.2.2
+
 /-- Compose an exact result graph with a returned result alias. -/
 theorem models_resultAt_compose_ret {m : Capability}
     {X : Finset LogicVar} {e : Term} {y z : Atom}
@@ -4065,6 +4130,182 @@ theorem interp_eq_of_agreeOn {Δ₁ Δ₂ : BasicEnv} {τ : ContextType}
     (h : BasicEnv.AgreeOn (τ.freeAtoms ∪ e.support) Δ₁ Δ₂) :
     interp Δ₁ τ e = interp Δ₂ τ e :=
   interpFuel_eq_of_agreeOn τ.measure 0 h
+
+/-- An overapproximate constant refinement fixes the value of a returned
+variable in every possible store. -/
+theorem models_over_constant_ret_free_lookup
+    {m : Capability} {Δ : BasicEnv} {x : Atom} {c : Constant}
+    (typed : Δ ⊢ᵥ (.free x) ⋮ (.base c.baseType))
+    (h : m ⊨ interp Δ
+      (.over c.baseType (Qualifier.equal (.bound 0) (.const c)))
+      (.ret (.free x))) :
+    ∀ σ, σ ∈ m → σ.lookup x = some (.const c) := by
+  let q := Qualifier.equal (.bound 0) (.const c)
+  let τ := ContextType.over c.baseType q
+  let e := Term.ret (.free x)
+  let Δ' := Interp.relevantEnv Δ τ e
+  let P := Interp.resultFirst Δ' τ e ⇒ᶜ
+    Formula.fiber (q.support \ {.bound 0}) (Interp.overResult c.baseType q)
+  have hxΔ : x ∈ Δ.domain := typed.support_subset (by simp [Value.support])
+  have hx : Δ.lookup x = some (.base c.baseType) := by
+    cases typed with
+    | free hx => exact hx
+  have hΔ' : Δ'.domain = {x} := by
+    simp [Δ', Interp.relevantEnv_domain, Interp.relevantAtoms, τ, q, e,
+      ContextType.freeAtoms, Qualifier.equal, Qualifier.freeAtoms,
+      Value.logicalSupport, Term.support, Value.support, LogicVar.freeAtoms,
+      hxΔ]
+  have hrel : Interp.relevantEnv Δ' τ e = Δ' :=
+    Interp.relevantEnv_idem Δ τ e
+  have hX : Interp.relevantSupport Δ' τ e = {LogicVar.free x} := by
+    simp only [Interp.relevantSupport, hrel, hΔ']
+    simp [τ, q, e,
+      ContextType.support, ContextType.supportAt, Qualifier.equal,
+      Value.logicalSupport, LogicVar.supportAtDepth, LogicVar.atDepth,
+      Term.logicSupportAt, Value.logicSupportAt]
+  have hP : P.freeAtoms = {x} := by
+    simp only [P, Formula.freeAtoms_impl, Interp.freeAtoms_resultFirst,
+      Interp.freeAtoms_overResultFiber, hrel, hΔ']
+    simp [q, e, Qualifier.equal, Qualifier.freeAtoms,
+      Value.logicalSupport, Term.support, Value.support, LogicVar.freeAtoms]
+  have hall : m ⊨ Formula.all P := Formula.models_and_elim_right h
+  obtain ⟨hdom, L, hall⟩ := (Formula.models_all_iff m P).1 hall
+  obtain ⟨y, hy⟩ := Finset.exists_nat_subset_range (L ∪ {x})
+  have hyfresh : y ∉ L ∪ {x} := by
+    intro hmem
+    have := hy hmem
+    simp at this
+  have hyL : y ∉ L := fun hy => hyfresh (Finset.mem_union_left _ hy)
+  have hxy : y ≠ x := by simpa using fun hy => hyfresh (Finset.mem_union_right L hy)
+  let r := m.restrict P.freeAtoms
+  have hrdom : r.domain = {x} := hdom.trans hP
+  have hworld : r ⊨ Interp.basicWorld Δ' := by
+    have hw := (Formula.models_restrict_iff m (Interp.basicWorld Δ')).1
+      (models_interp_basicWorld h)
+    simpa [Interp.freeAtoms_basicWorld, hΔ', r, hP] using hw
+  have hvalues : ∀ σ, σ ∈ r → ∃ v,
+      σ.lookup x = some v ∧ v.locallyClosed := by
+    intro σ hσ
+    obtain ⟨v, hv, hvT⟩ := (Interp.models_basicWorld_iff r Δ').1 hworld
+      |>.2 σ hσ x (.base c.baseType) (by
+        simp [Δ', Interp.relevantEnv, Interp.relevantAtoms, τ, q, e,
+          ContextType.freeAtoms, Qualifier.equal, Qualifier.freeAtoms,
+          Value.logicalSupport, Term.support, Value.support, LogicVar.freeAtoms, hx])
+    exact ⟨v, hv, hvT.locallyClosed⟩
+  let F := Capability.FiberExtension.ofMap {x} {y}
+    (fun σ => Store.singleton y ((σ.lookup x).getD (.const .unit)))
+    (by simp [Ne.symm hxy])
+    (by
+      intro σ _
+      simp)
+  have hFin : F.input = P.freeAtoms := by simp [F, Capability.FiberExtension.ofMap, hP]
+  have hFout : F.output = {y} := rfl
+  have happ : F.Applicable r := by
+    constructor
+    · simp [F, Capability.FiberExtension.ofMap, hrdom]
+    · simp [F, Capability.FiberExtension.ofMap, hrdom, hxy]
+  obtain ⟨n, hExt⟩ := F.extends_exists r happ
+  have hnvalues : ∀ ρ, ρ ∈ n → ∃ v,
+      ρ.lookup x = some v ∧ ρ.lookup y = some v ∧ v.locallyClosed := by
+    intro ρ hρ
+    obtain ⟨σ, w, o, hσ, hw, ho, rfl⟩ := (hExt.mem_iff ρ).1 hρ
+    change w = Capability.singleton
+      (Store.singleton y (((σ.restrict {x}).lookup x).getD (.const .unit))) at hw
+    subst w
+    rw [Capability.mem_singleton_iff] at ho
+    subst o
+    obtain ⟨v, hv, hclosed⟩ := hvalues σ hσ
+    have hxσ : x ∈ σ.domain := by
+      rw [r.mem_domain hσ, hrdom]
+      simp
+    have hyσ : y ∉ σ.domain := by
+      rw [r.mem_domain hσ, hrdom]
+      simpa using hxy
+    refine ⟨v, ?_, ?_, hclosed⟩
+    · rwa [Store.lookup_merge_left _ _ hxσ]
+    · rw [Store.lookup_merge_right _ _ hyσ]
+      simp [hv]
+  have hres : n ⊨ Interp.resultAt {LogicVar.free x} e (.free y) := by
+    apply Interp.models_resultAt_intro
+    · intro k hk
+      simp at hk
+    · simp [e, Term.logicSupportAt, Value.logicSupportAt]
+    · simpa using hxy
+    · simp [hExt.domain_eq, hrdom, hFout, LogicVar.freeAtomSet, LogicVar.freeAtoms]
+    · intro ρ hρ
+      obtain ⟨v, hxv, hyv, hclosed⟩ := hnvalues ρ hρ
+      refine ⟨v, hyv, ?_⟩
+      simpa [e, Interp.instantiateTerm, Interp.instantiateTermAt,
+        Interp.instantiateValueAt, Store.toAssignment_lookup_free, hxv] using
+        Steps.refl (.ret v) hclosed
+    · intro ρ hρ v heval
+      obtain ⟨u, hxu, hyu, _⟩ := hnvalues ρ hρ
+      have hvu : v = u := by
+        have : (Term.ret u).reaches v := by
+          simpa [e, Interp.instantiateTerm, Interp.instantiateTermAt,
+            Interp.instantiateValueAt, Store.toAssignment_lookup_free, hxu] using heval
+        exact Term.ret.inj this.ret_eq
+      exact ⟨ρ, hρ, rfl, by simpa [hvu] using hyu⟩
+  have hsource := hall y hyL F hFin hFout n hExt
+  have hopen : (Interp.resultFirst Δ' τ e).openAt 0 y =
+      Interp.resultAt {LogicVar.free x} e (.free y) := by
+    rw [Interp.resultFirst_openAt]
+    · rw [hX]
+    · rw [hX]
+      intro k hk
+      simp at hk
+    · trivial
+    · simp [hX, e, Term.logicSupportAt, Value.logicSupportAt]
+    · simpa [hX] using hxy
+  have hbody : n ⊨ (Interp.overResult c.baseType q).openAt 0 y := by
+    change n ⊨ ((Interp.resultFirst Δ' τ e).openAt 0 y ⇒ᶜ
+      (Formula.fiber (q.support \ {.bound 0})
+        (Interp.overResult c.baseType q)).openAt 0 y) at hsource
+    rw [hopen] at hsource
+    have hb := Formula.models_impl_elim hsource hres
+    simpa [Formula.openAt, q, Qualifier.equal, Value.logicalSupport, LogicVar.openSupport,
+      Formula.models_fiber_empty_iff] using hb
+  have hnconstant : ∀ ρ, ρ ∈ n → ρ.lookup x = some (.const c) := by
+    intro ρ hρ
+    obtain ⟨_, a, ha, hlook⟩ :=
+      Formula.models_over_and_atom_holdsStore hbody hρ
+    have hyc : ρ.lookup y = some (.const c) := by
+      have hafree : (q.openAt 0 y).freeAtoms = {y} := by
+        simp [q, Qualifier.equal, Qualifier.freeAtoms, LogicVar.openSupport,
+          LogicVar.openBinder, LogicVar.swap, Value.logicalSupport, LogicVar.freeAtoms]
+      have halook : a.assignment.lookup (.free y) = some (.const c) := by
+        simpa [q, Qualifier.openAt, Qualifier.equal, Value.denoteAssignment,
+          AssignmentOn.swapBack, Assignment.lookup_swap, LogicVar.swap] using ha
+      rw [hlook y, hafree, Store.lookup_restrict, if_pos (by simp)] at halook
+      exact halook
+    obtain ⟨v, hxv, hyv, _⟩ := hnvalues ρ hρ
+    exact hxv.trans (hyv.symm.trans hyc)
+  intro σ hσ
+  have hσr : σ.restrict {x} ∈ r := by
+    change σ.restrict {x} ∈ m.restrict P.freeAtoms
+    rw [hP]
+    exact ⟨σ, hσ, rfl⟩
+  have hσn : σ.restrict {x} ∈ n.restrict r.domain := by
+    rw [hExt.restrict_base]
+    exact hσr
+  obtain ⟨ρ, hρ, hproj⟩ := hσn
+  have hlook := congrArg (fun s : Store => s.lookup x) hproj
+  change (ρ.restrict r.domain).lookup x = (σ.restrict {x}).lookup x at hlook
+  rw [Store.lookup_restrict, if_pos (by simp [hrdom]),
+    Store.lookup_restrict, if_pos (by simp)] at hlook
+  exact hlook.symm.trans (hnconstant ρ hρ)
+
+/-- A precise constant type fixes its returned variable pointwise. -/
+theorem models_constantPrecise_ret_free_lookup
+    {m : Capability} {Δ : BasicEnv} {x : Atom} {c : Constant}
+    (typed : Δ ⊢ᵥ (.free x) ⋮ (.base c.baseType))
+    (h : m ⊨ interp Δ (constantPrecise c) (.ret (.free x))) :
+    ∀ σ, σ ∈ m → σ.lookup x = some (.const c) := by
+  have hover : m ⊨ interp Δ
+      (.over c.baseType (Qualifier.equal (.bound 0) (.const c)))
+      (.ret (.free x)) :=
+    Formula.models_and_elim_left (Formula.models_and_elim_right h)
+  exact models_over_constant_ret_free_lookup typed hover
 
 end ContextType
 

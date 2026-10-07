@@ -351,6 +351,40 @@ theorem primitive_reaches_iff {op : Primitive} {c : Constant} {v : Value} :
   · rintro ⟨c', primitive, rfl⟩
     exact Steps.single (.head (.primitive op c c' primitive trivial))
 
+/-- A true match must terminate exactly when its selected branch does. -/
+theorem match_true_mustTerminate_iff {e₁ e₂ : Term}
+    (closed₁ : e₁.locallyClosed) (closed₂ : e₂.locallyClosed) :
+    (Term.matchBool (.const (.bool true)) e₁ e₂).MustTerminate ↔ e₁.MustTerminate := by
+  have step : Step (.matchBool (.const (.bool true)) e₁ e₂) e₁ :=
+    .head (.matchTrue e₁ e₂ ⟨trivial, closed₁, closed₂⟩)
+  constructor
+  · intro h
+    exact h.step_inv step
+  · intro h
+    apply MustTerminate.step ⟨e₁, step⟩
+    intro e' hs
+    cases hs with
+    | head hh =>
+        cases hh
+        exact h
+
+/-- A false match must terminate exactly when its selected branch does. -/
+theorem match_false_mustTerminate_iff {e₁ e₂ : Term}
+    (closed₁ : e₁.locallyClosed) (closed₂ : e₂.locallyClosed) :
+    (Term.matchBool (.const (.bool false)) e₁ e₂).MustTerminate ↔ e₂.MustTerminate := by
+  have step : Step (.matchBool (.const (.bool false)) e₁ e₂) e₂ :=
+    .head (.matchFalse e₁ e₂ ⟨trivial, closed₁, closed₂⟩)
+  constructor
+  · intro h
+    exact h.step_inv step
+  · intro h
+    apply MustTerminate.step ⟨e₂, step⟩
+    intro e' hs
+    cases hs with
+    | head hh =>
+        cases hh
+        exact h
+
 /-- Result characterization for the true branch. -/
 theorem match_true_reaches_iff {e₁ e₂ : Term} {v : Value}
     (closed₁ : e₁.locallyClosed) (closed₂ : e₂.locallyClosed) :

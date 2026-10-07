@@ -976,6 +976,27 @@ theorem extends_exists (F : FiberExtension) (m : Capability)
       fixedDomain := fixed }
   exact ⟨n, happ, rfl, fun _ => Iff.rfl⟩
 
+/-- A deterministic fiber extension computes one output store from each input. -/
+def ofMap (I X : Finset Atom) (f : Store → Store)
+    (disjoint : Disjoint I X)
+    (domain : ∀ σ, σ.domain = I → (f σ).domain = X) : FiberExtension where
+  input := I
+  output := X
+  disjoint := disjoint
+  rel := fun σ m => m = Capability.singleton (f σ)
+  rel_domain := by
+    intro σ m hσ hm
+    subst m
+    simpa using domain σ hσ
+  rel_nonempty := by
+    intro σ _
+    exact ⟨Capability.singleton (f σ), f σ, rfl, rfl⟩
+  rel_extensional := by
+    intro _ m n ρ _ hm hn
+    subst m
+    subst n
+    rfl
+
 /-- A fiber extension that returns the same output store for every input. -/
 def constant (I : Finset Atom) (o : Store)
     (disjoint : Disjoint I o.domain) : FiberExtension where

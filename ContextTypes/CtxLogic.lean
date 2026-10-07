@@ -1057,6 +1057,20 @@ theorem models_over_intro {m : Capability} {P : Formula}
     exact models_scope hP
   · exact (models_restrict_iff m P).1 hP
 
+/-- An overapproximate qualifier holds in every store of the original
+capability, even when the witnessing capability contains additional stores. -/
+theorem models_over_and_atom_holdsStore {m : Capability} {q : Qualifier}
+    {P : Formula} (h : m ⊨ (🄾 (Atom(q) ∧ᶜ P)))
+    {σ : Store} (hσ : σ ∈ m) :
+    q.HoldsStore (σ.restrict q.freeAtoms) := by
+  obtain ⟨_, n, hsub, hn⟩ := (models_over_iff m _).1 h
+  have hσn : σ.restrict (Atom(q) ∧ᶜ P).freeAtoms ∈ n :=
+    hsub.2 _ ⟨σ, hσ, rfl⟩
+  have hq := models_atom_holdsStore (models_and_elim_left hn) hσn
+  rw [Store.restrict_restrict] at hq
+  simpa only [freeAtoms_and, freeAtoms_atom,
+    Finset.inter_eq_right.2 Finset.subset_union_left] using hq
+
 theorem models_under_iff (m : Capability) (P : Formula) :
     m ⊨ (🅄 P) ↔
       let r := m.restrict P.freeAtoms
