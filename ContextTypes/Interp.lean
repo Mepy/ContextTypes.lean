@@ -5801,6 +5801,195 @@ theorem interpFuel_openAt_fresh (gas d : Nat) (Δ : BasicEnv)
               (closedτ.shiftFrom 0) (by simp [Term.locallyClosedAt, Value.locallyClosedAt])
               hΔ (by simpa using freshτ) (by simp [Term.support, Value.support])]
 
+/-- Opening a symbolic returned argument agrees semantically with inserting
+its fresh name in the erased environment and returning that name. -/
+theorem models_interpFuel_ret_bound_openAt_iff
+    {m : Capability} {Δ : BasicEnv} {τ : ContextType} {gas d : Nat} {y : Atom}
+    (wfτ : τ.WellFormed Δ.domain) (fresh : y ∉ Δ.domain) :
+    m ⊨ (interpFuel gas d Δ τ (.ret (.bound 0))).openAt 0 y ↔
+      m ⊨ interpFuel gas 0 (Δ.insert y τ.erase) τ (.ret (.free y)) := by
+  induction gas generalizing m Δ τ d with
+  | zero =>
+      simp only [interpFuel, Formula.openAt]
+      constructor
+      · intro h
+        exact Formula.models_and_intro
+          ((Interp.models_guard_relevant_ret_bound_openAt_iff wfτ fresh).1
+            (Formula.models_and_elim_left h)) (Formula.models_top _)
+      · intro h
+        exact Formula.models_and_intro
+          ((Interp.models_guard_relevant_ret_bound_openAt_iff wfτ fresh).2
+            (Formula.models_and_elim_left h)) (Formula.models_top _)
+  | succ gas ih =>
+      let Δτ := Δ.restrict τ.freeAtoms
+      let Δy := Δτ.insert y τ.erase
+      have freshτ : y ∉ τ.freeAtoms := fun hy => fresh (wfτ.freeAtoms_subset hy)
+      have freshΔτ : y ∉ Δτ.domain := by
+        simp only [Δτ, BasicEnv.domain_restrict, Finset.mem_inter]
+        exact fun h => fresh h.1
+      have envB : Interp.relevantEnv Δ τ (.ret (.bound 0)) = Δτ := by
+        simp [Δτ, Interp.relevantEnv, Interp.relevantAtoms, Term.support, Value.support]
+      have envY : Interp.relevantEnv (Δ.insert y τ.erase) τ (.ret (.free y)) = Δy :=
+        Interp.relevantEnv_insert_ret_free _ _ _ _
+      have envB' : Interp.relevantEnv Δτ τ (.ret (.bound 0)) = Δτ := by
+        simp [Δτ, Interp.relevantEnv, Interp.relevantAtoms, Term.support, Value.support,
+          BasicEnv.restrict_restrict]
+      have envY' : Interp.relevantEnv Δy τ (.ret (.free y)) = Δy := by
+        rw [Interp.relevantEnv_insert_ret_free]
+        simp [Δτ, Δy, BasicEnv.restrict_restrict]
+      have domainB : Δτ.domain = τ.freeAtoms := by
+        simp only [Δτ, BasicEnv.domain_restrict]
+        exact Finset.inter_eq_right.2 wfτ.freeAtoms_subset
+      have hresult : (Interp.resultFirst Δτ τ (.ret (.bound 0))).openAt 1 y =
+          Interp.resultFirst Δy τ (.ret (.free y)) := by
+        rw [Interp.resultFirst_ret_bound_openAt _ τ y wfτ.locallyClosedAt freshΔτ,
+          Interp.resultFirst_eq_of_locallyClosed _ τ (.ret (.free y)) wfτ.locallyClosedAt (by trivial),
+          envB', envY']
+        simp only [Δy, BasicEnv.domain_insert, Finset.singleton_union, Finset.image_insert]
+      have hguard :
+          m ⊨ (Interp.guard d Δτ τ (.ret (.bound 0))).openAt 0 y ↔
+          m ⊨ Interp.guard 0 Δy τ (.ret (.free y)) := by
+        simpa only [envB, envY] using Interp.models_guard_relevant_ret_bound_openAt_iff
+          (m := m) (d := d) wfτ fresh
+      have hfuel (υ : ContextType) (e : Term) (k n n' : Nat)
+          (hυ : υ.LocallyClosedAt k) (he : e.locallyClosedAt k) (hefree : e.support = ∅)
+          (hs : υ.freeAtoms ⊆ τ.freeAtoms) (hn : k ≤ n) (hn' : k ≤ n') :
+          (interpFuel gas n' Δτ υ e).openAt k y = interpFuel gas n Δy υ e := by
+        rw [interpFuel_openAt_fresh gas n' Δτ υ e k y hυ he freshΔτ
+          (fun hy => freshτ (hs hy)) (by rw [hefree]; exact Finset.notMem_empty _),
+          interpFuel_eq_of_locallyClosedAt gas Δτ υ e k n' n hυ hn' hn]
+        apply interpFuel_eq_of_agreeOn
+        intro x hx
+        have hxυ : x ∈ υ.freeAtoms := by simpa [hefree] using hx
+        have hxy : x ≠ y := fun h => freshτ (h ▸ hs hxυ)
+        exact (BasicEnv.lookup_insert_of_ne Δτ τ.erase hxy).symm
+      have scope (h : m ⊨ Interp.guard 0 Δy τ (.ret (.free y))) :
+          τ.freeAtoms ∪ {y} ⊆ m.domain := by
+        have hs := (Interp.models_basicWorld_iff m Δy).1
+          (Formula.models_and_elim_left (Formula.models_and_elim_right h)) |>.1
+        simpa only [Δy, BasicEnv.domain_insert, domainB, Finset.union_comm] using hs
+      have scopeB (υ : ContextType) (hs : υ.freeAtoms ⊆ τ.freeAtoms)
+          (h : m ⊨ Interp.guard 0 Δy τ (.ret (.free y))) :
+          ((interpFuel gas d Δ υ (.ret (.bound 0))).openAt 0 y).freeAtoms ⊆ m.domain := by
+        intro x hx
+        apply scope h
+        rcases Finset.mem_union.1 (Formula.freeAtoms_openAt_subset _ 0 y hx) with hx | hx
+        · exact Finset.mem_union_right _ hx
+        · have hxυ := freeAtoms_interpFuel_subset gas d Δ υ (.ret (.bound 0)) hx
+          exact Finset.mem_union_left _ (hs (by simpa [Term.support, Value.support] using hxυ))
+      have scopeY (υ : ContextType) (hs : υ.freeAtoms ⊆ τ.freeAtoms)
+          (h : m ⊨ Interp.guard 0 Δy τ (.ret (.free y))) :
+          (interpFuel gas 0 (Δ.insert y τ.erase) υ (.ret (.free y))).freeAtoms ⊆ m.domain :=
+        Finset.Subset.trans (freeAtoms_interpFuel_subset gas 0 _ υ (.ret (.free y)))
+          (Finset.Subset.trans (Finset.union_subset_union hs (Finset.Subset.refl _)) (scope h))
+      cases τ with
+      | inter τ₁ τ₂ =>
+          simp only [interpFuel, Formula.openAt, envB, envY]
+          have h₂ := ih (m := m) (d := d) wfτ.2.1 fresh
+          rw [← wfτ.2.2] at h₂
+          constructor
+          · intro h
+            apply Formula.models_and_intro (hguard.1 (Formula.models_and_elim_left h))
+            exact Formula.models_and_intro
+              ((ih wfτ.1 fresh).1 (Formula.models_and_elim_left (Formula.models_and_elim_right h)))
+              (h₂.1 (Formula.models_and_elim_right (Formula.models_and_elim_right h)))
+          · intro h
+            apply Formula.models_and_intro (hguard.2 (Formula.models_and_elim_left h))
+            exact Formula.models_and_intro
+              ((ih wfτ.1 fresh).2 (Formula.models_and_elim_left (Formula.models_and_elim_right h)))
+              (h₂.2 (Formula.models_and_elim_right (Formula.models_and_elim_right h)))
+      | union τ₁ τ₂ =>
+          simp only [interpFuel, Formula.openAt, envB, envY]
+          constructor
+          · intro h
+            have hg := hguard.1 (Formula.models_and_elim_left h)
+            have hb := Formula.models_and_elim_right h
+            apply Formula.models_and_intro hg
+            rcases (Formula.models_or_iff _ _ _ (Formula.models_scope hb)).1 hb with h₁ | h₂
+            · exact Formula.models_or_intro_left ((ih wfτ.1 fresh).1 h₁)
+                (scopeY τ₂ Finset.subset_union_right hg)
+            · have h₂' := (ih wfτ.2.1 fresh).1 h₂
+              rw [← wfτ.2.2] at h₂'
+              exact Formula.models_or_intro_right (scopeY τ₁ Finset.subset_union_left hg) h₂'
+          · intro h
+            have hg := Formula.models_and_elim_left h
+            have hb := Formula.models_and_elim_right h
+            apply Formula.models_and_intro (hguard.2 hg)
+            rcases (Formula.models_or_iff _ _ _ (Formula.models_scope hb)).1 hb with h₁ | h₂
+            · exact Formula.models_or_intro_left ((ih wfτ.1 fresh).2 h₁)
+                (scopeB τ₂ Finset.subset_union_right hg)
+            · have h₂' : m ⊨ interpFuel gas 0 (Δ.insert y τ₂.erase) τ₂ (.ret (.free y)) := by
+                simpa only [ContextType.erase, wfτ.2.2] using h₂
+              exact Formula.models_or_intro_right (scopeB τ₁ Finset.subset_union_left hg)
+                ((ih wfτ.2.1 fresh).2 h₂')
+      | «over» b q =>
+          have hQ := Interp.overResultFiber_openAt_fresh b q 0 y wfτ.locallyClosedAt freshτ
+          simp only [Formula.openAt] at hQ
+          simp only [interpFuel, Formula.openAt, envB, envY]
+          rw [hresult, hQ, Formula.models_and_iff, Formula.models_and_iff, hguard]
+      | under b q =>
+          have hQ := Interp.underResultFiber_openAt_fresh b q 0 y wfτ.locallyClosedAt freshτ
+          simp only [Formula.openAt] at hQ
+          simp only [interpFuel, Formula.openAt, envB, envY]
+          rw [hresult, hQ, Formula.models_and_iff, Formula.models_and_iff, hguard]
+      | sum τ₁ τ₂ =>
+          have hs₁ : (τ₁.shiftFrom 0).freeAtoms ⊆ (τ₁ ⊕ τ₂ : ContextType).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom] using
+              (Finset.subset_union_left : τ₁.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          have hs₂ : (τ₂.shiftFrom 0).freeAtoms ⊆ (τ₁ ⊕ τ₂ : ContextType).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom] using
+              (Finset.subset_union_right : τ₂.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          have h₁ := hfuel (τ₁.shiftFrom 0) (.ret (.bound 0)) 1 1 (d + 1)
+            (wfτ.1.locallyClosedAt.shiftFrom 0) (by simp [Term.locallyClosedAt, Value.locallyClosedAt]) rfl hs₁ (by omega) (by omega)
+          have h₂ := hfuel (τ₂.shiftFrom 0) (.ret (.bound 0)) 1 1 (d + 1)
+            (wfτ.2.1.locallyClosedAt.shiftFrom 0) (by simp [Term.locallyClosedAt, Value.locallyClosedAt]) rfl hs₂ (by omega) (by omega)
+          simp only [interpFuel, Formula.openAt, envB, envY, Nat.zero_add]
+          rw [hresult, h₁, h₂, Formula.models_and_iff, Formula.models_and_iff, hguard]
+      | arrow τ₁ τ₂ =>
+          have hs₁ : ((τ₁.shiftFrom 0).shiftFrom 0).freeAtoms ⊆ (τ₁.arrow τ₂).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom] using
+              (Finset.subset_union_left : τ₁.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          have hs₂ : (τ₂.shiftFrom 1).freeAtoms ⊆ (τ₁.arrow τ₂).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom] using
+              (Finset.subset_union_right : τ₂.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          have h₁ := hfuel ((τ₁.shiftFrom 0).shiftFrom 0) (.ret (.bound 0)) 2 2 (d + 2)
+            ((wfτ.1.locallyClosedAt.shiftFrom 0).shiftFrom 0) (by simp [Term.locallyClosedAt, Value.locallyClosedAt]) rfl hs₁ (by omega) (by omega)
+          have h₂ := hfuel (τ₂.shiftFrom 1) (.app (.bound 1) (.bound 0)) 2 2 (d + 2)
+            (wfτ.2.locallyClosedAt.shiftFrom 1) (by simp [Term.locallyClosedAt, Value.locallyClosedAt]) rfl hs₂ (by omega) (by omega)
+          simp only [interpFuel, Formula.openAt, envB, envY, Nat.zero_add]
+          rw [hresult, h₁, h₂, Formula.models_and_iff, Formula.models_and_iff, hguard]
+      | wand τ₁ τ₂ =>
+          have hs₁ : ((τ₁.shiftFrom 0).shiftFrom 0).freeAtoms ⊆ (τ₁.wand τ₂).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom] using
+              (Finset.subset_union_left : τ₁.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          have hs₂ : (τ₂.shiftFrom 1).freeAtoms ⊆ (τ₁.wand τ₂).freeAtoms := by
+            simpa only [freeAtoms_shiftFrom] using
+              (Finset.subset_union_right : τ₂.freeAtoms ⊆ τ₁.freeAtoms ∪ τ₂.freeAtoms)
+          have h₁ := hfuel ((τ₁.shiftFrom 0).shiftFrom 0) (.ret (.bound 0)) 2 2 (d + 2)
+            ((wfτ.1.locallyClosedAt.shiftFrom 0).shiftFrom 0) (by simp [Term.locallyClosedAt, Value.locallyClosedAt]) rfl hs₁ (by omega) (by omega)
+          have h₂ := hfuel (τ₂.shiftFrom 1) (.app (.bound 1) (.bound 0)) 2 2 (d + 2)
+            (wfτ.2.locallyClosedAt.shiftFrom 1) (by simp [Term.locallyClosedAt, Value.locallyClosedAt]) rfl hs₂ (by omega) (by omega)
+          simp only [interpFuel, Formula.openAt, envB, envY, Nat.zero_add]
+          rw [hresult, h₁, h₂, Formula.models_and_iff, Formula.models_and_iff, hguard]
+      | persist τ =>
+          have hs : (τ.shiftFrom 0).freeAtoms ⊆ (ContextType.persist τ).freeAtoms := by
+            rw [freeAtoms_shiftFrom]
+            exact Finset.Subset.refl _
+          have h := hfuel (τ.shiftFrom 0) (.ret (.bound 0)) 1 1 (d + 1)
+            (wfτ.locallyClosedAt.shiftFrom 0) (by simp [Term.locallyClosedAt, Value.locallyClosedAt]) rfl hs (by omega) (by omega)
+          simp only [interpFuel, Formula.openAt, envB, envY, Nat.zero_add]
+          rw [hresult, h, Formula.models_and_iff, Formula.models_and_iff, hguard]
+
+/-- The full argument interpretation uses the same conversion, with fuel
+fixed by the context type and the outer binder shift made explicit. -/
+theorem models_interp_ret_bound_openAt_iff
+    {m : Capability} {Δ : BasicEnv} {τ : ContextType} {y : Atom}
+    (wfτ : τ.WellFormed Δ.domain) (fresh : y ∉ Δ.domain) :
+    m ⊨ (interpFuel τ.measure 1 Δ (τ.shiftFrom 0) (.ret (.bound 0))).openAt 0 y ↔
+      m ⊨ interp (Δ.insert y τ.erase) τ (.ret (.free y)) := by
+  rw [τ.shiftFrom_eq_of_locallyClosedAt 0 wfτ.locallyClosedAt]
+  exact models_interpFuel_ret_bound_openAt_iff wfτ fresh
+
 /-- Pointwise result equivalence transports the full result-first
 interpretation, including the static and universal-termination guard. -/
 theorem models_interpFuel_of_reaches_iff
