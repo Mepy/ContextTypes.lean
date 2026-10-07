@@ -777,6 +777,18 @@ theorem LocallyClosedAt.mono {τ : ContextType} {d d' : Nat}
         ih₂ h.2 (Nat.add_le_add_right hdd 1)⟩
   | persist τ ih => exact ih h hdd
 
+theorem LocallyClosedAt.shiftFrom {τ : ContextType} {d : Nat}
+    (closed : τ.LocallyClosedAt d) (k : Nat) :
+    (τ.shiftFrom k).LocallyClosedAt (d + 1) := by
+  induction τ generalizing d k with
+  | «over» b q | under b q =>
+      exact Qualifier.locallyClosedAt_shiftFrom closed (k + 1)
+  | inter τ₁ τ₂ ih₁ ih₂ | union τ₁ τ₂ ih₁ ih₂ | sum τ₁ τ₂ ih₁ ih₂ =>
+      exact ⟨ih₁ closed.1 k, ih₂ closed.2 k⟩
+  | arrow τ₁ τ₂ ih₁ ih₂ | wand τ₁ τ₂ ih₁ ih₂ =>
+      exact ⟨ih₁ closed.1 k, ih₂ closed.2 (k + 1)⟩
+  | persist τ ih => exact ih closed k
+
 theorem shiftFrom_eq_of_locallyClosedAt (τ : ContextType) (k : Nat)
     (closed : τ.LocallyClosedAt k) : τ.shiftFrom k = τ := by
   induction τ generalizing k with
@@ -926,6 +938,33 @@ theorem WellFormedAt.shiftFrom {τ : ContextType} {d : Nat}
       rw [same]
       exact ⟨h.1, ih₂ h.2 (k + 1)⟩
   | persist τ ih => exact ih h k
+
+theorem wellFormedAt_iff_of_locallyClosedAt {τ : ContextType} {k d d' : Nat}
+    {X : Finset Atom} (closed : τ.LocallyClosedAt k)
+    (hk : k ≤ d) (hk' : k ≤ d') :
+    τ.WellFormedAt d X ↔ τ.WellFormedAt d' X := by
+  induction τ generalizing k d d' with
+  | «over» b q | under b q =>
+      constructor
+      · intro h ξ hξ
+        cases ξ with
+        | free x => exact h (.free x) hξ
+        | bound j => exact lt_of_lt_of_le (closed j hξ) (Nat.add_le_add_right hk' 1)
+      · intro h ξ hξ
+        cases ξ with
+        | free x => exact h (.free x) hξ
+        | bound j => exact lt_of_lt_of_le (closed j hξ) (Nat.add_le_add_right hk 1)
+  | inter τ₁ τ₂ ih₁ ih₂ | union τ₁ τ₂ ih₁ ih₂ | sum τ₁ τ₂ ih₁ ih₂ =>
+      simp only [WellFormedAt]
+      rw [ih₁ closed.1 hk hk', ih₂ closed.2 hk hk']
+  | arrow τ₁ τ₂ ih₁ ih₂ =>
+      simp only [WellFormedAt]
+      rw [ih₁ closed.1 hk hk',
+        ih₂ closed.2 (Nat.add_le_add_right hk 1) (Nat.add_le_add_right hk' 1)]
+  | wand τ₁ τ₂ ih₁ ih₂ =>
+      simp only [WellFormedAt]
+      rw [ih₂ closed.2 (Nat.add_le_add_right hk 1) (Nat.add_le_add_right hk' 1)]
+  | persist τ ih => exact ih closed hk hk'
 
 theorem WellFormedAt.shapeOK {τ : ContextType} {d : Nat}
     {X : Finset Atom} (h : τ.WellFormedAt d X) : τ.ShapeOK := by

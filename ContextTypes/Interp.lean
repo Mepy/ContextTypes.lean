@@ -2327,6 +2327,257 @@ theorem models_guard_result_alias {m : Capability} {d : Nat}
   · exact models_basicTyping_ret_free hworldY hlookupY
   · exact models_total_ret_free hworldY hlookupY
 
+mutual
+
+theorem valueLogicSupport_bound_lt (v : Value) (d k : Nat)
+    (closed : v.locallyClosedAt (d + k)) {j : Nat}
+    (hj : LogicVar.bound j ∈ v.logicSupportAt d) : j < k := by
+  cases v with
+  | const c => simp [Value.logicSupportAt] at hj
+  | free x => simp [Value.logicSupportAt] at hj
+  | bound n =>
+      simp only [Value.logicSupportAt, boundLogicSupportAt] at hj
+      split_ifs at hj with hdn
+      · have heq : j = n - d := by simpa using hj
+        change n < d + k at closed
+        omega
+      · simp at hj
+  | lam T e =>
+      apply termLogicSupport_bound_lt e (d + 1) k
+      · simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using closed
+      · exact hj
+  | fix T v =>
+      apply valueLogicSupport_bound_lt v (d + 1) k
+      · simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using closed
+      · exact hj
+
+theorem termLogicSupport_bound_lt (e : Term) (d k : Nat)
+    (closed : e.locallyClosedAt (d + k)) {j : Nat}
+    (hj : LogicVar.bound j ∈ e.logicSupportAt d) : j < k := by
+  cases e with
+  | ret v => exact valueLogicSupport_bound_lt v d k closed hj
+  | letE e₁ e₂ =>
+      rcases Finset.mem_union.1 hj with hj | hj
+      · exact termLogicSupport_bound_lt e₁ d k closed.1 hj
+      · apply termLogicSupport_bound_lt e₂ (d + 1) k
+        · simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using closed.2
+        · exact hj
+  | primitive op v => exact valueLogicSupport_bound_lt v d k closed hj
+  | app v₁ v₂ =>
+      rcases Finset.mem_union.1 hj with hj | hj
+      · exact valueLogicSupport_bound_lt v₁ d k closed.1 hj
+      · exact valueLogicSupport_bound_lt v₂ d k closed.2 hj
+  | matchBool v e₁ e₂ =>
+      rcases Finset.mem_union.1 hj with hj | hj
+      · rcases Finset.mem_union.1 hj with hj | hj
+        · exact valueLogicSupport_bound_lt v d k closed.1 hj
+        · exact termLogicSupport_bound_lt e₁ d k closed.2.1 hj
+      · exact termLogicSupport_bound_lt e₂ d k closed.2.2 hj
+
+end
+
+theorem contextTypeSupport_bound_lt (τ : ContextType) (d k : Nat)
+    (closed : τ.LocallyClosedAt (d + k)) {j : Nat}
+    (hj : LogicVar.bound j ∈ τ.supportAt d) : j < k := by
+  induction τ generalizing d k with
+  | «over» b q | under b q =>
+      obtain ⟨ξ, hξ, hjξ⟩ := Finset.mem_biUnion.1 hj
+      cases ξ with
+      | free x => simp [LogicVar.atDepth] at hjξ
+      | bound n =>
+          have hn := closed n hξ
+          by_cases hdn : d + 1 ≤ n
+          · have heq : j = n - (d + 1) := by
+              simpa [LogicVar.atDepth, hdn] using hjξ
+            omega
+          · simp [LogicVar.atDepth, hdn] at hjξ
+  | inter τ₁ τ₂ ih₁ ih₂ | union τ₁ τ₂ ih₁ ih₂ | sum τ₁ τ₂ ih₁ ih₂ =>
+      rcases Finset.mem_union.1 hj with hj | hj
+      · exact ih₁ d k closed.1 hj
+      · exact ih₂ d k closed.2 hj
+  | arrow τ₁ τ₂ ih₁ ih₂ | wand τ₁ τ₂ ih₁ ih₂ =>
+      rcases Finset.mem_union.1 hj with hj | hj
+      · exact ih₁ d k closed.1 hj
+      · apply ih₂ (d + 1) k
+        · simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using closed.2
+        · exact hj
+  | persist τ ih => exact ih d k closed hj
+
+theorem guard_openAt_eq (d : Nat) (Δ : BasicEnv) (τ : ContextType)
+    (e : Term) (k : Nat) (y : Atom)
+    (closed : e.locallyClosedAt k) (freshΔ : y ∉ Δ.domain)
+    (freshE : y ∉ e.support) : (guard d Δ τ e).openAt k y = guard d Δ τ e := by
+  have htyping : (basicTyping Δ e τ.erase).openAt k y = basicTyping Δ e τ.erase := by
+    let q := basicTypingQualifier Δ e τ.erase
+    have hk : LogicVar.bound k ∉ q.support := by
+      intro hk
+      rcases Finset.mem_union.1 hk with hk | hk
+      · simp at hk
+      · have hlt := termLogicSupport_bound_lt e 0 k (by simpa using closed) hk
+        omega
+    have hy : LogicVar.free y ∉ q.support := by
+      intro hy
+      rcases Finset.mem_union.1 hy with hy | hy
+      · exact freshΔ (by simpa using hy)
+      · apply freshE
+        rw [← freeAtomSet_term_logicSupport, LogicVar.mem_freeAtomSet_iff]
+        exact hy
+    simp only [basicTyping, Formula.fiberAtom, Formula.openAt]
+    rw [LogicVar.openSupport_eq_self_of_fresh q.support k y hk hy,
+      q.openAt_fresh k y hk hy]
+  have htotal : (total e).openAt k y = total e := by
+    let q := totalQualifier e
+    have hk : LogicVar.bound k ∉ q.support := by
+      intro hk
+      have hlt := termLogicSupport_bound_lt e 0 k (by simpa using closed) hk
+      omega
+    have hy : LogicVar.free y ∉ q.support := by
+      intro hy
+      apply freshE
+      rw [← freeAtomSet_term_logicSupport, LogicVar.mem_freeAtomSet_iff]
+      exact hy
+    simp only [total, Formula.fiberAtom, Formula.openAt]
+    rw [LogicVar.openSupport_eq_self_of_fresh q.support k y hk hy,
+      q.openAt_fresh k y hk hy]
+  simp only [guard, Formula.openAt]
+  rw [wellFormed_openAt_eq d Δ τ k y freshΔ, basicWorld_openAt_eq Δ k y freshΔ,
+    htyping, htotal]
+
+theorem resultFirst_openAt_fresh (Δ : BasicEnv) (τ : ContextType)
+    (e : Term) (k : Nat) (y : Atom)
+    (closedτ : τ.LocallyClosedAt k) (closedE : e.locallyClosedAt k)
+    (freshΔ : y ∉ Δ.domain) (freshE : y ∉ e.support) :
+    (resultFirst Δ τ e).openAt (k + 1) y = resultFirst Δ τ e := by
+  let X := (relevantSupport Δ τ e).image (LogicVar.shiftFrom 0)
+  let q := resultQualifier (shiftTerm e) (.bound 0)
+  have hXbound : LogicVar.bound (k + 1) ∉ X := by
+    intro hx
+    obtain ⟨ξ, hξ, hsame⟩ := Finset.mem_image.1 hx
+    cases ξ with
+    | free x => simp [LogicVar.shiftFrom] at hsame
+    | bound j =>
+        have hj : j = k := by simpa [LogicVar.shiftFrom] using hsame
+        subst j
+        rcases Finset.mem_union.1 hξ with hξ | hξ
+        · simp at hξ
+        · obtain ⟨ζ, hζ, hkζ⟩ := Finset.mem_biUnion.1 hξ
+          cases ζ with
+          | free x => simp at hkζ
+          | bound j =>
+              have hj : k = j := by simpa using hkζ
+              subst j
+              rcases Finset.mem_union.1 hζ with hτ | he
+              · have hlt := contextTypeSupport_bound_lt τ 0 k
+                  (by simpa using closedτ) hτ
+                omega
+              · have hlt := termLogicSupport_bound_lt e 0 k
+                  (by simpa using closedE) he
+                omega
+  have hXfree : LogicVar.free y ∉ X := by
+    intro hy
+    obtain ⟨ξ, hξ, hsame⟩ := Finset.mem_image.1 hy
+    cases ξ with
+    | bound j => simp [LogicVar.shiftFrom] at hsame
+    | free x =>
+        have hx : x = y := by simpa [LogicVar.shiftFrom] using hsame
+        subst x
+        have hyΔ : y ∈ (relevantEnv Δ τ e).domain := by
+          rw [← freeAtomSet_relevantSupport, LogicVar.mem_freeAtomSet_iff]
+          exact hξ
+        rw [relevantEnv_domain] at hyΔ
+        exact freshΔ (Finset.mem_inter.1 hyΔ).1
+  have hqbound : LogicVar.bound (k + 1) ∉ q.support := by
+    intro hk
+    rcases Finset.mem_union.1 hk with hk | hk
+    · rw [shiftTerm_logicSupport, Finset.mem_image] at hk
+      obtain ⟨ξ, hξ, hsame⟩ := hk
+      cases ξ with
+      | free x => simp [LogicVar.shiftFrom] at hsame
+      | bound j =>
+          have hj : j = k := by simpa [LogicVar.shiftFrom] using hsame
+          subst j
+          have hlt := termLogicSupport_bound_lt e 0 k (by simpa using closedE) hξ
+          omega
+    · simp at hk
+  have hqfree : LogicVar.free y ∉ q.support := by
+    intro hy
+    rcases Finset.mem_union.1 hy with hy | hy
+    · apply freshE
+      rw [← freeAtomSet_term_logicSupport, LogicVar.mem_freeAtomSet_iff]
+      rw [shiftTerm_logicSupport, Finset.mem_image] at hy
+      obtain ⟨ξ, hξ, hsame⟩ := hy
+      cases ξ with
+      | bound j => simp [LogicVar.shiftFrom] at hsame
+      | free x =>
+          have hx : x = y := by simpa [LogicVar.shiftFrom] using hsame
+          simpa [hx] using hξ
+    · simp at hy
+  change (Formula.fiber X (Atom(q))).openAt (k + 1) y = Formula.fiber X (Atom(q))
+  simp only [Formula.openAt]
+  rw [LogicVar.openSupport_eq_self_of_fresh X (k + 1) y hXbound hXfree,
+    q.openAt_fresh (k + 1) y hqbound hqfree]
+
+theorem resultBasicTyping_openAt_fresh (b : BaseType) (k : Nat) (y : Atom) :
+    (resultBasicTyping b).openAt (k + 1) y = resultBasicTyping b := by
+  let q := basicTypingQualifier ∅ (.ret (.bound 0)) (.base b)
+  have hb : LogicVar.bound (k + 1) ∉ q.support := by
+    simp [q, basicTypingQualifier, Term.logicSupportAt, Value.logicSupportAt,
+      boundLogicSupportAt]
+  have hf : LogicVar.free y ∉ q.support := by
+    simp [q, basicTypingQualifier, Term.logicSupportAt, Value.logicSupportAt,
+      boundLogicSupportAt]
+  simp only [resultBasicTyping, basicTyping, Formula.fiberAtom, Formula.openAt]
+  rw [LogicVar.openSupport_eq_self_of_fresh q.support (k + 1) y hb hf,
+    q.openAt_fresh (k + 1) y hb hf]
+
+theorem overResultFiber_openAt_fresh (b : BaseType) (q : Qualifier)
+    (k : Nat) (y : Atom) (closed : q.locallyClosedAt (k + 1))
+    (fresh : y ∉ q.freeAtoms) :
+    (Formula.fiber (q.support \ {.bound 0}) (overResult b q)).openAt (k + 1) y =
+      Formula.fiber (q.support \ {.bound 0}) (overResult b q) := by
+  have hb : LogicVar.bound (k + 1) ∉ q.support := by
+    intro hb
+    have := closed (k + 1) hb
+    omega
+  have hf : LogicVar.free y ∉ q.support := by
+    rwa [← Qualifier.mem_freeAtoms_iff]
+  simp only [Formula.openAt, overResult]
+  rw [LogicVar.openSupport_eq_self_of_fresh (q.support \ {.bound 0}) (k + 1) y
+    (fun hx => hb (Finset.mem_sdiff.1 hx).1) (fun hx => hf (Finset.mem_sdiff.1 hx).1)]
+  rw [q.openAt_fresh (k + 1) y hb hf, resultBasicTyping_openAt_fresh]
+
+theorem underResultFiber_openAt_fresh (b : BaseType) (q : Qualifier)
+    (k : Nat) (y : Atom) (closed : q.locallyClosedAt (k + 1))
+    (fresh : y ∉ q.freeAtoms) :
+    (Formula.fiber (q.support \ {.bound 0}) (underResult b q)).openAt (k + 1) y =
+      Formula.fiber (q.support \ {.bound 0}) (underResult b q) := by
+  have hb : LogicVar.bound (k + 1) ∉ q.support := by
+    intro hb
+    have := closed (k + 1) hb
+    omega
+  have hf : LogicVar.free y ∉ q.support := by
+    rwa [← Qualifier.mem_freeAtoms_iff]
+  simp only [Formula.openAt, underResult]
+  rw [LogicVar.openSupport_eq_self_of_fresh (q.support \ {.bound 0}) (k + 1) y
+    (fun hx => hb (Finset.mem_sdiff.1 hx).1) (fun hx => hf (Finset.mem_sdiff.1 hx).1)]
+  rw [q.openAt_fresh (k + 1) y hb hf, resultBasicTyping_openAt_fresh]
+
+theorem wellFormed_eq_of_locallyClosedAt (Δ : BasicEnv) (τ : ContextType)
+    (k d d' : Nat) (closed : τ.LocallyClosedAt k) (hk : k ≤ d) (hk' : k ≤ d') :
+    wellFormed d Δ τ = wellFormed d' Δ τ := by
+  have hq : wellFormedQualifier d Δ τ = wellFormedQualifier d' Δ τ := by
+    apply Qualifier.ext
+    · rfl
+    · intro ρ σ _
+      exact ContextType.wellFormedAt_iff_of_locallyClosedAt closed hk hk'
+  exact congrArg Formula.fiberAtom hq
+
+theorem guard_eq_of_locallyClosedAt (Δ : BasicEnv) (τ : ContextType)
+    (e : Term) (k d d' : Nat) (closed : τ.LocallyClosedAt k)
+    (hk : k ≤ d) (hk' : k ≤ d') :
+    guard d Δ τ e = guard d' Δ τ e := by
+  simp only [guard, wellFormed_eq_of_locallyClosedAt Δ τ k d d' closed hk hk']
+
 /-! ## Closed static atoms -/
 
 theorem models_basicWorld_empty (m : Capability) :
@@ -3053,6 +3304,133 @@ theorem interpFuel_eq_of_agreeOn (gas d : Nat) {Δ₁ Δ₂ : BasicEnv}
           rw [Interp.relevantEnv_eq_of_agreeOn h]
           rw [ih _ h₁]
           rw [ih _ h₂]
+
+theorem interpFuel_eq_of_locallyClosedAt (gas : Nat) (Δ : BasicEnv)
+    (τ : ContextType) (e : Term) (k d d' : Nat)
+    (closed : τ.LocallyClosedAt k) (hk : k ≤ d) (hk' : k ≤ d') :
+    interpFuel gas d Δ τ e = interpFuel gas d' Δ τ e := by
+  induction gas generalizing Δ τ e k d d' with
+  | zero =>
+      simp only [interpFuel]
+      rw [Interp.guard_eq_of_locallyClosedAt _ τ e k d d' closed hk hk']
+  | succ gas ih =>
+      have hguard := Interp.guard_eq_of_locallyClosedAt
+        (Interp.relevantEnv Δ τ e) τ e k d d' closed hk hk'
+      cases τ with
+      | «over» b q | under b q =>
+          simp only [interpFuel]
+          rw [hguard]
+      | inter τ₁ τ₂ | union τ₁ τ₂ =>
+          simp only [interpFuel]
+          rw [hguard, ih Δ τ₁ e k d d' closed.1 hk hk',
+            ih Δ τ₂ e k d d' closed.2 hk hk']
+      | sum τ₁ τ₂ =>
+          simp only [interpFuel]
+          rw [hguard,
+            ih _ (τ₁.shiftFrom 0) _ (k + 1) (d + 1) (d' + 1)
+              (closed.1.shiftFrom 0) (Nat.add_le_add_right hk 1) (Nat.add_le_add_right hk' 1),
+            ih _ (τ₂.shiftFrom 0) _ (k + 1) (d + 1) (d' + 1)
+              (closed.2.shiftFrom 0) (Nat.add_le_add_right hk 1) (Nat.add_le_add_right hk' 1)]
+      | arrow τ₁ τ₂ | wand τ₁ τ₂ =>
+          simp only [interpFuel]
+          rw [hguard,
+            ih _ ((τ₁.shiftFrom 0).shiftFrom 0) _ (k + 1 + 1) (d + 2) (d' + 2)
+              ((closed.1.shiftFrom 0).shiftFrom 0) (by omega) (by omega),
+            ih _ (τ₂.shiftFrom 1) _ (k + 1 + 1) (d + 2) (d' + 2)
+              (closed.2.shiftFrom 1) (by omega) (by omega)]
+      | persist τ =>
+          simp only [interpFuel]
+          rw [hguard,
+            ih _ (τ.shiftFrom 0) _ (k + 1) (d + 1) (d' + 1)
+              (closed.shiftFrom 0) (Nat.add_le_add_right hk 1) (Nat.add_le_add_right hk' 1)]
+
+theorem interpFuel_openAt_fresh (gas d : Nat) (Δ : BasicEnv)
+    (τ : ContextType) (e : Term) (k : Nat) (y : Atom)
+    (closedτ : τ.LocallyClosedAt k) (closedE : e.locallyClosedAt k)
+    (freshΔ : y ∉ Δ.domain) (freshτ : y ∉ τ.freeAtoms)
+    (freshE : y ∉ e.support) :
+    (interpFuel gas d Δ τ e).openAt k y = interpFuel gas d Δ τ e := by
+  induction gas generalizing d Δ τ e k with
+  | zero =>
+      have hΔ : y ∉ (Interp.relevantEnv Δ τ e).domain := by
+        rw [Interp.relevantEnv_domain]
+        exact fun hy => freshΔ (Finset.mem_inter.1 hy).1
+      simp only [interpFuel, Formula.openAt]
+      rw [Interp.guard_openAt_eq d _ τ e k y closedE hΔ freshE]
+  | succ gas ih =>
+      have hΔ : y ∉ (Interp.relevantEnv Δ τ e).domain := by
+        rw [Interp.relevantEnv_domain]
+        exact fun hy => freshΔ (Finset.mem_inter.1 hy).1
+      have hguard := Interp.guard_openAt_eq d (Interp.relevantEnv Δ τ e)
+        τ e k y closedE hΔ freshE
+      have hresult := Interp.resultFirst_openAt_fresh (Interp.relevantEnv Δ τ e)
+        τ e k y closedτ closedE hΔ freshE
+      cases τ with
+      | «over» b q =>
+          have hbody := Interp.overResultFiber_openAt_fresh b q k y closedτ freshτ
+          simp only [Formula.openAt] at hbody
+          simp only [interpFuel, Formula.openAt]
+          rw [hguard, hresult, hbody]
+      | under b q =>
+          have hbody := Interp.underResultFiber_openAt_fresh b q k y closedτ freshτ
+          simp only [Formula.openAt] at hbody
+          simp only [interpFuel, Formula.openAt]
+          rw [hguard, hresult, hbody]
+      | inter τ₁ τ₂ =>
+          have hf : y ∉ τ₁.freeAtoms ∧ y ∉ τ₂.freeAtoms := by
+            simpa [freeAtoms] using freshτ
+          simp only [interpFuel, Formula.openAt]
+          rw [hguard, ih d Δ τ₁ e k closedτ.1 closedE freshΔ hf.1 freshE,
+            ih d Δ τ₂ e k closedτ.2 closedE freshΔ hf.2 freshE]
+      | union τ₁ τ₂ =>
+          have hf : y ∉ τ₁.freeAtoms ∧ y ∉ τ₂.freeAtoms := by
+            simpa [freeAtoms] using freshτ
+          simp only [interpFuel, Formula.openAt]
+          rw [hguard, ih d Δ τ₁ e k closedτ.1 closedE freshΔ hf.1 freshE,
+            ih d Δ τ₂ e k closedτ.2 closedE freshΔ hf.2 freshE]
+      | sum τ₁ τ₂ =>
+          have hf : y ∉ τ₁.freeAtoms ∧ y ∉ τ₂.freeAtoms := by
+            simpa [freeAtoms] using freshτ
+          simp only [interpFuel, Formula.openAt]
+          rw [hguard, hresult,
+            ih (d + 1) _ (τ₁.shiftFrom 0) (.ret (.bound 0)) (k + 1)
+              (closedτ.1.shiftFrom 0) (by simp [Term.locallyClosedAt, Value.locallyClosedAt])
+              hΔ (by simpa using hf.1) (by simp [Term.support, Value.support]),
+            ih (d + 1) _ (τ₂.shiftFrom 0) (.ret (.bound 0)) (k + 1)
+              (closedτ.2.shiftFrom 0) (by simp [Term.locallyClosedAt, Value.locallyClosedAt])
+              hΔ (by simpa using hf.2) (by simp [Term.support, Value.support])]
+      | arrow τ₁ τ₂ =>
+          have hf : y ∉ τ₁.freeAtoms ∧ y ∉ τ₂.freeAtoms := by
+            simpa [freeAtoms] using freshτ
+          simp only [interpFuel, Formula.openAt]
+          rw [hguard, hresult,
+            ih (d + 2) _ ((τ₁.shiftFrom 0).shiftFrom 0) (.ret (.bound 0)) ((k + 1) + 1)
+              ((closedτ.1.shiftFrom 0).shiftFrom 0)
+              (by simp [Term.locallyClosedAt, Value.locallyClosedAt])
+              hΔ (by simpa using hf.1) (by simp [Term.support, Value.support]),
+            ih (d + 2) _ (τ₂.shiftFrom 1) (.app (.bound 1) (.bound 0)) ((k + 1) + 1)
+              (closedτ.2.shiftFrom 1)
+              (by simp [Term.locallyClosedAt, Value.locallyClosedAt])
+              hΔ (by simpa using hf.2) (by simp [Term.support, Value.support])]
+      | wand τ₁ τ₂ =>
+          have hf : y ∉ τ₁.freeAtoms ∧ y ∉ τ₂.freeAtoms := by
+            simpa [freeAtoms] using freshτ
+          simp only [interpFuel, Formula.openAt]
+          rw [hguard, hresult,
+            ih (d + 2) _ ((τ₁.shiftFrom 0).shiftFrom 0) (.ret (.bound 0)) ((k + 1) + 1)
+              ((closedτ.1.shiftFrom 0).shiftFrom 0)
+              (by simp [Term.locallyClosedAt, Value.locallyClosedAt])
+              hΔ (by simpa using hf.1) (by simp [Term.support, Value.support]),
+            ih (d + 2) _ (τ₂.shiftFrom 1) (.app (.bound 1) (.bound 0)) ((k + 1) + 1)
+              (closedτ.2.shiftFrom 1)
+              (by simp [Term.locallyClosedAt, Value.locallyClosedAt])
+              hΔ (by simpa using hf.2) (by simp [Term.support, Value.support])]
+      | persist τ =>
+          simp only [interpFuel, Formula.openAt]
+          rw [hguard, hresult,
+            ih (d + 1) _ (τ.shiftFrom 0) (.ret (.bound 0)) (k + 1)
+              (closedτ.shiftFrom 0) (by simp [Term.locallyClosedAt, Value.locallyClosedAt])
+              hΔ (by simpa using freshτ) (by simp [Term.support, Value.support])]
 
 theorem interp_eq_of_agreeOn {Δ₁ Δ₂ : BasicEnv} {τ : ContextType}
     {e : Term}

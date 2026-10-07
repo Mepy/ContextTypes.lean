@@ -641,6 +641,19 @@ theorem shiftFrom_eq_of_locallyClosedAt (q : Qualifier) (k : Nat)
         exact hshift
       · rwa [σ.domain_eq]
 
+
+theorem locallyClosedAt_shiftFrom {q : Qualifier} {d : Nat}
+    (closed : q.locallyClosedAt d) (k : Nat) :
+    (q.shiftFrom k).locallyClosedAt (d + 1) := by
+  intro j hj
+  rw [support_shiftFrom, Finset.mem_image] at hj
+  obtain ⟨ξ, hξ, hsame⟩ := hj
+  cases ξ with
+  | free x => simp [LogicVar.shiftFrom] at hsame
+  | bound n =>
+      have hn := closed n hξ
+      by_cases hkn : k ≤ n <;> simp [LogicVar.shiftFrom, hkn] at hsame <;> omega
+
 theorem openAt_shiftFrom_eq (q : Qualifier) (k : Nat) (x : Atom)
     (closed : q.locallyClosedAt k)
     (fresh : LogicVar.free x ∉ q.support) :
