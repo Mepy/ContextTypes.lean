@@ -915,6 +915,77 @@ def resultAt (X : Finset LogicVar) (e : Term) (ξ : LogicVar) : Formula :=
 def result (e : Term) (ξ : LogicVar) : Formula :=
   resultAt e.logicSupport e ξ
 
+/-- Naming a fresh input binder preserves the universal-termination predicate. -/
+theorem totalQualifier_openAt (e : Term) (k : Nat) (y : Atom)
+    (fresh : y ∉ e.support) :
+    (totalQualifier e).openAt k y = totalQualifier (e.openAt k (.free y)) := by
+  have hs := e.logicSupportAt_openAt 0 k y fresh
+  simp only [Nat.add_zero] at hs
+  change (e.openAt k (.free y)).logicSupport = LogicVar.openSupport k y e.logicSupport at hs
+  apply Qualifier.ext
+  · exact hs.symm
+  · intro ρ σ same
+    have lookup : LogicVar.bound k ∈ e.logicSupport →
+        ∃ u, σ.assignment.lookup (.free y) = some u := by
+      intro hb
+      apply (Assignment.mem_domain_iff σ.assignment (.free y)).1
+      rw [σ.domain_eq]
+      change .free y ∈ (e.openAt k (.free y)).logicSupport
+      rw [hs, LogicVar.mem_openSupport]
+      simpa [LogicVar.openBinder, LogicVar.swap] using hb
+    have inst := instantiateTermAt_openAt_swap e 0 k y (Nat.zero_le k) fresh
+      (by simpa using lookup)
+    simp only [Qualifier.openAt, totalQualifier, AssignmentOn.swapBack,
+      same, instantiateTerm, Nat.sub_zero, inst]
+
+/-- Opening totality agrees with opening the underlying core term. -/
+theorem total_openAt (e : Term) (k : Nat) (y : Atom)
+    (fresh : y ∉ e.support) :
+    (total e).openAt k y = total (e.openAt k (.free y)) := by
+  simp only [total, Formula.fiberAtom, Formula.openAt]
+  change Formula.fiberAtom ((totalQualifier e).openAt k y) = _
+  rw [totalQualifier_openAt e k y fresh]
+  rfl
+
+/-- Opening transports both the core term and its distinguished result key. -/
+theorem resultQualifier_openAt (e : Term) (ξ : LogicVar) (k : Nat) (y : Atom)
+    (fresh : y ∉ e.support) :
+    (resultQualifier e ξ).openAt k y =
+      resultQualifier (e.openAt k (.free y)) (LogicVar.openBinder k y ξ) := by
+  have hs := e.logicSupportAt_openAt 0 k y fresh
+  simp only [Nat.add_zero] at hs
+  change (e.openAt k (.free y)).logicSupport = LogicVar.openSupport k y e.logicSupport at hs
+  apply Qualifier.ext
+  · simp only [Qualifier.openAt, resultQualifier, hs, LogicVar.openSupport,
+      Finset.image_union, Finset.image_singleton]
+  · intro ρ σ same
+    have lookup : LogicVar.bound k ∈ e.logicSupport →
+        ∃ u, σ.assignment.lookup (.free y) = some u := by
+      intro hb
+      apply (Assignment.mem_domain_iff σ.assignment (.free y)).1
+      rw [σ.domain_eq]
+      apply Finset.mem_union_left
+      rw [hs, LogicVar.mem_openSupport]
+      simpa [LogicVar.openBinder, LogicVar.swap] using hb
+    have inst := instantiateTermAt_openAt_swap e 0 k y (Nat.zero_le k) fresh
+      (by simpa using lookup)
+    have hmem : LogicVar.openBinder k y ξ ∈ (e.openAt k (.free y)).logicSupport ↔
+        ξ ∈ e.logicSupport := by
+      rw [hs, LogicVar.mem_openSupport]
+      simp [LogicVar.openBinder, LogicVar.swap_involutive]
+    simp only [LogicVar.openBinder] at hmem
+    simp only [Qualifier.openAt, resultQualifier, AssignmentOn.swapBack,
+      Assignment.lookup_swap, same, instantiateTerm, Nat.sub_zero, inst, hmem,
+      LogicVar.openBinder]
+
+/-- Opening preserves the exact result graph, including its input fibers. -/
+theorem resultAt_openAt (X : Finset LogicVar) (e : Term) (ξ : LogicVar)
+    (k : Nat) (y : Atom) (fresh : y ∉ e.support) :
+    (resultAt X e ξ).openAt k y =
+      resultAt (LogicVar.openSupport k y X) (e.openAt k (.free y))
+        (LogicVar.openBinder k y ξ) := by
+  simp only [resultAt, Formula.openAt, resultQualifier_openAt e ξ k y fresh]
+
 def resultBasicTyping (b : BaseType) : Formula :=
   basicTyping ∅ (.ret (.bound 0)) (.base b)
 
