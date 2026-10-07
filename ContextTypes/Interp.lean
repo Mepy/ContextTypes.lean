@@ -4558,6 +4558,167 @@ theorem resultFirst_app_bound_openAt_named_eq {Δ : BasicEnv} {τ : ContextType}
   congr 2
   simp [Finset.union_comm]
 
+/-- Typed named inputs realize the opened basic-typing atom for a symbolic
+application, even though its erased environment contains no bound keys. -/
+theorem models_basicTyping_app_bound_openAt {m : Capability} {Δ : BasicEnv}
+    {y z : Atom} {T U : SimpleType} (freshY : y ∉ Δ.domain)
+    (freshZ : z ∉ Δ.domain) (hne : y ≠ z)
+    (world : m ⊨ basicWorld ((Δ.insert z (.arrow T U)).insert y T)) :
+    m ⊨ ((basicTyping Δ (.app (.bound 1) (.bound 0)) U).openAt 1 z).openAt 0 y := by
+  let q := ((basicTypingQualifier Δ (.app (.bound 1) (.bound 0)) U).openAt 1 z).openAt 0 y
+  let X := Δ.domain ∪ {z, y}
+  have hzΔ : LogicVar.openSupport 1 z (Δ.domain.image LogicVar.free) = Δ.domain.image LogicVar.free := by
+    apply LogicVar.openSupport_eq_self_of_fresh
+    · simp
+    · simpa using freshZ
+  have hyΔ : LogicVar.openSupport 0 y (Δ.domain.image LogicVar.free) = Δ.domain.image LogicVar.free := by
+    apply LogicVar.openSupport_eq_self_of_fresh
+    · simp
+    · simpa using freshY
+  have happ : LogicVar.openSupport 0 y (LogicVar.openSupport 1 z
+      (.app (.bound 1) (.bound 0) : Term).logicSupport) = {.free z, .free y} := by
+    simp [Term.logicSupportAt, Value.logicSupportAt, boundLogicSupportAt,
+      LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap, Ne.symm hne]
+  have hqsupp : q.support = X.image LogicVar.free := by
+    simp only [q, Qualifier.support_openAt, basicTypingQualifier]
+    rw [show LogicVar.openSupport 0 y (LogicVar.openSupport 1 z
+      (Δ.domain.image LogicVar.free ∪ (.app (.bound 1) (.bound 0) : Term).logicSupport)) =
+        LogicVar.openSupport 0 y (LogicVar.openSupport 1 z (Δ.domain.image LogicVar.free)) ∪
+        LogicVar.openSupport 0 y (LogicVar.openSupport 1 z
+          (.app (.bound 1) (.bound 0) : Term).logicSupport) by
+            simp only [LogicVar.openSupport, Finset.image_union],
+      hzΔ, hyΔ, happ]
+    simp [X]
+  have hqfree : q.freeAtoms = X := by
+    change LogicVar.freeAtomSet q.support = X
+    rw [hqsupp, Formula.LogicVar.freeAtomSet_image_free]
+  have hw := (models_basicWorld_iff m _).1 world
+  have scope : X ⊆ m.domain := by
+    simpa [X, BasicEnv.domain_insert, Finset.union_assoc, Finset.union_left_comm,
+      Finset.union_comm] using hw.1
+  simp only [basicTyping, Formula.fiberAtom, Formula.openAt]
+  change m ⊨ Formula.fiberAtom q
+  apply (Formula.models_fiberAtom_iff m q).2
+  refine ⟨?_, by rwa [hqfree], ?_⟩
+  · intro k hk
+    rw [hqsupp] at hk
+    simp at hk
+  · intro σ hσ
+    let s := σ.restrict X
+    have hsdom : s.domain = X := by
+      rw [Store.domain_restrict, m.mem_domain hσ, Finset.inter_eq_right.2 scope]
+    let a : AssignmentOn q.support :=
+      { assignment := s.toAssignment
+        domain_eq := by rw [Store.toAssignment_domain, hsdom, hqsupp] }
+    refine ⟨by rw [hqfree]; exact hsdom, a, ?_, ?_⟩
+    · change ∅ ⊆ Δ.domain ∧
+        storeTyped (fun ξ => match ξ with | .bound _ => none | .free x => Δ.lookup x)
+          ((a.swapBack (.bound 0) (.free y)).swapBack (.bound 1) (.free z)).assignment ∧
+        BasicTermTyp ∅ (instantiateTerm (.app (.bound 1) (.bound 0))
+          ((a.swapBack (.bound 0) (.free y)).swapBack (.bound 1) (.free z)).assignment) U
+      refine ⟨Finset.empty_subset _, ?_, ?_⟩
+      · intro ξ V hV
+        cases ξ with
+        | bound k => simp at hV
+        | free x =>
+            change Δ.lookup x = some V at hV
+            have hx : x ∈ Δ.domain := (BasicEnv.mem_domain_iff Δ x).2 ⟨V, hV⟩
+            have hxy : x ≠ y := fun h => freshY (h ▸ hx)
+            have hxz : x ≠ z := fun h => freshZ (h ▸ hx)
+            obtain ⟨v, hv, hvT⟩ := hw.2 σ hσ x V (by
+              rw [BasicEnv.lookup_insert_of_ne _ _ hxy, BasicEnv.lookup_insert_of_ne _ _ hxz]
+              exact hV)
+            refine ⟨v, ?_, hvT⟩
+            simp [AssignmentOn.swapBack, Assignment.lookup_swap, LogicVar.swap,
+              a, s, Store.toAssignment_lookup_free, Store.lookup_restrict,
+              hxy, hxz, X, hx, hv]
+      · obtain ⟨u, hu, huT⟩ := hw.2 σ hσ y T (BasicEnv.lookup_insert _ _ _)
+        obtain ⟨v, hv, hvT⟩ := hw.2 σ hσ z (.arrow T U) (by
+          rw [BasicEnv.lookup_insert_of_ne _ _ (Ne.symm hne), BasicEnv.lookup_insert])
+        simpa [instantiateTerm, instantiateTermAt, instantiateValueAt,
+          AssignmentOn.swapBack, Assignment.lookup_swap, LogicVar.swap,
+          Ne.symm hne, a, s, Store.toAssignment_lookup_free, Store.lookup_restrict,
+          X, hu, hv] using BasicTermTyp.app hvT huT
+    · intro x
+      simp [a, s, hqfree]
+
+/-- Under the typed named function and parameter, opening the symbolic
+application guard agrees with the actual dependent-codomain guard. -/
+theorem models_guard_relevant_app_bound_openAt_iff {m : Capability} {Δ : BasicEnv}
+    {τ : ContextType} {y z : Atom} {T : SimpleType}
+    (wfτ : τ.WellFormedAt 1 Δ.domain) (freshY : y ∉ Δ.domain)
+    (freshZ : z ∉ Δ.domain) (hne : y ≠ z)
+    (world : m ⊨ basicWorld ((Δ.insert z (.arrow T τ.erase)).insert y T)) :
+    m ⊨ ((guard 2 (relevantEnv Δ (τ.shiftFrom 1) (.app (.bound 1) (.bound 0)))
+      (τ.shiftFrom 1) (.app (.bound 1) (.bound 0))).openAt 1 z).openAt 0 y ↔
+    m ⊨ guard 0
+      (relevantEnv ((Δ.insert z (.arrow T τ.erase)).insert y T) (τ.openAt 0 y)
+        (.app (.free z) (.free y))) (τ.openAt 0 y) (.app (.free z) (.free y)) := by
+  let Δτ := Δ.restrict τ.freeAtoms
+  let Δy := (Δτ.insert z (.arrow T τ.erase)).insert y T
+  have freshYτ : y ∉ Δτ.domain := by
+    simp only [Δτ, BasicEnv.domain_restrict, Finset.mem_inter]
+    exact fun h => freshY h.1
+  have freshZτ : z ∉ Δτ.domain := by
+    simp only [Δτ, BasicEnv.domain_restrict, Finset.mem_inter]
+    exact fun h => freshZ h.1
+  have freshτ : y ∉ τ.freeAtoms := fun h => freshY (wfτ.freeAtoms_subset h)
+  have env : relevantEnv Δ (τ.shiftFrom 1) (.app (.bound 1) (.bound 0)) = Δτ := by
+    simp [Δτ, relevantEnv, relevantAtoms, Term.support, Value.support]
+  have worldy : m ⊨ basicWorld Δy := by
+    have h := models_basicWorld_restrict
+      (relevantAtoms (τ.openAt 0 y) (.app (.free z) (.free y))) world
+    change m ⊨ basicWorld (relevantEnv ((Δ.insert z (.arrow T τ.erase)).insert y T)
+      (τ.openAt 0 y) (.app (.free z) (.free y))) at h
+    rwa [relevantEnv_insert_app_free] at h
+  have worldτ : m ⊨ basicWorld Δτ := by
+    have hw := (models_basicWorld_iff m Δy).1 worldy
+    apply (models_basicWorld_iff m Δτ).2
+    refine ⟨Finset.Subset.trans (by intro x hx; simp [Δy, BasicEnv.domain_insert, hx]) hw.1, ?_⟩
+    intro σ hσ x U hU
+    have hx : x ∈ Δτ.domain := (BasicEnv.mem_domain_iff Δτ x).2 ⟨U, hU⟩
+    have hxy : x ≠ y := fun h => freshYτ (h ▸ hx)
+    have hxz : x ≠ z := fun h => freshZτ (h ▸ hx)
+    apply hw.2 σ hσ x U
+    simp only [Δy, BasicEnv.lookup_insert_of_ne _ _ hxy, BasicEnv.lookup_insert_of_ne _ _ hxz]
+    exact hU
+  have wfτ' : τ.WellFormedAt 1 Δτ.domain := wfτ.regularize (by
+    simp only [Δτ, BasicEnv.domain_restrict]
+    exact Finset.subset_inter wfτ.freeAtoms_subset (Finset.Subset.refl _))
+  have formed : m ⊨ wellFormed 2 Δτ (τ.shiftFrom 1) :=
+    (models_wellFormed_iff m 2 Δτ (τ.shiftFrom 1)).2
+      ⟨(models_basicWorld_iff m Δτ).1 worldτ |>.1, wfτ'.shiftFrom 1⟩
+  have basic := models_basicTyping_app_bound_openAt freshYτ freshZτ hne worldy
+  have wfOpen : (τ.openAt 0 y).WellFormed
+      (((Δ.insert z (.arrow T τ.erase)).insert y T).domain) :=
+    (wfτ.openAt freshτ).mono (by simp [BasicEnv.domain_insert])
+  have typed : ((Δ.insert z (.arrow T τ.erase)).insert y T) ⊢ₑ
+      (.app (.free z) (.free y)) ⋮ (τ.openAt 0 y).erase := by
+    rw [ContextType.erase_openAt]
+    apply BasicTermTyp.app
+    · exact BasicValTyp.free (by
+        rw [BasicEnv.lookup_insert_of_ne _ _ (Ne.symm hne), BasicEnv.lookup_insert])
+    · exact BasicValTyp.free (BasicEnv.lookup_insert _ _ _)
+  rw [env]
+  have source : ((guard 2 Δτ (τ.shiftFrom 1) (.app (.bound 1) (.bound 0))).openAt 1 z).openAt 0 y =
+      (wellFormed 2 Δτ (τ.shiftFrom 1) ∧ᶜ (basicWorld Δτ ∧ᶜ
+        (((basicTyping Δτ (.app (.bound 1) (.bound 0)) τ.erase).openAt 1 z).openAt 0 y ∧ᶜ
+          total (.app (.free z) (.free y))))) := by
+    simp only [guard, Formula.openAt, ContextType.erase_shiftFrom]
+    rw [wellFormed_openAt_eq _ _ _ _ _ freshZτ, wellFormed_openAt_eq _ _ _ _ _ freshYτ,
+      basicWorld_openAt_eq _ _ _ freshZτ, basicWorld_openAt_eq _ _ _ freshYτ,
+      total_app_bound_openAt_eq hne]
+  rw [source]
+  constructor
+  · intro h
+    exact models_guard_relevant_of_world wfOpen typed world
+      (Formula.models_and_elim_right (Formula.models_and_elim_right
+        (Formula.models_and_elim_right h)))
+  · intro h
+    exact Formula.models_and_intro formed (Formula.models_and_intro worldτ
+      (Formula.models_and_intro basic (Formula.models_and_elim_right
+        (Formula.models_and_elim_right (Formula.models_and_elim_right h)))))
+
 /-- A returned value has an exact result graph on any support observing that value. -/
 theorem models_resultAt_ret_change_support {m : Capability}
     {X Y : Finset LogicVar} {v : Value} {y : Atom}
