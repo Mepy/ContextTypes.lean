@@ -1042,6 +1042,35 @@ theorem models_all_intro {m : Capability} {P : Formula}
   rw [Capability.restrict_domain, Finset.inter_eq_right]
   exact scope
 
+/-- Universal formulas quantify over all capabilities extending the input
+projection, not just a particular presentation by fiber extensions. -/
+theorem models_all_iff_refines (m : Capability) (P : Formula) :
+    m ⊨ Formula.all P ↔
+      P.freeAtoms ⊆ m.domain ∧
+        ∃ L : Finset Atom, ∀ y, y ∉ L → y ∉ P.freeAtoms →
+          ∀ n : Capability,
+            m.restrict P.freeAtoms ⊑ n →
+            n.domain = P.freeAtoms ∪ {y} → n ⊨ P.openAt 0 y := by
+  constructor
+  · intro h
+    have hscope : P.freeAtoms ⊆ m.domain := by
+      simpa only [freeAtoms_all] using models_scope h
+    obtain ⟨hdom, L, hall⟩ := (models_all_iff m P).1 h
+    refine ⟨hscope, L, ?_⟩
+    intro y hy hyP n href hndom
+    obtain ⟨F, hFin, hFout, hExt⟩ := Capability.FiberExtension.exists_of_refines href
+      (by rwa [hdom]) (by rw [hdom]; simpa using hyP)
+    exact hall y hy F (hFin.trans hdom) hFout n hExt
+  · rintro ⟨scope, L, hall⟩
+    apply models_all_intro scope
+    refine ⟨L ∪ P.freeAtoms, ?_⟩
+    intro y hy F hFin hFout n hExt
+    have hdom : (m.restrict P.freeAtoms).domain = P.freeAtoms := by
+      rw [Capability.restrict_domain, Finset.inter_eq_right.2 scope]
+    exact hall y (fun hyL => hy (Finset.mem_union_left _ hyL))
+      (fun hyP => hy (Finset.mem_union_right _ hyP)) n hExt.refines
+      (by rw [hExt.domain_eq, hdom, hFout])
+
 theorem models_over_iff (m : Capability) (P : Formula) :
     m ⊨ (🄾 P) ↔
       let r := m.restrict P.freeAtoms

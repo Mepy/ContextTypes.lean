@@ -169,6 +169,21 @@ theorem lookup_merge_right (σ ρ : Store) {x : Atom}
   change Finmap.lookup x (Finmap.union σ ρ) = Finmap.lookup x ρ
   exact Finmap.lookup_union_right h
 
+/-- Merging two projections recovers the projection onto their union. -/
+theorem merge_restrict (σ : Store) (X Y : Finset Atom) :
+    (σ.restrict X).merge (σ.restrict Y) = σ.restrict (X ∪ Y) := by
+  apply ext
+  intro x
+  by_cases hx : x ∈ σ.domain
+  · by_cases hX : x ∈ X
+    · rw [lookup_merge_left _ _ (by simp [hx, hX])]
+      simp [hX]
+    · rw [lookup_merge_right _ _ (by simp [hX])]
+      simp [hX]
+  · have none := (lookup_eq_none_iff σ x).2 hx
+    rw [lookup_merge_right _ _ (by simp [hx])]
+    simp [none]
+
 @[simp] theorem empty_merge (σ : Store) : (∅ : Store).merge σ = σ := by
   change Finmap.union ∅ σ = σ
   exact Finmap.empty_union
@@ -975,6 +990,87 @@ theorem extends_exists (F : FiberExtension) (m : Capability)
       nonempty := ne
       fixedDomain := fixed }
   exact ⟨n, happ, rfl, fun _ => Iff.rfl⟩
+
+/-- Every capability with fresh output variables and the given input
+projection can be presented by a fiber extension. -/
+theorem exists_of_refines {m n : Capability} {X : Finset Atom}
+    (refines : Refines m n) (domain : n.domain = m.domain ∪ X)
+    (disjoint : Disjoint m.domain X) :
+    ∃ F : FiberExtension, F.input = m.domain ∧ F.output = X ∧ F.Extends m n := by
+  classical
+  have hnX : X ⊆ n.domain := by rw [domain]; exact Finset.subset_union_right
+  have hprojection : m = n.restrict m.domain := refines
+  have hσproj : ∀ σ, σ ∈ m → σ ∈ n.restrict m.domain := by
+    intro σ hσ
+    rwa [← hprojection]
+  let f : Store → Capability := fun σ =>
+    if hσ : σ ∈ m then
+      (Classical.choose (fiber_from_projection n m.domain σ (hσproj σ hσ))).restrict X
+    else n.restrict X
+  have hf : ∀ σ (hσ : σ ∈ m),
+      IsFiber (Classical.choose (fiber_from_projection n m.domain σ (hσproj σ hσ)))
+        n m.domain σ := by
+    intro σ hσ
+    exact Classical.choose_spec (fiber_from_projection n m.domain σ (hσproj σ hσ))
+  have hfdom : ∀ σ, (f σ).domain = X := by
+    intro σ
+    by_cases hσ : σ ∈ m
+    · simp only [f, dif_pos hσ, restrict_domain, (hf σ hσ).domain_eq]
+      exact Finset.inter_eq_right.2 hnX
+    · simp only [f, dif_neg hσ, restrict_domain]
+      exact Finset.inter_eq_right.2 hnX
+  let F : FiberExtension :=
+    { input := m.domain
+      output := X
+      disjoint := disjoint
+      rel := fun σ w => w = f σ
+      rel_domain := by
+        intro σ w _ hw
+        subst w
+        exact hfdom σ
+      rel_nonempty := by
+        intro σ _
+        obtain ⟨ρ, hρ⟩ := (f σ).nonempty
+        exact ⟨f σ, ρ, rfl, hρ⟩
+      rel_extensional := by
+        intro _ w w' ρ _ hw hw'
+        subst w
+        subst w'
+        rfl }
+  refine ⟨F, rfl, rfl, ⟨?_, domain, ?_⟩⟩
+  · exact ⟨Finset.Subset.refl _, disjoint.symm⟩
+  · intro τ
+    constructor
+    · intro hτ
+      let σ := τ.restrict m.domain
+      have hσ : σ ∈ m := by
+        rw [hprojection]
+        exact ⟨τ, hτ, rfl⟩
+      let w := Classical.choose (fiber_from_projection n m.domain σ (hσproj σ hσ))
+      have hw : IsFiber w n m.domain σ := hf σ hσ
+      have hτw : τ ∈ w := by
+        apply hw.mem_iff.2
+        refine ⟨hτ, ?_⟩
+        rw [m.mem_domain hσ]
+      refine ⟨σ, f σ, τ.restrict X, hσ, ?_, ?_, ?_⟩
+      · change f σ = f (σ.restrict m.domain)
+        rw [← m.mem_domain hσ, Store.restrict_domain]
+      · simp only [f, dif_pos hσ]
+        exact ⟨τ, hτw, rfl⟩
+      · change τ = (τ.restrict m.domain).merge (τ.restrict X)
+        rw [Store.merge_restrict, ← domain, ← n.mem_domain hτ, Store.restrict_domain]
+    · rintro ⟨σ, w, o, hσ, hw, ho, rfl⟩
+      change w = f (σ.restrict m.domain) at hw
+      rw [← m.mem_domain hσ, Store.restrict_domain] at hw
+      subst w
+      simp only [f, dif_pos hσ] at ho
+      obtain ⟨τ, hτ, rfl⟩ := ho
+      have hfiber := hf σ hσ
+      have hτn : τ ∈ n := hfiber.source_mem hτ
+      have hinput : τ.restrict m.domain = σ := hfiber.restrict_input hτ
+      rw [← hinput, Store.merge_restrict, ← domain,
+        ← n.mem_domain hτn, Store.restrict_domain]
+      exact hτn
 
 /-- A deterministic fiber extension computes one output store from each input. -/
 def ofMap (I X : Finset Atom) (f : Store → Store)

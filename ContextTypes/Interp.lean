@@ -1715,6 +1715,59 @@ theorem models_resultAt_complete {m : Capability} {X : Finset LogicVar}
     rw [Store.lookup_restrict, if_pos (by simp)] at hρy
     simpa [o, Store.lookup] using hυy.trans hρy
 
+/-- Dropping input variables unused by the term preserves an exact result
+graph, including completeness for every possible nondeterministic result. -/
+theorem models_resultAt_restrict_support {m : Capability}
+    {X Y : Finset LogicVar} {e : Term} {y : Atom}
+    (closedY : LogicVar.LocallyClosed Y) (hXY : X ⊆ Y)
+    (support : e.logicSupport ⊆ X) (fresh : LogicVar.free y ∉ Y)
+    (h : m ⊨ resultAt Y e (.free y)) :
+    m.restrict (LogicVar.freeAtomSet X ∪ {y}) ⊨ resultAt X e (.free y) := by
+  let A := LogicVar.freeAtomSet X
+  let B := LogicVar.freeAtomSet Y
+  let r := m.restrict (A ∪ {y})
+  have hAB : A ⊆ B := by
+    intro x hx
+    rw [LogicVar.mem_freeAtomSet_iff] at hx ⊢
+    exact hXY hx
+  have closedX : LogicVar.LocallyClosed X := fun k hk => closedY k (hXY hk)
+  have supportY : e.logicSupport ⊆ Y := Finset.Subset.trans support hXY
+  have freshX : LogicVar.free y ∉ X := fun hy => fresh (hXY hy)
+  have hscope : A ∪ {y} ⊆ m.domain := by
+    intro x hx
+    apply Formula.models_scope h
+    rw [freeAtoms_resultAt]
+    rcases Finset.mem_union.1 hx with hx | hx
+    · exact Finset.mem_union_left _ (Finset.mem_union_left _ (hAB hx))
+    · have hxy : x = y := Finset.mem_singleton.1 hx
+      subst x
+      simp [LogicVar.freeAtoms]
+  have hinst : ∀ σ : Store,
+      instantiateTerm e (σ.restrict (A ∪ {y})).toAssignment =
+        instantiateTerm e σ.toAssignment := by
+    intro σ
+    apply instantiateTerm_eq_of_restrict_eq e X _ _ closedX support
+    change (σ.restrict (A ∪ {y})).restrict A = σ.restrict A
+    rw [Store.restrict_restrict, Finset.inter_eq_right.2 Finset.subset_union_left]
+  apply models_resultAt_intro closedX support freshX
+  · change A ∪ {y} ⊆ r.domain
+    rw [Capability.restrict_domain, Finset.inter_eq_right.2 hscope]
+  · rintro σ ⟨ρ, hρ, rfl⟩
+    obtain ⟨v, hv, heval⟩ := models_resultAt_lookup closedY supportY fresh h ρ hρ
+    refine ⟨v, ?_, ?_⟩
+    · simp [Store.lookup_restrict, hv]
+    · rwa [hinst]
+  · rintro σ ⟨ρ, hρ, rfl⟩ v heval
+    rw [hinst] at heval
+    obtain ⟨υ, hυ, hυB, hυy⟩ := models_resultAt_complete closedY supportY fresh h ρ hρ v heval
+    change υ.restrict B = ρ.restrict B at hυB
+    refine ⟨υ.restrict (A ∪ {y}), ⟨υ, hυ, rfl⟩, ?_, ?_⟩
+    · change (υ.restrict (A ∪ {y})).restrict A = (ρ.restrict (A ∪ {y})).restrict A
+      simp only [Store.restrict_restrict, Finset.inter_eq_right.2 Finset.subset_union_left]
+      have h := congrArg (fun σ : Store => σ.restrict A) hυB
+      simpa only [Store.restrict_restrict, Finset.inter_eq_right.2 hAB] using h
+    · simp [Store.lookup_restrict, hυy]
+
 /-- Pointwise equality of reachable results preserves an exact result graph. -/
 theorem models_resultAt_of_reaches_iff {m : Capability}
     {X : Finset LogicVar} {e₁ e₂ : Term} {y : Atom}
@@ -1779,6 +1832,138 @@ theorem instantiateTerm_matchBool_mustTerminate_iff
   cases b with
   | false => exact Term.match_false_mustTerminate_iff closed.2.1 closed.2.2
   | true => exact Term.match_true_mustTerminate_iff closed.2.1 closed.2.2
+
+/-- Result-first universal obligations transport along pointwise equality of
+results, even when the target observes additional input variables. -/
+theorem models_all_resultAt_of_reaches_iff
+    {m : Capability} {A B : Finset Atom} {e₁ e₂ : Term} {Q : Formula}
+    (closed₁ : e₁.locallyClosed) (closed₂ : e₂.locallyClosed)
+    (support₁ : e₁.support ⊆ A) (support₂ : e₂.support ⊆ B)
+    (hAB : A ⊆ B) (supportQ : Q.freeAtoms ⊆ A) (scope : B ⊆ m.domain)
+    (heval : ∀ σ, σ ∈ m → ∀ v,
+      (instantiateTerm e₁ σ.toAssignment).reaches v ↔
+        (instantiateTerm e₂ σ.toAssignment).reaches v)
+    (h : m ⊨ Formula.all (resultAt (A.image LogicVar.free) e₁ (.bound 0) ⇒ᶜ Q)) :
+    m ⊨ Formula.all (resultAt (B.image LogicVar.free) e₂ (.bound 0) ⇒ᶜ Q) := by
+  let P₁ := resultAt (A.image LogicVar.free) e₁ (.bound 0) ⇒ᶜ Q
+  let P₂ := resultAt (B.image LogicVar.free) e₂ (.bound 0) ⇒ᶜ Q
+  have hclosed : ∀ X : Finset Atom, LogicVar.LocallyClosed (X.image LogicVar.free) := by
+    intro X k hk
+    simp at hk
+  have hlogic : ∀ (e : Term) (X : Finset Atom), e.locallyClosed → e.support ⊆ X →
+      e.logicSupport ⊆ X.image LogicVar.free := by
+    intro e X closed support
+    have he : e.logicSupport = e.support.image LogicVar.free := by
+      rw [← freeAtomSet_term_logicSupport e]
+      exact LogicVar.eq_image_free_of_locallyClosed (termLogicSupport_locallyClosed e closed)
+    rw [he]
+    exact Finset.image_subset_image support
+  have hP₁ : P₁.freeAtoms = A := by
+    simp only [P₁, Formula.freeAtoms_impl, freeAtoms_resultAt,
+      Formula.LogicVar.freeAtomSet_image_free, LogicVar.freeAtoms, Finset.union_empty]
+    rw [Finset.union_eq_left.2 support₁, Finset.union_eq_left.2 supportQ]
+  have hP₂ : P₂.freeAtoms = B := by
+    simp only [P₂, Formula.freeAtoms_impl, freeAtoms_resultAt,
+      Formula.LogicVar.freeAtomSet_image_free, LogicVar.freeAtoms, Finset.union_empty]
+    rw [Finset.union_eq_left.2 support₂,
+      Finset.union_eq_left.2 (Finset.Subset.trans supportQ hAB)]
+  have hopen : ∀ (X : Finset Atom) (e : Term) (y : Atom),
+      e.locallyClosed → e.support ⊆ X → y ∉ X →
+      (resultAt (X.image LogicVar.free) e (.bound 0)).openAt 0 y =
+        resultAt (X.image LogicVar.free) e (.free y) := by
+    intro X e y closed support fresh
+    have hi := resultAt_shift_openAt (X.image LogicVar.free) e y (hclosed X) closed
+      (hlogic e X closed support) (by simpa using fresh)
+    rw [LogicVar.image_shiftFrom_eq_of_locallyClosed _ 0 (hclosed X),
+      shiftTerm_eq_of_locallyClosed e closed] at hi
+    exact hi
+  obtain ⟨_, L, hall⟩ := (Formula.models_all_iff_refines m P₁).1 h
+  apply (Formula.models_all_iff_refines m P₂).2
+  refine ⟨by rw [hP₂]; exact scope, L, ?_⟩
+  intro y hyL hyP n href hndom
+  have hyB : y ∉ B := by rwa [hP₂] at hyP
+  have hyA : y ∉ A := fun hy => hyB (hAB hy)
+  have hQopen : (Q.openAt 0 y).freeAtoms ⊆ A ∪ {y} := by
+    intro x hx
+    rcases Finset.mem_union.1 (Formula.freeAtoms_openAt_subset Q 0 y hx) with hx | hx
+    · exact Finset.mem_union_right _ hx
+    · exact Finset.mem_union_left _ (supportQ hx)
+  have hRfree : (resultAt (B.image LogicVar.free) e₂ (.free y)).freeAtoms = B ∪ {y} := by
+    simp only [freeAtoms_resultAt, Formula.LogicVar.freeAtomSet_image_free,
+      LogicVar.freeAtoms, Finset.union_eq_left.2 support₂]
+  have hn : n.domain = B ∪ {y} := by rwa [hP₂] at hndom
+  change n ⊨ ((resultAt (B.image LogicVar.free) e₂ (.bound 0)).openAt 0 y ⇒ᶜ
+    Q.openAt 0 y)
+  rw [hopen B e₂ y closed₂ support₂ hyB]
+  apply Formula.models_impl_intro
+  · simp only [Formula.freeAtoms_impl]
+    rw [hRfree, hn]
+    exact Finset.union_subset (Finset.Subset.refl _)
+      (Finset.Subset.trans hQopen (Finset.union_subset_union hAB (Finset.Subset.refl _)))
+  · intro k hnk hres
+    have hnk' : n ⊑ k := by
+      simp only [Formula.freeAtoms_impl] at hnk
+      have hp : (resultAt (B.image LogicVar.free) e₂ (.free y)).freeAtoms ∪
+          (Q.openAt 0 y).freeAtoms = B ∪ {y} := by
+        rw [hRfree]
+        exact Finset.union_eq_left.2
+          (Finset.Subset.trans hQopen (Finset.union_subset_union hAB (Finset.Subset.refl _)))
+      rwa [hp, ← hn, Capability.restrict_domain_self] at hnk
+    have href' : m.restrict B ⊑ n := by rwa [hP₂] at href
+    have hmB : m.restrict B = k.restrict B := by
+      have hr := Capability.refines_trans href' hnk'
+      change m.restrict B = k.restrict (m.restrict B).domain at hr
+      rwa [Capability.restrict_domain, Finset.inter_eq_right.2 scope] at hr
+    have hevalK : ∀ σ, σ ∈ k → ∀ v,
+        (instantiateTerm e₁ σ.toAssignment).reaches v ↔
+          (instantiateTerm e₂ σ.toAssignment).reaches v := by
+      intro σ hσ v
+      have hσm : σ.restrict B ∈ m.restrict B := by
+        rw [hmB]
+        exact ⟨σ, hσ, rfl⟩
+      obtain ⟨ρ, hρ, hsame⟩ := hσm
+      have hinst₁ := instantiateTerm_eq_of_restrict_eq e₁ (B.image LogicVar.free) σ ρ
+        (hclosed B) (hlogic e₁ B closed₁ (Finset.Subset.trans support₁ hAB))
+        (by simpa only [Formula.LogicVar.freeAtomSet_image_free] using hsame.symm)
+      have hinst₂ := instantiateTerm_eq_of_restrict_eq e₂ (B.image LogicVar.free) σ ρ
+        (hclosed B) (hlogic e₂ B closed₂ support₂)
+        (by simpa only [Formula.LogicVar.freeAtomSet_image_free] using hsame.symm)
+      rw [hinst₁, hinst₂]
+      exact heval ρ hρ v
+    have hres₁ : k ⊨ resultAt (B.image LogicVar.free) e₁ (.free y) :=
+      models_resultAt_of_reaches_iff (hclosed B) (hlogic e₂ B closed₂ support₂)
+        (hlogic e₁ B closed₁ (Finset.Subset.trans support₁ hAB))
+        (by simpa using hyB) (fun σ hσ v => (hevalK σ hσ v).symm) hres
+    let r := k.restrict (A ∪ {y})
+    have hresA : r ⊨ resultAt (A.image LogicVar.free) e₁ (.free y) := by
+      have hr := models_resultAt_restrict_support (hclosed B) (Finset.image_subset_image hAB)
+        (hlogic e₁ A closed₁ support₁) (by simpa using hyB) hres₁
+      simpa only [Formula.LogicVar.freeAtomSet_image_free] using hr
+    have hrdom : r.domain = A ∪ {y} := by
+      rw [Capability.restrict_domain, Finset.inter_eq_right]
+      exact Finset.Subset.trans
+        (Finset.union_subset_union hAB (Finset.Subset.refl _))
+        (by rw [← hRfree]; exact Formula.models_scope hres)
+    have hbase : m.restrict A ⊑ r := by
+      change m.restrict A = r.restrict (m.restrict A).domain
+      rw [Capability.restrict_domain,
+        Finset.inter_eq_right.2 (Finset.Subset.trans hAB scope)]
+      change m.restrict A = (k.restrict (A ∪ {y})).restrict A
+      rw [Capability.restrict_restrict, Finset.inter_eq_right.2 Finset.subset_union_left]
+      calc
+        m.restrict A = (m.restrict B).restrict A := by
+          rw [Capability.restrict_restrict, Finset.inter_eq_right.2 hAB]
+        _ = (k.restrict B).restrict A := by rw [hmB]
+        _ = k.restrict A := by
+          rw [Capability.restrict_restrict, Finset.inter_eq_right.2 hAB]
+    have hsource : r ⊨ P₁.openAt 0 y := hall y hyL (by rwa [hP₁]) r
+      (by rwa [hP₁]) (by rwa [hP₁])
+    have hQR : r ⊨ Q.openAt 0 y := by
+      change r ⊨ ((resultAt (A.image LogicVar.free) e₁ (.bound 0)).openAt 0 y ⇒ᶜ
+        Q.openAt 0 y) at hsource
+      rw [hopen A e₁ y closed₁ support₁ hyA] at hsource
+      exact Formula.models_impl_elim hsource hresA
+    exact (Formula.models_restrict_superset k (Q.openAt 0 y) hQopen).2 hQR
 
 /-- Compose an exact result graph with a returned result alias. -/
 theorem models_resultAt_compose_ret {m : Capability}
