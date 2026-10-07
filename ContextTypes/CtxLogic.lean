@@ -963,6 +963,34 @@ theorem models_star_intro {m m₁ m₂ : Capability} {P Q : Formula}
   rw [Capability.restrict_domain, Finset.inter_eq_right]
   exact scope
 
+/-- Compatible models satisfy separating conjunction on their product,
+even when the factors contain observations unused by the formulas. -/
+theorem models_star_product {m n : Capability} {P Q : Formula}
+    (compat : Capability.Compatible m n) (hP : m ⊨ P) (hQ : n ⊨ Q) :
+    Capability.product m n compat ⊨ (P ∗ Q) := by
+  let m' := m.restrict P.freeAtoms
+  let n' := n.restrict Q.freeAtoms
+  have compat' : Capability.Compatible m' n' :=
+    Capability.Compatible.restrict_right
+      (Capability.Compatible.restrict_left compat P.freeAtoms) Q.freeAtoms
+  have scopeP := models_scope hP
+  have scopeQ := models_scope hQ
+  have domain : (Capability.product m' n' compat').domain = (P ∗ Q).freeAtoms := by
+    simp only [Capability.product_domain, m', n', Capability.restrict_domain,
+      Finset.inter_eq_right.2 scopeP, Finset.inter_eq_right.2 scopeQ, freeAtoms_star]
+  have href := Capability.product_refines compat' compat
+    (Capability.restrict_refines m P.freeAtoms) (Capability.restrict_refines n Q.freeAtoms)
+  apply models_star_intro (m := Capability.product m n compat)
+    (m₁ := m') (m₂ := n') (P := P) (Q := Q) compat'
+    (by simpa only [freeAtoms_star, Capability.product_domain] using
+      Finset.union_subset_union scopeP scopeQ) ?_
+    ((models_restrict_iff m P).1 hP) ((models_restrict_iff n Q).1 hQ)
+  change Capability.product m' n' compat' =
+    ((Capability.product m n compat).restrict (P ∗ Q).freeAtoms).restrict
+      (Capability.product m' n' compat').domain
+  rw [domain, Capability.restrict_restrict, Finset.inter_self]
+  simpa only [Capability.Refines, domain] using href
+
 theorem models_wand_iff (m : Capability) (d : Nat) (P Q : Formula) :
     m ⊨ (P -∗[d] Q) ↔
       let r := m.restrict (P -∗[d] Q).freeAtoms

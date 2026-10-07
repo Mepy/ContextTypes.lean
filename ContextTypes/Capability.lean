@@ -732,6 +732,49 @@ theorem Compatible.refines_left {m n p : Capability} (hmn : Refines m n)
   Capability.Compatible.symm
     (Capability.Compatible.refines_right hmn (Capability.Compatible.symm h))
 
+/-- Compatible products preserve the projection order in both factors. -/
+theorem product_refines
+    {m₁ n₁ m₂ n₂ : Capability}
+    (compat₁ : Compatible m₁ n₁) (compat₂ : Compatible m₂ n₂)
+    (hm : m₁ ⊑ m₂) (hn : n₁ ⊑ n₂) :
+    product m₁ n₁ compat₁ ⊑ product m₂ n₂ compat₂ := by
+  have dm := refines_domain_subset hm
+  have dn := refines_domain_subset hn
+  have project (σ ρ : Store) (hσ : σ ∈ m₂) (hρ : ρ ∈ n₂) :
+      (σ.merge ρ).restrict (m₁.domain ∪ n₁.domain) =
+        (σ.restrict m₁.domain).merge (ρ.restrict n₁.domain) := by
+    have hX : (σ.merge ρ).restrict m₁.domain = σ.restrict m₁.domain := by
+      have h := congrArg (fun s : Store => s.restrict m₁.domain)
+        (Store.restrict_merge_left_full (ρ := ρ) (m₂.mem_domain hσ))
+      simpa only [Store.restrict_restrict, Finset.inter_eq_right.2 dm] using h
+    have hY : (σ.merge ρ).restrict n₁.domain = ρ.restrict n₁.domain := by
+      rw [Store.merge_comm (compat₂ hσ hρ)]
+      have h := congrArg (fun s : Store => s.restrict n₁.domain)
+        (Store.restrict_merge_left_full (ρ := σ) (n₂.mem_domain hρ))
+      simpa only [Store.restrict_restrict, Finset.inter_eq_right.2 dn] using h
+    rw [← Store.merge_restrict, hX, hY]
+  change product m₁ n₁ compat₁ = (product m₂ n₂ compat₂).restrict (m₁.domain ∪ n₁.domain)
+  apply ext
+  · simp only [product_domain, restrict_domain]
+    exact (Finset.inter_eq_right.2 (Finset.union_subset_union dm dn)).symm
+  · intro s
+    constructor
+    · rintro ⟨σ, hσ, ρ, hρ, hc, rfl⟩
+      have hσ' : σ ∈ m₂.restrict m₁.domain := by rw [← hm]; exact hσ
+      have hρ' : ρ ∈ n₂.restrict n₁.domain := by rw [← hn]; exact hρ
+      obtain ⟨σ', hσ', hσeq⟩ := hσ'
+      obtain ⟨ρ', hρ', hρeq⟩ := hρ'
+      refine ⟨σ'.merge ρ', ⟨σ', hσ', ρ', hρ', compat₂ hσ' hρ', rfl⟩, ?_⟩
+      rw [project σ' ρ' hσ' hρ', hσeq, hρeq]
+    · rintro ⟨s, ⟨σ, hσ, ρ, hρ, hc, rfl⟩, rfl⟩
+      have hσ' : σ.restrict m₁.domain ∈ m₁ := by
+        have hp : σ.restrict m₁.domain ∈ m₂.restrict m₁.domain := ⟨σ, hσ, rfl⟩
+        rwa [← hm] at hp
+      have hρ' : ρ.restrict n₁.domain ∈ n₁ := by
+        have hp : ρ.restrict n₁.domain ∈ n₂.restrict n₁.domain := ⟨ρ, hρ, rfl⟩
+        rwa [← hn] at hp
+      exact ⟨_, hσ', _, hρ', compat₁ hσ' hρ', project σ ρ hσ hρ⟩
+
 theorem restrict_product {m n : Capability} (h : Compatible m n)
     (X : Finset Atom) :
     (product m n h).restrict X =

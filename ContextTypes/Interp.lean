@@ -3133,6 +3133,116 @@ theorem resultCapability_projection_alias {m k : Capability} {A B : Finset Atom}
       ((k.restrict (B ∪ {z})).mem_domain ((hstores σ).1 hσ))
   · exact hstores
 
+/-- Forgetting unobserved inputs preserves their correlated result graph. -/
+theorem resultsEquivOn_of_refines
+    {m n : Capability} {C : Finset Atom} {e : Term}
+    (href : m ⊑ n) (support : e.support ⊆ m.domain) (observed : C ⊆ m.domain) :
+    ResultsEquivOn C m n e e := by
+  have eval (σ ρ : Store) (same : ρ.restrict m.domain = σ) :
+      instantiateTerm e ρ.toAssignment = instantiateTerm e σ.toAssignment := by
+    apply instantiateTermAt_store_eq_of_restrict_eq
+    have h := congrArg (fun s : Store => s.restrict e.support) same
+    simpa only [Store.restrict_restrict, Finset.inter_eq_right.2 support] using h
+  have project (σ ρ : Store) (same : ρ.restrict m.domain = σ) :
+      ρ.restrict C = σ.restrict C := by
+    have h := congrArg (fun s : Store => s.restrict C) same
+    simpa only [Store.restrict_restrict, Finset.inter_eq_right.2 observed] using h
+  intro s v
+  constructor
+  · rintro ⟨σ, hσ, same, hv⟩
+    have hσn : σ ∈ n.restrict m.domain := by rw [← href]; exact hσ
+    obtain ⟨ρ, hρ, hproj⟩ := hσn
+    exact ⟨ρ, hρ, (project σ ρ hproj).trans same, by rwa [eval σ ρ hproj]⟩
+  · rintro ⟨ρ, hρ, same, hv⟩
+    have hσ : ρ.restrict m.domain ∈ m := by
+      have hp : ρ.restrict m.domain ∈ n.restrict m.domain := ⟨ρ, hρ, rfl⟩
+      rwa [← href] at hp
+    exact ⟨ρ.restrict m.domain, hσ, (project _ ρ rfl).symm.trans same,
+      by rwa [← eval _ ρ rfl]⟩
+
+/-- Canonical result capabilities extend projection/Kripke refinement. -/
+theorem resultCapability_refines
+    {m n : Capability} {e : Term} {x : Atom}
+    (href : m ⊑ n) (support : e.support ⊆ m.domain) (fresh : x ∉ n.domain)
+    (returns₁ : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e σ.toAssignment).reaches v)
+    (returns₂ : ∀ ρ, ρ ∈ n → ∃ v, (instantiateTerm e ρ.toAssignment).reaches v) :
+    resultCapability m m.domain e x (Finset.Subset.refl _) returns₁ ⊑
+      resultCapability n n.domain e x (Finset.Subset.refl _) returns₂ := by
+  have domains := Capability.refines_domain_subset href
+  have freshM : x ∉ m.domain := fun hx => fresh (domains hx)
+  have h := resultCapability_projection_of_resultsEquivOn
+    (Finset.Subset.refl m.domain) (Finset.Subset.refl n.domain) returns₁ returns₂
+    (Finset.Subset.refl m.domain) domains freshM fresh
+    (resultsEquivOn_of_refines href support (Finset.Subset.refl m.domain))
+  change _ = _
+  rw [show m.domain ∪ {x} =
+    (resultCapability m m.domain e x (Finset.Subset.refl _) returns₁).domain from rfl,
+    Capability.restrict_domain_self] at h
+  exact h
+
+/-- A fresh result name remains compatible with an independent frame. -/
+theorem compatible_resultCapability
+    {m n : Capability} {e : Term} {x : Atom}
+    (compat : Capability.Compatible m n) (fresh : x ∉ n.domain)
+    (returns : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e σ.toAssignment).reaches v) :
+    Capability.Compatible
+      (resultCapability m m.domain e x (Finset.Subset.refl _) returns) n := by
+  rintro σ ρ ⟨υ, hυ, v, hv, rfl⟩ hρ
+  apply (compat hυ hρ).restrict_left m.domain |>.merge_left
+  apply Store.Compatible.of_disjoint
+  simp only [Store.domain_singleton, n.mem_domain hρ]
+  exact Finset.disjoint_singleton_left.2 fresh
+
+/-- Forming a complete result graph commutes with a compatible input frame
+when the term only observes the first factor. -/
+theorem resultCapability_product
+    {m n : Capability} {e : Term} {x : Atom}
+    (compat : Capability.Compatible m n) (support : e.support ⊆ m.domain)
+    (fresh : x ∉ n.domain)
+    (returns₁ : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e σ.toAssignment).reaches v)
+    (returns₂ : ∀ ρ, ρ ∈ Capability.product m n compat →
+      ∃ v, (instantiateTerm e ρ.toAssignment).reaches v) :
+    resultCapability (Capability.product m n compat) (m.domain ∪ n.domain) e x
+        (Finset.Subset.refl _) returns₂ =
+      Capability.product
+        (resultCapability m m.domain e x (Finset.Subset.refl _) returns₁) n
+        (compatible_resultCapability compat fresh returns₁) := by
+  have eval (σ ρ : Store) (hσ : σ ∈ m) :
+      instantiateTerm e (σ.merge ρ).toAssignment = instantiateTerm e σ.toAssignment := by
+    apply instantiateTermAt_store_eq_of_restrict_eq
+    have h := congrArg (fun s : Store => s.restrict e.support)
+      (Store.restrict_merge_left_full (ρ := ρ) (m.mem_domain hσ))
+    simpa only [Store.restrict_restrict, Finset.inter_eq_right.2 support] using h
+  have reorder (σ ρ : Store) (v : Value) (hρ : ρ ∈ n) :
+      (σ.merge ρ).merge (Store.singleton x v) =
+        (σ.merge (Store.singleton x v)).merge ρ := by
+    have hc : Store.Compatible ρ (Store.singleton x v) := by
+      apply Store.Compatible.of_disjoint
+      simp only [n.mem_domain hρ, Store.domain_singleton]
+      exact Finset.disjoint_singleton_right.2 fresh
+    rw [Store.merge_assoc, Store.merge_comm hc, ← Store.merge_assoc]
+  apply Capability.ext
+  · simp [Finset.union_left_comm, Finset.union_comm]
+  · intro s
+    constructor
+    · rintro ⟨υ, ⟨σ, hσ, ρ, hρ, hc, rfl⟩, v, hv, rfl⟩
+      rw [Store.restrict_eq_self _ (by
+        rw [Store.domain_merge, m.mem_domain hσ, n.mem_domain hρ])]
+      have hs : (σ.merge (Store.singleton x v)) ∈
+          resultCapability m m.domain e x (Finset.Subset.refl _) returns₁ := by
+        refine ⟨σ, hσ, v, ?_, ?_⟩
+        · rwa [← eval σ ρ hσ]
+        · rw [Store.restrict_eq_self σ (by rw [m.mem_domain hσ])]
+      exact ⟨_, hs, ρ, hρ, compatible_resultCapability compat fresh returns₁ hs hρ,
+        reorder σ ρ v hρ⟩
+    · rintro ⟨σ, ⟨υ, hυ, v, hv, rfl⟩, ρ, hρ, hc, rfl⟩
+      rw [Store.restrict_eq_self υ (by rw [m.mem_domain hυ])]
+      refine ⟨υ.merge ρ, ⟨υ, hυ, ρ, hρ, compat hυ hρ, rfl⟩, v, ?_, ?_⟩
+      · rwa [eval υ ρ hυ]
+      · rw [Store.restrict_eq_self _ (by
+          rw [Store.domain_merge, m.mem_domain hυ, n.mem_domain hρ])]
+        exact (reorder υ ρ v hρ).symm
+
 /-- Naming a nondeterministic result preserves universal result-first
 obligations whose body only observes `B` and the result binder. -/
 theorem models_all_result_alias {m : Capability} {A B : Finset Atom}
