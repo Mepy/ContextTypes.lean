@@ -479,6 +479,163 @@ end
 
 mutual
 
+theorem instantiateValueAt_store_depth (v : Value) (σ : Store) (d d' : Nat) :
+    instantiateValueAt v d σ.toAssignment = instantiateValueAt v d' σ.toAssignment := by
+  cases v with
+  | const c => rfl
+  | free x => rfl
+  | bound k => simp [instantiateValueAt]
+  | lam T e =>
+      simp only [instantiateValueAt]
+      rw [instantiateTermAt_store_depth e σ (d + 1) (d' + 1)]
+  | fix T v =>
+      simp only [instantiateValueAt]
+      rw [instantiateValueAt_store_depth v σ (d + 1) (d' + 1)]
+
+theorem instantiateTermAt_store_depth (e : Term) (σ : Store) (d d' : Nat) :
+    instantiateTermAt e d σ.toAssignment = instantiateTermAt e d' σ.toAssignment := by
+  cases e with
+  | ret v =>
+      simp only [instantiateTermAt]
+      rw [instantiateValueAt_store_depth v σ d d']
+  | letE e₁ e₂ =>
+      simp only [instantiateTermAt]
+      rw [instantiateTermAt_store_depth e₁ σ d d',
+        instantiateTermAt_store_depth e₂ σ (d + 1) (d' + 1)]
+  | primitive op v =>
+      simp only [instantiateTermAt]
+      rw [instantiateValueAt_store_depth v σ d d']
+  | app v₁ v₂ =>
+      simp only [instantiateTermAt]
+      rw [instantiateValueAt_store_depth v₁ σ d d', instantiateValueAt_store_depth v₂ σ d d']
+  | matchBool v e₁ e₂ =>
+      simp only [instantiateTermAt]
+      rw [instantiateValueAt_store_depth v σ d d',
+        instantiateTermAt_store_depth e₁ σ d d', instantiateTermAt_store_depth e₂ σ d d']
+
+end
+
+mutual
+
+theorem instantiateValueAt_store_openAt (v u : Value) (σ : Store) (d k : Nat)
+    (closed : ∀ x, x ∈ v.support → ∀ w, σ.lookup x = some w → w.locallyClosed) :
+    instantiateValueAt (v.openAt k u) d σ.toAssignment =
+      (instantiateValueAt v d σ.toAssignment).openAt k (instantiateValueAt u d σ.toAssignment) := by
+  cases v with
+  | const c => rfl
+  | free x =>
+      simp only [Value.openAt, instantiateValueAt, Store.toAssignment_lookup_free]
+      cases h : σ.lookup x with
+      | none => rfl
+      | some w =>
+          simp only [Option.getD_some]
+          exact (Value.openAt_eq_self_of_locallyClosed w _ k
+            (closed x (by simp [Value.support]) w h)).symm
+  | bound j =>
+      by_cases same : j = k
+      · subst j
+        simp [Value.openAt, instantiateValueAt]
+      · simp [Value.openAt, instantiateValueAt, same]
+  | lam T e =>
+      simp only [Value.openAt, instantiateValueAt]
+      rw [instantiateTermAt_store_openAt e u σ (d + 1) (k + 1) closed,
+        instantiateValueAt_store_depth u σ (d + 1) d]
+  | fix T v =>
+      simp only [Value.openAt, instantiateValueAt]
+      rw [instantiateValueAt_store_openAt v u σ (d + 1) (k + 1) closed,
+        instantiateValueAt_store_depth u σ (d + 1) d]
+
+theorem instantiateTermAt_store_openAt (e : Term) (u : Value) (σ : Store) (d k : Nat)
+    (closed : ∀ x, x ∈ e.support → ∀ w, σ.lookup x = some w → w.locallyClosed) :
+    instantiateTermAt (e.openAt k u) d σ.toAssignment =
+      (instantiateTermAt e d σ.toAssignment).openAt k (instantiateValueAt u d σ.toAssignment) := by
+  cases e with
+  | ret v =>
+      simp only [Term.openAt, instantiateTermAt]
+      rw [instantiateValueAt_store_openAt v u σ d k closed]
+  | letE e₁ e₂ =>
+      simp only [Term.openAt, instantiateTermAt]
+      rw [instantiateTermAt_store_openAt e₁ u σ d k
+        (fun x hx => closed x (Finset.mem_union_left _ hx)),
+        instantiateTermAt_store_openAt e₂ u σ (d + 1) (k + 1)
+          (fun x hx => closed x (Finset.mem_union_right _ hx)),
+        instantiateValueAt_store_depth u σ (d + 1) d]
+  | primitive op v =>
+      simp only [Term.openAt, instantiateTermAt]
+      rw [instantiateValueAt_store_openAt v u σ d k closed]
+  | app v₁ v₂ =>
+      simp only [Term.openAt, instantiateTermAt]
+      rw [instantiateValueAt_store_openAt v₁ u σ d k
+        (fun x hx => closed x (Finset.mem_union_left _ hx)),
+        instantiateValueAt_store_openAt v₂ u σ d k
+          (fun x hx => closed x (Finset.mem_union_right _ hx))]
+  | matchBool v e₁ e₂ =>
+      simp only [Term.openAt, instantiateTermAt]
+      rw [instantiateValueAt_store_openAt v u σ d k
+        (fun x hx => closed x (Finset.mem_union_left _ (Finset.mem_union_left _ hx))),
+        instantiateTermAt_store_openAt e₁ u σ d k
+          (fun x hx => closed x (Finset.mem_union_left _ (Finset.mem_union_right _ hx))),
+        instantiateTermAt_store_openAt e₂ u σ d k
+          (fun x hx => closed x (Finset.mem_union_right _ hx))]
+
+end
+
+/-- Store instantiation only depends on free program atoms, independently
+of the logical binder depth or any unused bindings. -/
+theorem instantiateTermAt_store_eq_of_restrict_eq (e : Term) (d : Nat) (σ ρ : Store)
+    (same : σ.restrict e.support = ρ.restrict e.support) :
+    instantiateTermAt e d σ.toAssignment = instantiateTermAt e d ρ.toAssignment := by
+  apply instantiateTermAt_eq_of_agreeOn
+  intro ξ hξ
+  cases ξ with
+  | bound j => simp
+  | free x =>
+      have hx := (LogicVar.mem_freeAtomSet_iff (e.logicSupportAt d) x).2 hξ
+      rw [freeAtomSet_term_logicSupportAt] at hx
+      have h := congrArg (fun s : Store => s.lookup x) same
+      simpa only [Store.toAssignment_lookup_free, Store.lookup_restrict, if_pos hx] using h
+
+/-- Opening a let body with the name of an intermediate result agrees with
+opening its store-instantiated body with the actual value. -/
+theorem instantiateTerm_openAt_of_lookup {e : Term} {σ : Store} {x : Atom} {v : Value}
+    (closed : ∀ y, y ∈ e.support → ∀ w, σ.lookup y = some w → w.locallyClosed)
+    (lookup : σ.lookup x = some v) :
+    instantiateTerm (e.openAt 0 (.free x)) σ.toAssignment =
+      (instantiateTermAt e 1 σ.toAssignment).openAt 0 v := by
+  change instantiateTermAt (e.openAt 0 (.free x)) 0 σ.toAssignment = _
+  rw [instantiateTermAt_store_openAt e (.free x) σ 0 0 closed]
+  simp only [instantiateValueAt, Store.toAssignment_lookup_free, lookup, Option.getD_some]
+  rw [instantiateTermAt_store_depth e σ 0 1]
+
+/-- A named result added to a store instantiates an opened body exactly as
+the corresponding operational let reduction does. -/
+theorem instantiateTerm_openAt_merge_result (e : Term) (σ : Store) (X : Finset Atom)
+    (x : Atom) (v : Value) (scope : X ⊆ σ.domain) (support : e.support ⊆ X)
+    (fresh : x ∉ X)
+    (closed : ∀ y, y ∈ e.support → ∀ w, σ.lookup y = some w → w.locallyClosed) :
+    instantiateTerm (e.openAt 0 (.free x))
+      ((σ.restrict X).merge (Store.singleton x v)).toAssignment =
+        (instantiateTermAt e 1 σ.toAssignment).openAt 0 v := by
+  let ρ := (σ.restrict X).merge (Store.singleton x v)
+  have hdom : (σ.restrict X).domain = X := by
+    rw [Store.domain_restrict, Finset.inter_eq_right.2 scope]
+  have same : ρ.restrict e.support = σ.restrict e.support := by
+    have hbase : ρ.restrict X = σ.restrict X := Store.restrict_merge_left_full hdom
+    have h := congrArg (fun s : Store => s.restrict e.support) hbase
+    simpa only [Store.restrict_restrict, Finset.inter_eq_right.2 support] using h
+  have hclosed : ∀ y, y ∈ e.support → ∀ w, ρ.lookup y = some w → w.locallyClosed := by
+    intro y hy w hw
+    have h := congrArg (fun s : Store => s.lookup y) same
+    have look : ρ.lookup y = σ.lookup y := by
+      simpa only [Store.lookup_restrict, if_pos hy] using h
+    exact closed y hy w (look ▸ hw)
+  have lookup : ρ.lookup x = some v := by
+    rw [Store.lookup_merge_right _ _ (by rw [hdom]; exact fresh), Store.lookup_singleton]
+  rw [instantiateTerm_openAt_of_lookup hclosed lookup,
+    instantiateTermAt_store_eq_of_restrict_eq e 1 ρ σ same]
+
+mutual
+
   theorem valueLogicSupportAt_locallyClosed (v : Value) (d : Nat)
       (closed : v.locallyClosedAt d) :
       LogicVar.LocallyClosed (v.logicSupportAt d) := by

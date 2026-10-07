@@ -233,6 +233,21 @@ theorem MustTerminate.step_inv {e e' : Term} (terminates : e.MustTerminate)
       exact (Steps.ret_no_step v step).elim
   | step steps next => exact next e' step
 
+theorem MustTerminate.locallyClosed {e : Term} (h : e.MustTerminate) : e.locallyClosed := by
+  cases h with
+  | result result =>
+      obtain ⟨v, rfl, closed⟩ := result
+      exact closed
+  | step steps next =>
+      obtain ⟨e', step⟩ := steps
+      exact step.regular.1
+
+theorem MustTerminate.steps_inv {e e' : Term} (h : e.MustTerminate) (steps : Steps e e') :
+    e'.MustTerminate := by
+  induction steps with
+  | refl => exact h
+  | tail step steps ih => exact ih (h.step_inv step)
+
 /-- Evaluation of `e` may return `v`. -/
 def reaches (e : Term) (v : Value) : Prop :=
   Steps e (.ret v)
@@ -305,6 +320,72 @@ theorem let_reaches_iff {e₁ e₂ : Term} {v : Value}
     (Term.letE e₁ e₂).reaches v ↔
       ∃ u, e₁.reaches u ∧ (e₂.openAt 0 u).reaches v := by
   exact ⟨let_reaches, fun ⟨u, h₁, h₂⟩ => let_reaches_intro body h₁ h₂⟩
+
+/-- A let terminates on every reduction branch when its bound computation
+terminates and the body terminates for every reachable bound value. -/
+theorem MustTerminate.letE {e₁ e₂ : Term} (h₁ : e₁.MustTerminate)
+    (body : e₂.locallyClosedAt 1)
+    (branches : ∀ u, e₁.reaches u → (e₂.openAt 0 u).MustTerminate) :
+    (Term.letE e₁ e₂).MustTerminate := by
+  revert branches
+  induction h₁ with
+  | result result =>
+      obtain ⟨v, rfl, closed⟩ := result
+      intro branches
+      apply MustTerminate.step ⟨e₂.openAt 0 v, .head (.letRet v e₂ ⟨closed, body⟩)⟩
+      intro e' step
+      cases step with
+      | head head =>
+          cases head
+          exact branches v (.refl (.ret v) closed)
+      | letE step closed => exact (Steps.ret_no_step v step).elim
+  | step steps next ih =>
+      intro branches
+      obtain ⟨e', step⟩ := steps
+      apply MustTerminate.step ⟨.letE e' e₂, .letE step ⟨step.regular.1, body⟩⟩
+      intro e'' step'
+      cases step' with
+      | head head =>
+          cases head with
+          | letRet v e₂ closed => exact (Steps.ret_no_step v step).elim
+      | letE step' closed =>
+          apply ih _ step'
+          intro u hu
+          exact branches u (.tail step' hu)
+
+theorem let_left_mustTerminate {e₁ e₂ : Term}
+    (h : (Term.letE e₁ e₂).MustTerminate) : e₁.MustTerminate := by
+  generalize same : Term.letE e₁ e₂ = e at h
+  induction h generalizing e₁ e₂ with
+  | result result =>
+      obtain ⟨v, hv, _⟩ := result
+      rw [← same] at hv
+      cases hv
+  | step steps next ih =>
+      cases same
+      obtain ⟨e', step⟩ := steps
+      cases step with
+      | head head =>
+          cases head with
+          | letRet v e₂ closed => exact MustTerminate.ret v closed.1
+      | letE step closed =>
+          apply MustTerminate.step ⟨_, step⟩
+          intro e' step'
+          exact ih (.letE e' e₂) (.letE step' closed) rfl
+
+/-- Universal let termination checks every intermediate result, not just
+the existence of one successful evaluation. -/
+theorem let_mustTerminate_iff {e₁ e₂ : Term} (body : e₂.locallyClosedAt 1) :
+    (Term.letE e₁ e₂).MustTerminate ↔ e₁.MustTerminate ∧
+      ∀ u, e₁.reaches u → (e₂.openAt 0 u).MustTerminate := by
+  constructor
+  · intro h
+    refine ⟨let_left_mustTerminate h, ?_⟩
+    intro u hu
+    exact (h.steps_inv (hu.underLet body)).step_inv
+      (.head (.letRet u e₂ ⟨hu.target_closed, body⟩))
+  · rintro ⟨h₁, branches⟩
+    exact h₁.letE body branches
 
 /-- Result characterization for beta reduction. -/
 theorem beta_reaches_iff {T : SimpleType} {e : Term} {u v : Value}

@@ -253,6 +253,23 @@ theorem restrict_restricted_domain (σ : Store) (X : Finset Atom) :
   intro x hx
   simp [hx]
 
+/-- Projecting a known binding yields its singleton store. -/
+theorem restrict_singleton_of_lookup {σ : Store} {x : Atom} {v : Value}
+    (lookup : σ.lookup x = some v) : σ.restrict {x} = singleton x v := by
+  apply ext
+  intro y
+  by_cases same : y = x
+  · subst y
+    simp [lookup_restrict, lookup]
+  · rw [lookup_restrict, if_neg (by simpa using same)]
+    exact ((lookup_eq_none_iff (singleton x v) y).2 (by simpa using same)).symm
+
+/-- Recover a result store from its input projection and named output. -/
+theorem eq_restrict_merge_singleton {σ : Store} {X : Finset Atom} {x : Atom} {v : Value}
+    (scope : σ.domain ⊆ X ∪ {x}) (lookup : σ.lookup x = some v) :
+    σ = (σ.restrict X).merge (singleton x v) := by
+  rw [← restrict_singleton_of_lookup lookup, merge_restrict, restrict_eq_self σ scope]
+
 theorem Compatible.refl (σ : Store) : Compatible σ σ := by
   intro x v w hv hw
   rw [hv] at hw
