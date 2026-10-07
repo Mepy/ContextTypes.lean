@@ -2657,6 +2657,355 @@ theorem models_resultCapability (m : Capability) (X : Finset Atom)
       ⟨σ, hσ, w, hw, rfl⟩, ?_, hlookup σ hσ w⟩
     simp only [Formula.LogicVar.freeAtomSet_image_free, hbase σ hσ]
 
+/-- An exact result graph extending the observed input projection is the
+canonical capability of all results, not a choice of one result per input. -/
+theorem eq_resultCapability_of_models_resultAt {m n : Capability}
+    {X : Finset Atom} {e : Term} {y : Atom} (scope : X ⊆ m.domain)
+    (returns : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e σ.toAssignment).reaches v)
+    (closed : e.locallyClosed) (support : e.support ⊆ X) (fresh : y ∉ X)
+    (domain : n.domain = X ∪ {y}) (base : n.restrict X = m.restrict X)
+    (hres : n ⊨ resultAt (X.image LogicVar.free) e (.free y)) :
+    n = resultCapability m X e y scope returns := by
+  have closedX : LogicVar.LocallyClosed (X.image LogicVar.free) := by
+    intro j hj
+    simp at hj
+  have logicX : e.logicSupport ⊆ X.image LogicVar.free := by
+    rw [LogicVar.eq_image_free_of_locallyClosed (termLogicSupport_locallyClosed e closed),
+      freeAtomSet_term_logicSupport]
+    exact Finset.image_subset_image support
+  have inst : ∀ σ ρ : Store, σ.restrict X = ρ.restrict X →
+      instantiateTerm e σ.toAssignment = instantiateTerm e ρ.toAssignment := by
+    intro σ ρ same
+    apply instantiateTerm_eq_of_restrict_eq e (X.image LogicVar.free) σ ρ closedX logicX
+    simpa only [Formula.LogicVar.freeAtomSet_image_free] using same
+  apply Capability.ext
+  · exact domain
+  · intro σ
+    constructor
+    · intro hσ
+      have hs : σ.restrict X ∈ m.restrict X := by
+        rw [← base]
+        exact ⟨σ, hσ, rfl⟩
+      obtain ⟨ρ, hρ, same⟩ := hs
+      obtain ⟨v, hv, heval⟩ := models_resultAt_lookup closedX logicX (by simpa using fresh) hres σ hσ
+      refine ⟨ρ, hρ, v, ?_, ?_⟩
+      · rwa [inst ρ σ same]
+      · rw [same]
+        exact Store.eq_restrict_merge_singleton (by rw [n.mem_domain hσ, domain]) hv
+    · rintro ⟨ρ, hρ, v, hv, rfl⟩
+      have hρX : ρ.restrict X ∈ n.restrict X := by
+        rw [base]
+        exact ⟨ρ, hρ, rfl⟩
+      obtain ⟨σ, hσ, same⟩ := hρX
+      have heval : (instantiateTerm e σ.toAssignment).reaches v := by
+        rwa [inst σ ρ same]
+      obtain ⟨υ, hυ, same', result⟩ :=
+        models_resultAt_complete closedX logicX (by simpa using fresh) hres σ hσ v heval
+      rw [Formula.LogicVar.freeAtomSet_image_free] at same'
+      have heq : υ = (ρ.restrict X).merge (Store.singleton y v) := by
+        rw [Store.eq_restrict_merge_singleton (by rw [n.mem_domain hυ, domain]) result,
+          same', same]
+      rwa [← heq]
+
+/-- An opened body that terminates on the complete intermediate-result
+capability terminates for every possible let reduction. -/
+theorem models_total_let_of_resultCapability {m : Capability} {e₁ e₂ : Term} {x : Atom}
+    (returns : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e₁ σ.toAssignment).reaches v)
+    (fresh : x ∉ m.domain) (closed : (Term.letE e₁ e₂).locallyClosed)
+    (support : e₂.support ⊆ m.domain)
+    (closedInputs : ∀ σ, σ ∈ m → ∀ y, y ∈ e₂.support →
+      ∀ w, σ.lookup y = some w → w.locallyClosed)
+    (closedLet : ∀ σ, σ ∈ m → (instantiateTerm (.letE e₁ e₂) σ.toAssignment).locallyClosed)
+    (left : m ⊨ total e₁)
+    (body : resultCapability m m.domain e₁ x (Finset.Subset.refl _) returns ⊨
+      total (e₂.openAt 0 (.free x))) :
+    m ⊨ total (.letE e₁ e₂) := by
+  apply (models_total_iff closed).2
+  refine ⟨Finset.union_subset ((models_total_iff closed.1).1 left).1 support, ?_⟩
+  intro σ hσ
+  change (Term.letE (instantiateTerm e₁ σ.toAssignment)
+    (instantiateTermAt e₂ 1 σ.toAssignment)).MustTerminate
+  apply (Term.let_mustTerminate_iff (closedLet σ hσ).2).2
+  refine ⟨models_total_term closed.1 left hσ, ?_⟩
+  intro v hv
+  let ρ := (σ.restrict m.domain).merge (Store.singleton x v)
+  have hρ : ρ ∈ resultCapability m m.domain e₁ x (Finset.Subset.refl _) returns :=
+    ⟨σ, hσ, v, hv, rfl⟩
+  have hbody := models_total_term
+    (Term.locallyClosedAt_openAt e₂ 0 (.free x) closed.2 trivial) body hρ
+  have heq := instantiateTerm_openAt_merge_result e₂ σ m.domain x v
+    (by rw [m.mem_domain hσ]) support fresh (closedInputs σ hσ)
+  rwa [heq] at hbody
+
+/-- Let results are precisely the union of body results over all named
+intermediate stores lying above the original input store. -/
+theorem let_reaches_iff_resultCapability {m : Capability} {e₁ e₂ : Term} {x : Atom}
+    (returns : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e₁ σ.toAssignment).reaches v)
+    (fresh : x ∉ m.domain) (support : e₂.support ⊆ m.domain)
+    (closedInputs : ∀ σ, σ ∈ m → ∀ y, y ∈ e₂.support →
+      ∀ w, σ.lookup y = some w → w.locallyClosed)
+    (closedLet : ∀ σ, σ ∈ m → (instantiateTerm (.letE e₁ e₂) σ.toAssignment).locallyClosed)
+    {σ : Store} (hσ : σ ∈ m) (w : Value) :
+    (instantiateTerm (.letE e₁ e₂) σ.toAssignment).reaches w ↔
+      ∃ ρ, ρ ∈ resultCapability m m.domain e₁ x (Finset.Subset.refl _) returns ∧
+        ρ.restrict m.domain = σ ∧
+        (instantiateTerm (e₂.openAt 0 (.free x)) ρ.toAssignment).reaches w := by
+  have dom : (σ.restrict m.domain).domain = m.domain := by
+    rw [Store.domain_restrict, m.mem_domain hσ, Finset.inter_self]
+  change (Term.letE (instantiateTerm e₁ σ.toAssignment)
+    (instantiateTermAt e₂ 1 σ.toAssignment)).reaches w ↔ _
+  rw [Term.let_reaches_iff (closedLet σ hσ).2]
+  constructor
+  · rintro ⟨v, hv, hw⟩
+    refine ⟨(σ.restrict m.domain).merge (Store.singleton x v), ⟨σ, hσ, v, hv, rfl⟩, ?_, ?_⟩
+    · rw [Store.restrict_merge_left_full dom,
+        Store.restrict_eq_self σ (by rw [m.mem_domain hσ])]
+    · rw [instantiateTerm_openAt_merge_result e₂ σ m.domain x v
+        (by rw [m.mem_domain hσ]) support fresh (closedInputs σ hσ)]
+      exact hw
+  · rintro ⟨ρ, ⟨σ', hσ', v, hv, rfl⟩, same, hw⟩
+    have dom' : (σ'.restrict m.domain).domain = m.domain := by
+      rw [Store.domain_restrict, m.mem_domain hσ', Finset.inter_self]
+    rw [Store.restrict_merge_left_full dom',
+      Store.restrict_eq_self σ' (by rw [m.mem_domain hσ'])] at same
+    subst σ'
+    refine ⟨v, hv, ?_⟩
+    rwa [instantiateTerm_openAt_merge_result e₂ σ m.domain x v
+      (by rw [m.mem_domain hσ]) support fresh (closedInputs σ hσ)] at hw
+
+/-- Universal result-first quantification is equivalent to checking its
+body on the canonical capability containing every result of every input. -/
+theorem models_all_resultAt_iff_resultCapability {m : Capability} {X : Finset Atom}
+    {e : Term} {Q : Formula} (scope : X ⊆ m.domain)
+    (returns : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e σ.toAssignment).reaches v)
+    (closed : e.locallyClosed) (support : e.support ⊆ X) (supportQ : Q.freeAtoms ⊆ X) :
+    m ⊨ Formula.all (resultAt (X.image LogicVar.free) e (.bound 0) ⇒ᶜ Q) ↔
+      ∃ L : Finset Atom, ∀ y, y ∉ L → y ∉ X →
+        resultCapability m X e y scope returns ⊨ Q.openAt 0 y := by
+  let P := resultAt (X.image LogicVar.free) e (.bound 0) ⇒ᶜ Q
+  have closedX : LogicVar.LocallyClosed (X.image LogicVar.free) := by
+    intro j hj
+    simp at hj
+  have logicX : e.logicSupport ⊆ X.image LogicVar.free := by
+    rw [LogicVar.eq_image_free_of_locallyClosed (termLogicSupport_locallyClosed e closed),
+      freeAtomSet_term_logicSupport]
+    exact Finset.image_subset_image support
+  have hP : P.freeAtoms = X := by
+    simp only [P, Formula.freeAtoms_impl, freeAtoms_resultAt,
+      Formula.LogicVar.freeAtomSet_image_free, LogicVar.freeAtoms, Finset.union_empty,
+      Finset.union_eq_left.2 support, Finset.union_eq_left.2 supportQ]
+  have hopen : ∀ y, y ∉ X →
+      (resultAt (X.image LogicVar.free) e (.bound 0)).openAt 0 y =
+        resultAt (X.image LogicVar.free) e (.free y) := by
+    intro y hy
+    have h := resultAt_shift_openAt (X.image LogicVar.free) e y closedX closed logicX
+      (by simpa using hy)
+    rw [LogicVar.image_shiftFrom_eq_of_locallyClosed _ 0 closedX,
+      shiftTerm_eq_of_locallyClosed e closed] at h
+    exact h
+  constructor
+  · intro h
+    obtain ⟨_, L, hall⟩ := (Formula.models_all_iff_refines m P).1 h
+    refine ⟨L, ?_⟩
+    intro y hyL hyX
+    let g := resultCapability m X e y scope returns
+    have base : m.restrict P.freeAtoms ⊑ g := by
+      rw [hP]
+      change m.restrict X = g.restrict (m.restrict X).domain
+      rw [Capability.restrict_domain, Finset.inter_eq_right.2 scope]
+      exact (resultCapability_restrict m X e y scope returns).symm
+    have hbody := hall y hyL (by rwa [hP]) g base (by rw [hP]; rfl)
+    change g ⊨ ((resultAt (X.image LogicVar.free) e (.bound 0)).openAt 0 y ⇒ᶜ
+      Q.openAt 0 y) at hbody
+    rw [hopen y hyX] at hbody
+    exact Formula.models_impl_elim hbody
+      (models_resultCapability m X e y scope returns closed support hyX)
+  · rintro ⟨L, hall⟩
+    apply (Formula.models_all_iff_refines m P).2
+    refine ⟨by rw [hP]; exact scope, L, ?_⟩
+    intro y hyL hyP n href hndom
+    have fresh : y ∉ X := by rwa [hP] at hyP
+    have domain : n.domain = X ∪ {y} := by rwa [hP] at hndom
+    have hQfree : (Q.openAt 0 y).freeAtoms ⊆ X ∪ {y} := by
+      intro x hx
+      rcases Finset.mem_union.1 (Formula.freeAtoms_openAt_subset Q 0 y hx) with hx | hx
+      · exact Finset.mem_union_right _ hx
+      · exact Finset.mem_union_left _ (supportQ hx)
+    have hRfree : (resultAt (X.image LogicVar.free) e (.free y)).freeAtoms = X ∪ {y} := by
+      simp only [freeAtoms_resultAt, Formula.LogicVar.freeAtomSet_image_free,
+        Finset.union_eq_left.2 support, LogicVar.freeAtoms]
+    change n ⊨ ((resultAt (X.image LogicVar.free) e (.bound 0)).openAt 0 y ⇒ᶜ
+      Q.openAt 0 y)
+    rw [hopen y fresh]
+    apply Formula.models_impl_intro
+    · simp only [Formula.freeAtoms_impl, hRfree]
+      rw [domain]
+      exact Finset.union_subset (Finset.Subset.refl _) hQfree
+    · intro k hnk hres
+      have hnk' : n ⊑ k := by
+        simp only [Formula.freeAtoms_impl, hRfree, Finset.union_eq_left.2 hQfree] at hnk
+        rwa [← domain, Capability.restrict_domain_self] at hnk
+      have hmk : m.restrict X ⊑ k := Capability.refines_trans
+        (by rwa [hP] at href) hnk'
+      have baseK : m.restrict X = k.restrict X := by
+        change m.restrict X = k.restrict (m.restrict X).domain at hmk
+        rwa [Capability.restrict_domain, Finset.inter_eq_right.2 scope] at hmk
+      let r := k.restrict (X ∪ {y})
+      have domainR : r.domain = X ∪ {y} := by
+        rw [Capability.restrict_domain, Finset.inter_eq_right]
+        rw [← hRfree]
+        exact Formula.models_scope hres
+      have baseR : r.restrict X = m.restrict X := by
+        rw [Capability.restrict_restrict, Finset.inter_eq_right.2 Finset.subset_union_left]
+        exact baseK.symm
+      have hresR : r ⊨ resultAt (X.image LogicVar.free) e (.free y) := by
+        apply (Formula.models_restrict_superset k _ (by rw [hRfree])).1 hres
+      have same := eq_resultCapability_of_models_resultAt scope returns closed support fresh
+        domainR baseR hresR
+      have hQ : r ⊨ Q.openAt 0 y := by
+        rw [same]
+        exact hall y hyL fresh
+      exact Formula.models_kripke (Capability.restrict_refines k (X ∪ {y})) hQ
+
+/-- Equality of reachable results correlated with the input atoms in `X`.
+Stores may differ on every unobserved atom and on the names of local results. -/
+def ResultsEquivOn (X : Finset Atom) (m n : Capability) (e₁ e₂ : Term) : Prop :=
+  ∀ (s : Store) (v : Value),
+    (∃ σ, σ ∈ m ∧ σ.restrict X = s ∧ (instantiateTerm e₁ σ.toAssignment).reaches v) ↔
+    (∃ ρ, ρ ∈ n ∧ ρ.restrict X = s ∧ (instantiateTerm e₂ ρ.toAssignment).reaches v)
+
+theorem ResultsEquivOn.symm {X : Finset Atom} {m n : Capability} {e₁ e₂ : Term}
+    (h : ResultsEquivOn X m n e₁ e₂) : ResultsEquivOn X n m e₂ e₁ :=
+  fun s v => (h s v).symm
+
+theorem ResultsEquivOn.mono {X Y : Finset Atom} {m n : Capability} {e₁ e₂ : Term}
+    (h : ResultsEquivOn X m n e₁ e₂) (support : Y ⊆ X) :
+    ResultsEquivOn Y m n e₁ e₂ := by
+  have forward : ∀ {m n : Capability} {e₁ e₂ : Term},
+      ResultsEquivOn X m n e₁ e₂ → ∀ s v,
+      (∃ σ, σ ∈ m ∧ σ.restrict Y = s ∧ (instantiateTerm e₁ σ.toAssignment).reaches v) →
+      ∃ ρ, ρ ∈ n ∧ ρ.restrict Y = s ∧ (instantiateTerm e₂ ρ.toAssignment).reaches v := by
+    intro m n e₁ e₂ h s v
+    rintro ⟨σ, hσ, same, hv⟩
+    obtain ⟨ρ, hρ, same', hv'⟩ := (h (σ.restrict X) v).1 ⟨σ, hσ, rfl, hv⟩
+    refine ⟨ρ, hρ, ?_, hv'⟩
+    have heq := congrArg (fun s : Store => s.restrict Y) same'
+    simp only [Store.restrict_restrict, Finset.inter_eq_right.2 support] at heq
+    exact heq.trans same
+  intro s v
+  exact ⟨forward h s v, forward h.symm s v⟩
+
+/-- Correlated result equivalence yields matching canonical result
+projections on the observed input atoms and named output. -/
+theorem resultCapability_projection_of_resultsEquivOn
+    {m n : Capability} {X Y C : Finset Atom} {e₁ e₂ : Term} {y : Atom}
+    (scopeX : X ⊆ m.domain) (scopeY : Y ⊆ n.domain)
+    (returns₁ : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e₁ σ.toAssignment).reaches v)
+    (returns₂ : ∀ ρ, ρ ∈ n → ∃ v, (instantiateTerm e₂ ρ.toAssignment).reaches v)
+    (supportX : C ⊆ X) (supportY : C ⊆ Y) (freshX : y ∉ X) (freshY : y ∉ Y)
+    (h : ResultsEquivOn C m n e₁ e₂) :
+    (resultCapability m X e₁ y scopeX returns₁).restrict (C ∪ {y}) =
+      (resultCapability n Y e₂ y scopeY returns₂).restrict (C ∪ {y}) := by
+  have project : ∀ (σ : Store) (X : Finset Atom) (v : Value), C ⊆ X → y ∉ X →
+      ((σ.restrict X).merge (Store.singleton y v)).restrict (C ∪ {y}) =
+        (σ.restrict C).merge (Store.singleton y v) := by
+    intro σ X v support fresh
+    have hinter : X ∩ (C ∪ {y}) = C := by
+      apply Finset.ext
+      intro x
+      simp only [Finset.mem_inter, Finset.mem_union, Finset.mem_singleton]
+      constructor
+      · rintro ⟨hx, hxC | rfl⟩
+        · exact hxC
+        · exact (fresh hx).elim
+      · intro hx
+        exact ⟨support hx, Or.inl hx⟩
+    rw [Store.restrict_merge, Store.restrict_restrict, hinter,
+      Store.restrict_eq_self (Store.singleton y v) (by simp)]
+  have forward : ∀ {m n : Capability} {X Y : Finset Atom} {e₁ e₂ : Term}
+      (scopeX : X ⊆ m.domain) (scopeY : Y ⊆ n.domain)
+      (returns₁ : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e₁ σ.toAssignment).reaches v)
+      (returns₂ : ∀ ρ, ρ ∈ n → ∃ v, (instantiateTerm e₂ ρ.toAssignment).reaches v),
+      C ⊆ X → C ⊆ Y → y ∉ X → y ∉ Y → ResultsEquivOn C m n e₁ e₂ →
+      ∀ s, s ∈ (resultCapability m X e₁ y scopeX returns₁).restrict (C ∪ {y}) →
+        s ∈ (resultCapability n Y e₂ y scopeY returns₂).restrict (C ∪ {y}) := by
+    intro m n X Y e₁ e₂ scopeX scopeY returns₁ returns₂ hCX hCY hyX hyY h s
+    rintro ⟨υ, ⟨σ, hσ, v, hv, rfl⟩, rfl⟩
+    obtain ⟨ρ, hρ, same, hv'⟩ := (h (σ.restrict C) v).1 ⟨σ, hσ, rfl, hv⟩
+    refine ⟨(ρ.restrict Y).merge (Store.singleton y v), ⟨ρ, hρ, v, hv', rfl⟩, ?_⟩
+    rw [project ρ Y v hCY hyY, project σ X v hCX hyX, same]
+  apply Capability.ext
+  · simp only [Capability.restrict_domain, resultCapability_domain,
+      Finset.inter_eq_right.2 (Finset.union_subset_union supportX (Finset.Subset.refl _)),
+      Finset.inter_eq_right.2 (Finset.union_subset_union supportY (Finset.Subset.refl _))]
+  · intro s
+    exact ⟨forward scopeX scopeY returns₁ returns₂ supportX supportY freshX freshY h s,
+      forward scopeY scopeX returns₂ returns₁ supportY supportX freshY freshX h.symm s⟩
+
+/-- Correlated result equivalence transports a result-first obligation
+between different input capabilities and different input observation sets. -/
+theorem models_all_resultAt_of_resultsEquivOn {m n : Capability}
+    {X Y C : Finset Atom} {e₁ e₂ : Term} {Q : Formula}
+    (scopeX : X ⊆ m.domain) (scopeY : Y ⊆ n.domain)
+    (returns₁ : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e₁ σ.toAssignment).reaches v)
+    (returns₂ : ∀ ρ, ρ ∈ n → ∃ v, (instantiateTerm e₂ ρ.toAssignment).reaches v)
+    (closed₁ : e₁.locallyClosed) (closed₂ : e₂.locallyClosed)
+    (support₁ : e₁.support ⊆ X) (support₂ : e₂.support ⊆ Y)
+    (supportX : C ⊆ X) (supportY : C ⊆ Y) (supportQ : Q.freeAtoms ⊆ C)
+    (h : ResultsEquivOn C m n e₁ e₂)
+    (hsource : m ⊨ Formula.all (resultAt (X.image LogicVar.free) e₁ (.bound 0) ⇒ᶜ Q)) :
+    n ⊨ Formula.all (resultAt (Y.image LogicVar.free) e₂ (.bound 0) ⇒ᶜ Q) := by
+  obtain ⟨L, hall⟩ := (models_all_resultAt_iff_resultCapability scopeX returns₁ closed₁ support₁
+    (Finset.Subset.trans supportQ supportX)).1 hsource
+  apply (models_all_resultAt_iff_resultCapability scopeY returns₂ closed₂ support₂
+    (Finset.Subset.trans supportQ supportY)).2
+  refine ⟨L ∪ X, ?_⟩
+  intro y hy hyY
+  have hyL : y ∉ L := fun hm => hy (Finset.mem_union_left X hm)
+  have hyX : y ∉ X := fun hm => hy (Finset.mem_union_right L hm)
+  have hs : (Q.openAt 0 y).freeAtoms ⊆ C ∪ {y} := by
+    intro x hx
+    rcases Finset.mem_union.1 (Formula.freeAtoms_openAt_subset Q 0 y hx) with hx | hx
+    · exact Finset.mem_union_right _ hx
+    · exact Finset.mem_union_left _ (supportQ hx)
+  exact (Formula.models_projection (C ∪ {y}) hs
+    (resultCapability_projection_of_resultsEquivOn scopeX scopeY returns₁ returns₂
+      supportX supportY hyX hyY h)).1 (hall y hyL hyX)
+
+/-- Forgetting the fresh intermediate name identifies the complete results
+of the opened body with those of the entire let. -/
+theorem resultsEquivOn_let_resultCapability {m : Capability} {e₁ e₂ : Term} {x : Atom}
+    (returns : ∀ σ, σ ∈ m → ∃ v, (instantiateTerm e₁ σ.toAssignment).reaches v)
+    (fresh : x ∉ m.domain) (support : e₂.support ⊆ m.domain)
+    (closedInputs : ∀ σ, σ ∈ m → ∀ y, y ∈ e₂.support →
+      ∀ w, σ.lookup y = some w → w.locallyClosed)
+    (closedLet : ∀ σ, σ ∈ m → (instantiateTerm (.letE e₁ e₂) σ.toAssignment).locallyClosed)
+    {C : Finset Atom} (observed : C ⊆ m.domain) :
+    ResultsEquivOn C m (resultCapability m m.domain e₁ x (Finset.Subset.refl _) returns)
+      (.letE e₁ e₂) (e₂.openAt 0 (.free x)) := by
+  have project : ∀ σ ρ : Store, ρ.restrict m.domain = σ →
+      ρ.restrict C = σ.restrict C := by
+    intro σ ρ same
+    have h := congrArg (fun s : Store => s.restrict C) same
+    simpa only [Store.restrict_restrict, Finset.inter_eq_right.2 observed] using h
+  intro s w
+  constructor
+  · rintro ⟨σ, hσ, same, hw⟩
+    obtain ⟨ρ, hρ, base, result⟩ :=
+      (let_reaches_iff_resultCapability returns fresh support closedInputs closedLet hσ w).1 hw
+    exact ⟨ρ, hρ, (project σ ρ base).trans same, result⟩
+  · rintro ⟨ρ, hρ, same, result⟩
+    have hρmem := hρ
+    obtain ⟨σ, hσ, v, hv, hρeq⟩ := hρ
+    have dom : (σ.restrict m.domain).domain = m.domain := by
+      rw [Store.domain_restrict, m.mem_domain hσ, Finset.inter_self]
+    have base : ρ.restrict m.domain = σ := by
+      rw [hρeq, Store.restrict_merge_left_full dom,
+        Store.restrict_eq_self σ (by rw [m.mem_domain hσ])]
+    refine ⟨σ, hσ, (project σ ρ base).symm.trans same, ?_⟩
+    exact (let_reaches_iff_resultCapability returns fresh support closedInputs closedLet hσ w).2
+      ⟨ρ, hρmem, base, result⟩
+
 /-- Replacing the named result `y` by an alias `z` preserves exactly the
 observations of `B`, even when `e` has several results for each input. -/
 theorem resultCapability_projection_alias {m k : Capability} {A B : Finset Atom}
