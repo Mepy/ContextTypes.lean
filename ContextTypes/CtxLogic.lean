@@ -1016,6 +1016,42 @@ theorem models_sum_intro {m m₁ m₂ : Capability} {P Q : Formula}
   rw [Capability.restrict_domain, Finset.inter_eq_right]
   exact scope
 
+/-- A sum formula admits a splitting of the original capability, rather
+than only a splitting of its observed projection. -/
+theorem models_sum_iff_eq (m : Capability) (P Q : Formula) :
+    m ⊨ (P ⊕ Q) ↔
+      ∃ (m₁ m₂ : Capability) (h : Capability.SumDefined m₁ m₂),
+        Capability.sum m₁ m₂ h = m ∧ m₁ ⊨ P ∧ m₂ ⊨ Q := by
+  constructor
+  · intro h
+    obtain ⟨_, p₁, p₂, defined, refines, hP, hQ⟩ := (models_sum_iff m P Q).1 h
+    have full := Capability.refines_trans refines
+      (Capability.restrict_refines m (P ⊕ Q).freeAtoms)
+    obtain ⟨h₁, h₂, same⟩ := Capability.sum_pullback defined full
+    refine ⟨Capability.pullback m p₁ h₁, Capability.pullback m p₂ h₂,
+      rfl, same, ?_, ?_⟩
+    · apply models_kripke (m := p₁) _ hP
+      exact (Capability.restrict_pullback m p₁ h₁).symm
+    · apply models_kripke (m := p₂) _ hQ
+      exact (Capability.restrict_pullback m p₂ h₂).symm
+  · rintro ⟨m₁, m₂, h, rfl, hP, hQ⟩
+    let X := (P ⊕ Q).freeAtoms
+    have domain : m₁.domain = m₂.domain := h
+    have defined : Capability.SumDefined (m₁.restrict X) (m₂.restrict X) := by
+      simp only [Capability.SumDefined, Capability.restrict_domain, domain]
+    apply models_sum_intro defined
+    · simp only [freeAtoms_sum, Capability.sum_domain]
+      exact Finset.union_subset (models_scope hP)
+        (by simpa only [domain] using models_scope hQ)
+    · rw [Capability.restrict_sum]
+      exact Capability.refines_refl _
+    · exact (models_restrict_superset m₁ P (by
+        simp only [X, freeAtoms_sum]
+        exact Finset.subset_union_left)).1 hP
+    · exact (models_restrict_superset m₂ Q (by
+        simp only [X, freeAtoms_sum]
+        exact Finset.subset_union_right)).1 hQ
+
 theorem models_all_iff (m : Capability) (P : Formula) :
     m ⊨ Formula.all P ↔
       let r := m.restrict P.freeAtoms

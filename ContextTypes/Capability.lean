@@ -486,9 +486,17 @@ theorem restrict_restrict (m : Capability) (X Y : Finset Atom) :
 def Refines (m n : Capability) : Prop :=
   m = n.restrict m.domain
 
+set_option hygiene false in
+scoped[ContextTypes] infix:50 " ⊑ " => ContextTypes.Capability.Refines
+
 /-- Same-domain inclusion between the possible stores of two capabilities. -/
 def Subset (m n : Capability) : Prop :=
   m.domain = n.domain ∧ ∀ σ : Store, σ ∈ m → σ ∈ n
+
+set_option hygiene false in
+scoped[ContextTypes] infix:50 " ⊆ " => ContextTypes.Capability.Subset
+
+open scoped ContextTypes
 
 theorem refines_refl (m : Capability) : Refines m m := by
   rw [Refines, restrict_domain_self]
@@ -815,6 +823,70 @@ theorem restrict_sum {m n : Capability} (h : SumDefined m n)
     · rintro (⟨ρ, hρ, rfl⟩ | ⟨ρ, hρ, rfl⟩)
       · exact ⟨ρ, Or.inl hρ, rfl⟩
       · exact ⟨ρ, Or.inr hρ, rfl⟩
+
+/-- Keep exactly the stores of `n` whose projection belongs to `p`.  The
+inclusion hypothesis makes every store of `p` have a nonempty preimage. -/
+def pullback (n p : Capability) (h : p ⊆ n.restrict p.domain) : Capability where
+  domain := n.domain
+  stores := fun σ => σ ∈ n ∧ σ.restrict p.domain ∈ p
+  nonempty := by
+    obtain ⟨ρ, hρ⟩ := p.nonempty
+    obtain ⟨σ, hσ, hproj⟩ := h.2 ρ hρ
+    exact ⟨σ, hσ, hproj ▸ hρ⟩
+  fixedDomain := fun σ hσ => n.mem_domain hσ.1
+
+@[simp] theorem pullback_domain (n p : Capability) (h : p ⊆ n.restrict p.domain) :
+    (pullback n p h).domain = n.domain := rfl
+
+theorem mem_pullback_iff (n p : Capability) (h : p ⊆ n.restrict p.domain) (σ : Store) :
+    σ ∈ pullback n p h ↔ σ ∈ n ∧ σ.restrict p.domain ∈ p := Iff.rfl
+
+theorem restrict_pullback (n p : Capability) (h : p ⊆ n.restrict p.domain) :
+    (pullback n p h).restrict p.domain = p := by
+  apply ext
+  · exact h.1.symm
+  · intro σ
+    constructor
+    · rintro ⟨ρ, hρ, rfl⟩
+      exact hρ.2
+    · intro hσ
+      obtain ⟨ρ, hρ, hproj⟩ := h.2 σ hσ
+      exact ⟨ρ, ⟨hρ, hproj ▸ hσ⟩, hproj⟩
+
+theorem pullback_subset (n p : Capability) (h : p ⊆ n.restrict p.domain) :
+    pullback n p h ⊆ n := ⟨rfl, fun _ hσ => hσ.1⟩
+
+/-- A splitting of an input projection lifts to an exact splitting of the
+whole capability, retaining all stores over either branch. -/
+theorem sum_pullback {n p₁ p₂ : Capability} (h : SumDefined p₁ p₂)
+    (refines : sum p₁ p₂ h ⊑ n) :
+    ∃ (h₁ : p₁ ⊆ n.restrict p₁.domain) (h₂ : p₂ ⊆ n.restrict p₂.domain),
+      sum (pullback n p₁ h₁) (pullback n p₂ h₂) rfl = n := by
+  have h₁ : p₁ ⊆ n.restrict p₁.domain := by
+    have hi := subset_sum_left h
+    change sum p₁ p₂ h = n.restrict p₁.domain at refines
+    rwa [← refines]
+  have h₂ : p₂ ⊆ n.restrict p₂.domain := by
+    have hi := subset_sum_right h
+    change sum p₁ p₂ h = n.restrict p₁.domain at refines
+    rw [← h, ← refines]
+    exact hi
+  refine ⟨h₁, h₂, ?_⟩
+  apply ext
+  · rfl
+  · intro σ
+    constructor
+    · rintro (hσ | hσ)
+      · exact hσ.1
+      · exact hσ.1
+    · intro hσ
+      have hproj : σ.restrict p₁.domain ∈ sum p₁ p₂ h := by
+        rw [refines]
+        exact ⟨σ, hσ, rfl⟩
+      rcases hproj with hp | hp
+      · exact Or.inl ⟨hσ, hp⟩
+      · have hdom : p₁.domain = p₂.domain := h
+        exact Or.inr ⟨hσ, by simpa only [hdom] using hp⟩
 
 /-! ## Fibers -/
 
@@ -1218,9 +1290,3 @@ end FiberExtension
 end Capability
 
 end ContextTypes
-
-set_option hygiene false in
-scoped[ContextTypes] infix:50 " ⊑ " => ContextTypes.Capability.Refines
-
-set_option hygiene false in
-scoped[ContextTypes] infix:50 " ⊆ " => ContextTypes.Capability.Subset

@@ -1161,6 +1161,19 @@ theorem models_total_iff {m : Capability} {e : Term} (closed : e.locallyClosed) 
       · intro x
         simp [a, s]
 
+/-- Universal termination is preserved when two same-domain capabilities
+are combined by additive sum. -/
+theorem models_total_sum {m₁ m₂ : Capability} {e : Term}
+    (defined : Capability.SumDefined m₁ m₂) (closed : e.locallyClosed)
+    (h₁ : m₁ ⊨ total e) (h₂ : m₂ ⊨ total e) :
+    Capability.sum m₁ m₂ defined ⊨ total e := by
+  apply (models_total_iff closed).2
+  refine ⟨((models_total_iff closed).1 h₁).1, ?_⟩
+  intro σ hσ
+  rcases hσ with hσ | hσ
+  · exact models_total_term closed h₁ hσ
+  · exact models_total_term closed h₂ hσ
+
 /-- Pointwise erased typing and a typed input world realize the supported
 basic-typing atom. -/
 theorem models_basicTyping_of_term {m : Capability} {Δ : BasicEnv}
@@ -2060,6 +2073,32 @@ theorem models_resultAt_restrict_support {m : Capability}
       have h := congrArg (fun σ : Store => σ.restrict A) hυB
       simpa only [Store.restrict_restrict, Finset.inter_eq_right.2 hAB] using h
     · simp [Store.lookup_restrict, hυy]
+
+/-- Selecting entire input fibers preserves the exact result graph. -/
+theorem models_resultAt_pullback {m p : Capability} {X : Finset LogicVar}
+    {e : Term} {y : Atom}
+    (closedX : LogicVar.LocallyClosed X) (support : e.logicSupport ⊆ X)
+    (fresh : LogicVar.free y ∉ X)
+    (domain : p.domain = LogicVar.freeAtomSet X)
+    (sub : p ⊆ m.restrict p.domain)
+    (h : m ⊨ resultAt X e (.free y)) :
+    Capability.pullback m p sub ⊨ resultAt X e (.free y) := by
+  apply models_resultAt_intro closedX support fresh
+  · have scope := Formula.models_scope h
+    rw [freeAtoms_resultAt] at scope
+    intro x hx
+    apply scope
+    rcases Finset.mem_union.1 hx with hx | hx
+    · exact Finset.mem_union_left _ (Finset.mem_union_left _ hx)
+    · exact Finset.mem_union_right _ (by simpa [LogicVar.freeAtoms] using hx)
+  · intro σ hσ
+    exact models_resultAt_lookup closedX support fresh h σ hσ.1
+  · intro σ hσ v heval
+    obtain ⟨ρ, hρ, same, result⟩ :=
+      models_resultAt_complete closedX support fresh h σ hσ.1 v heval
+    refine ⟨ρ, ⟨hρ, ?_⟩, same, result⟩
+    rw [domain, same, ← domain]
+    exact hσ.2
 
 /-- Pointwise equality of reachable results preserves an exact result graph. -/
 theorem models_resultAt_of_reaches_iff {m : Capability}
@@ -4231,6 +4270,32 @@ theorem interpUnder_minimal («Σ» : BasicEnv) (Γ : Context) :
     interpUnder «Σ» Γ = interpUnder ((«Σ»).restrict Γ.freeAtoms) Γ := by
   cases Γ <;>
     simp [interpUnder, Context.freeAtoms, BasicEnv.restrict_restrict]
+
+theorem interpUnder_restrict («Σ» : BasicEnv) (Γ : Context) {X : Finset Atom}
+    (support : Γ.freeAtoms ⊆ X) :
+    interpUnder («Σ».restrict X) Γ = interpUnder «Σ» Γ := by
+  calc
+    interpUnder («Σ».restrict X) Γ =
+        interpUnder ((«Σ».restrict X).restrict Γ.freeAtoms) Γ :=
+      interpUnder_minimal _ Γ
+    _ = interpUnder («Σ».restrict Γ.freeAtoms) Γ := by
+      rw [BasicEnv.restrict_restrict, Finset.inter_eq_right.2 support]
+    _ = interpUnder «Σ» Γ := (interpUnder_minimal «Σ» Γ).symm
+
+/-- An additive context splits the whole capability into models of its
+two branches, even when the capability contains additional observations. -/
+theorem models_interpUnder_sum_elim {m : Capability} {«Σ» : BasicEnv}
+    {Γ₁ Γ₂ : Context} (h : m ⊨ interpUnder «Σ» (.sum Γ₁ Γ₂)) :
+    ∃ (m₁ m₂ : Capability) (defined : Capability.SumDefined m₁ m₂),
+      Capability.sum m₁ m₂ defined = m ∧
+        m₁ ⊨ interpUnder «Σ» Γ₁ ∧ m₂ ⊨ interpUnder «Σ» Γ₂ := by
+  have hbody := Formula.models_and_elim_right h
+  change m ⊨
+    (interpUnder («Σ».restrict (Γ₁.freeAtoms ∪ Γ₂.freeAtoms)) Γ₁ ⊕
+     interpUnder («Σ».restrict (Γ₁.freeAtoms ∪ Γ₂.freeAtoms)) Γ₂) at hbody
+  rw [interpUnder_restrict «Σ» Γ₁ Finset.subset_union_left,
+    interpUnder_restrict «Σ» Γ₂ Finset.subset_union_right] at hbody
+  exact (Formula.models_sum_iff_eq _ _ _).1 hbody
 
 /-- The ambient erased world is observed by the context interpretation. -/
 theorem erasureUnder_domain_subset_freeAtoms_interpUnder
