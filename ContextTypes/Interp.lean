@@ -1700,6 +1700,172 @@ theorem models_basicTyping_of_world {m : Capability} {Δ : BasicEnv}
     (fun σ hσ => instantiateTerm_typed typed
       ((models_basicWorld_iff m Δ).1 world |>.2 σ hσ))
 
+/-- Opening names a term binder without changing the erased obligations on
+the original free environment. -/
+theorem basicTypingQualifier_openAt_holds_iff
+    (Δ : BasicEnv) (e : Term) (T : SimpleType) (k : Nat) (y : Atom)
+    (freshΔ : y ∉ Δ.domain) (freshE : y ∉ e.support)
+    (ρ : AssignmentOn ((basicTypingQualifier Δ e T).openAt k y).support) :
+    ((basicTypingQualifier Δ e T).openAt k y).holds ρ ↔
+      e.support ⊆ Δ.domain ∧
+      storeTyped (fun ξ => match ξ with | .bound _ => none | .free x => Δ.lookup x)
+        ρ.assignment ∧
+      (∅ ⊢ₑ instantiateTerm (e.openAt k (.free y)) ρ.assignment ⋮ T) := by
+  have lookup : LogicVar.bound k ∈ e.logicSupport →
+      ∃ u, ρ.assignment.lookup (.free y) = some u := by
+    intro hb
+    apply (Assignment.mem_domain_iff ρ.assignment (.free y)).1
+    rw [ρ.domain_eq]
+    change .free y ∈ LogicVar.openSupport k y
+      (Δ.domain.image LogicVar.free ∪ e.logicSupport)
+    rw [LogicVar.mem_openSupport]
+    simpa [LogicVar.openBinder, LogicVar.swap] using hb
+  have inst := instantiateTermAt_openAt_swap e 0 k y (Nat.zero_le k) freshE
+    (by simpa using lookup)
+  have world : storeTyped
+      (fun ξ => match ξ with | .bound _ => none | .free x => Δ.lookup x)
+      (ρ.assignment.swap (.bound k) (.free y)) ↔
+      storeTyped (fun ξ => match ξ with | .bound _ => none | .free x => Δ.lookup x)
+        ρ.assignment := by
+    constructor <;> intro h ξ U hU
+    all_goals cases ξ with
+    | bound j => simp at hU
+    | free x =>
+        have hx : x ∈ Δ.domain := (BasicEnv.mem_domain_iff Δ x).2 ⟨U, hU⟩
+        have hxy : x ≠ y := fun h => freshΔ (h ▸ hx)
+        simpa [Assignment.lookup_swap, LogicVar.swap, hxy] using h (.free x) U hU
+  simp only [Qualifier.openAt, basicTypingQualifier, AssignmentOn.swapBack]
+  simp only [instantiateTerm, Nat.sub_zero] at inst ⊢
+  rw [← inst]
+  constructor
+  · rintro ⟨scope, hw, ht⟩
+    exact ⟨scope, world.1 hw, ht⟩
+  · rintro ⟨scope, hw, ht⟩
+    exact ⟨scope, world.2 hw, ht⟩
+
+/-- A typed fresh named input realizes the opened symbolic basic-typing atom. -/
+theorem models_basicTyping_openAt_of_world
+    {m : Capability} {Δ : BasicEnv} {e : Term} {T U : SimpleType} {k : Nat} {y : Atom}
+    (freshΔ : y ∉ Δ.domain) (freshE : y ∉ e.support)
+    (support : e.support ⊆ Δ.domain)
+    (typed : Δ.insert y U ⊢ₑ e.openAt k (.free y) ⋮ T)
+    (world : m ⊨ basicWorld (Δ.insert y U)) :
+    m ⊨ (basicTyping Δ e T).openAt k y := by
+  let e' := e.openAt k (.free y)
+  let q := (basicTypingQualifier Δ e T).openAt k y
+  let X := Δ.domain ∪ e'.support
+  have hΔ : LogicVar.openSupport k y (Δ.domain.image LogicVar.free) =
+      Δ.domain.image LogicVar.free := by
+    apply LogicVar.openSupport_eq_self_of_fresh
+    · simp
+    · simpa using freshΔ
+  have he := e.logicSupportAt_openAt 0 k y freshE
+  simp only [Nat.add_zero] at he
+  change e'.logicSupport = LogicVar.openSupport k y e.logicSupport at he
+  have hefree : e'.logicSupport = e'.support.image LogicVar.free := by
+    rw [← freeAtomSet_term_logicSupport e']
+    exact LogicVar.eq_image_free_of_locallyClosed (termLogicSupport_locallyClosed e' typed.locallyClosed)
+  have hq : q.support = X.image LogicVar.free := by
+    change LogicVar.openSupport k y (Δ.domain.image LogicVar.free ∪ e.logicSupport) = _
+    rw [show LogicVar.openSupport k y (Δ.domain.image LogicVar.free ∪ e.logicSupport) =
+      LogicVar.openSupport k y (Δ.domain.image LogicVar.free) ∪
+        LogicVar.openSupport k y e.logicSupport by
+          simp only [LogicVar.openSupport, Finset.image_union], hΔ, ← he, hefree]
+    simp only [X, Finset.image_union]
+  have hqfree : q.freeAtoms = X := by
+    change LogicVar.freeAtomSet q.support = X
+    rw [hq, Formula.LogicVar.freeAtomSet_image_free]
+  have hw := (models_basicWorld_iff m _).1 world
+  have scope : X ⊆ m.domain := by
+    apply Finset.Subset.trans _ hw.1
+    apply Finset.union_subset
+    · simp only [BasicEnv.domain_insert]
+      exact Finset.subset_union_right
+    · exact typed.support_subset
+  simp only [basicTyping, Formula.fiberAtom, Formula.openAt]
+  change m ⊨ Formula.fiberAtom q
+  apply (Formula.models_fiberAtom_iff m q).2
+  refine ⟨?_, by rwa [hqfree], ?_⟩
+  · intro j hj
+    rw [hq] at hj
+    simp at hj
+  · intro σ hσ
+    let s := σ.restrict X
+    have hsdom : s.domain = X := by
+      rw [Store.domain_restrict, m.mem_domain hσ, Finset.inter_eq_right.2 scope]
+    let a : AssignmentOn q.support :=
+      { assignment := s.toAssignment
+        domain_eq := by rw [Store.toAssignment_domain, hsdom, hq] }
+    refine ⟨by rw [hqfree]; exact hsdom, a, ?_, ?_⟩
+    · apply (basicTypingQualifier_openAt_holds_iff Δ e T k y freshΔ freshE a).2
+      refine ⟨support, ?_, ?_⟩
+      · intro ξ V hV
+        cases ξ with
+        | bound j => simp at hV
+        | free x =>
+            have hx : x ∈ Δ.domain := (BasicEnv.mem_domain_iff Δ x).2 ⟨V, hV⟩
+            have hxy : x ≠ y := fun h => freshΔ (h ▸ hx)
+            obtain ⟨u, hu, huT⟩ := hw.2 σ hσ x V (by
+              rw [BasicEnv.lookup_insert_of_ne _ _ hxy]
+              exact hV)
+            refine ⟨u, ?_, huT⟩
+            simp [a, s, Store.toAssignment_lookup_free, Store.lookup_restrict, X, hx, hu]
+      · have inst : instantiateTerm e' a.assignment = instantiateTerm e' σ.toAssignment := by
+          apply instantiateTerm_eq_of_agreeOn
+          intro ξ hξ
+          cases ξ with
+          | bound j => exact (termLogicSupport_locallyClosed e' typed.locallyClosed j hξ).elim
+          | free x =>
+              have hx : x ∈ e'.support := by
+                rw [← freeAtomSet_term_logicSupport, LogicVar.mem_freeAtomSet_iff]
+                exact hξ
+              simp [a, s, Store.toAssignment_lookup_free, Store.lookup_restrict, X, hx]
+        change ∅ ⊢ₑ instantiateTerm e' a.assignment ⋮ T
+        rw [inst]
+        exact instantiateTerm_typed typed (hw.2 σ hσ)
+    · intro x
+      simp [a, s, hqfree]
+
+/-- Opening the outermost dependent input transports all guard obligations,
+provided the named input environment realizes the opened term's erased typing. -/
+theorem models_guard_openAt_iff
+    {m : Capability} {Δ : BasicEnv} {τ : ContextType} {e : Term}
+    {d : Nat} {y : Atom} {U : SimpleType}
+    (wfτ : τ.WellFormedAt (d + 1) Δ.domain)
+    (freshΔ : y ∉ Δ.domain) (freshE : y ∉ e.support)
+    (support : e.support ⊆ Δ.domain)
+    (typed : Δ.insert y U ⊢ₑ e.openAt d (.free y) ⋮ τ.erase)
+    (world : m ⊨ basicWorld (Δ.insert y U)) :
+    m ⊨ (guard (d + 1) Δ τ e).openAt d y ↔
+      m ⊨ guard d (Δ.insert y U) (τ.openAt d y) (e.openAt d (.free y)) := by
+  have freshτ : y ∉ τ.freeAtoms := fun hy => freshΔ (wfτ.freeAtoms_subset hy)
+  have wfOpen : (τ.openAt d y).WellFormedAt d (Δ.insert y U).domain := by
+    simpa only [BasicEnv.domain_insert, Finset.union_comm] using wfτ.openAt freshτ
+  have worldΔ : m ⊨ basicWorld Δ := by
+    obtain ⟨scope, htyped⟩ := (models_basicWorld_iff m _).1 world
+    apply (models_basicWorld_iff m Δ).2
+    refine ⟨Finset.Subset.trans (by simp [BasicEnv.domain_insert]) scope, ?_⟩
+    intro σ hσ x T hx
+    have hxΔ : x ∈ Δ.domain := (BasicEnv.mem_domain_iff Δ x).2 ⟨T, hx⟩
+    have hxy : x ≠ y := fun h => freshΔ (h ▸ hxΔ)
+    apply htyped σ hσ x T
+    rwa [BasicEnv.lookup_insert_of_ne _ _ hxy]
+  have formed : m ⊨ wellFormed (d + 1) Δ τ :=
+    (models_wellFormed_iff m _ _ _).2
+      ⟨(models_basicWorld_iff m Δ).1 worldΔ |>.1, wfτ⟩
+  have formedOpen : m ⊨ wellFormed d (Δ.insert y U) (τ.openAt d y) :=
+    (models_wellFormed_iff m _ _ _).2
+      ⟨(models_basicWorld_iff m _).1 world |>.1, wfOpen⟩
+  have basic := models_basicTyping_openAt_of_world freshΔ freshE support typed world
+  have basicOpen : m ⊨ basicTyping (Δ.insert y U) (e.openAt d (.free y)) (τ.openAt d y).erase := by
+    rw [ContextType.erase_openAt]
+    exact models_basicTyping_of_world typed world
+  simp only [guard, Formula.openAt]
+  rw [wellFormed_openAt_eq _ _ _ _ _ freshΔ, basicWorld_openAt_eq _ _ _ freshΔ,
+    total_openAt e d y freshE]
+  simp only [Formula.models_and_iff, formed, worldΔ, formedOpen, world, basic, basicOpen,
+    true_and]
+
 /-- Static formation and typing, a typed input world, and totality establish
 the guard after restricting the environment to its relevant variables. -/
 theorem models_guard_relevant_of_world {m : Capability} {Δ : BasicEnv}
