@@ -1313,6 +1313,47 @@ theorem models_all_iff_full (m : Capability) (P : Formula) :
       (by simpa only [Finset.union_comm] using freeAtoms_openAt_subset P 0 y)).1 at hn'
     rwa [same] at hn'
 
+/-- A universally quantified implication can change its consequent whenever
+the two consequents agree under the opened antecedent. -/
+theorem models_all_impl_congr {m : Capability} {A P Q : Formula}
+    (scopeP : (A ⇒ᶜ P).freeAtoms ⊆ m.domain)
+    (scopeQ : (A ⇒ᶜ Q).freeAtoms ⊆ m.domain)
+    (cases : ∃ L : Finset Atom, ∀ y, y ∉ L → y ∉ m.domain →
+      ∀ n : Capability, m ⊑ n → n.domain = m.domain ∪ {y} →
+        n ⊨ A.openAt 0 y → (n ⊨ P.openAt 0 y ↔ n ⊨ Q.openAt 0 y)) :
+    m ⊨ Formula.all (A ⇒ᶜ P) ↔ m ⊨ Formula.all (A ⇒ᶜ Q) := by
+  obtain ⟨L, equiv⟩ := cases
+  have scope (R : Formula) (hR : (A ⇒ᶜ R).freeAtoms ⊆ m.domain)
+      {y : Atom} {n : Capability} (hdom : n.domain = m.domain ∪ {y}) :
+      (A.openAt 0 y ⇒ᶜ R.openAt 0 y).freeAtoms ⊆ n.domain := by
+    change ((A ⇒ᶜ R).openAt 0 y).freeAtoms ⊆ n.domain
+    apply Finset.Subset.trans (freeAtoms_openAt_subset _ _ _)
+    rw [hdom]
+    exact Finset.union_subset (by simp) (Finset.Subset.trans hR Finset.subset_union_left)
+  constructor
+  · intro h
+    obtain ⟨_, L', hall⟩ := (models_all_iff_full m (A ⇒ᶜ P)).1 h
+    apply (models_all_iff_full m (A ⇒ᶜ Q)).2
+    refine ⟨scopeQ, L ∪ L', ?_⟩
+    intro y hy fresh n href hdom
+    change n ⊨ (A.openAt 0 y ⇒ᶜ Q.openAt 0 y)
+    apply (models_impl_iff_of_scope n _ _ (scope Q scopeQ hdom)).2
+    intro hA
+    have hP := (models_impl_iff_of_scope n _ _ (scope P scopeP hdom)).1
+      (hall y (fun hx => hy (Finset.mem_union_right _ hx)) fresh n href hdom) hA
+    exact (equiv y (fun hx => hy (Finset.mem_union_left _ hx)) fresh n href hdom hA).1 hP
+  · intro h
+    obtain ⟨_, L', hall⟩ := (models_all_iff_full m (A ⇒ᶜ Q)).1 h
+    apply (models_all_iff_full m (A ⇒ᶜ P)).2
+    refine ⟨scopeP, L ∪ L', ?_⟩
+    intro y hy fresh n href hdom
+    change n ⊨ (A.openAt 0 y ⇒ᶜ P.openAt 0 y)
+    apply (models_impl_iff_of_scope n _ _ (scope P scopeP hdom)).2
+    intro hA
+    have hQ := (models_impl_iff_of_scope n _ _ (scope Q scopeQ hdom)).1
+      (hall y (fun hx => hy (Finset.mem_union_right _ hx)) fresh n href hdom) hA
+    exact (equiv y (fun hx => hy (Finset.mem_union_left _ hx)) fresh n href hdom hA).2 hQ
+
 theorem models_over_iff (m : Capability) (P : Formula) :
     m ⊨ (🄾 P) ↔
       let r := m.restrict P.freeAtoms

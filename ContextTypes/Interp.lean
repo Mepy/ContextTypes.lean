@@ -1500,6 +1500,16 @@ theorem models_basicWorld_iff (m : Capability) (Δ : BasicEnv) :
         simp [ρ, basicWorldQualifier, Qualifier.freeAtoms,
           LogicVar.freeAtoms]
 
+/-- Pointwise inclusion of erased environments forgets only world obligations. -/
+theorem models_basicWorld_of_subset {m : Capability} {Δ Δ' : BasicEnv}
+    (embed : Δ.Subset Δ') (world : m ⊨ basicWorld Δ') : m ⊨ basicWorld Δ := by
+  obtain ⟨scope, typed⟩ := (models_basicWorld_iff m Δ').1 world
+  apply (models_basicWorld_iff m Δ).2
+  refine ⟨?_, fun σ hσ x T hx => typed σ hσ x T (embed x T hx)⟩
+  intro x hx
+  obtain ⟨T, hT⟩ := (BasicEnv.mem_domain_iff Δ x).1 hx
+  exact scope ((BasicEnv.mem_domain_iff Δ' x).2 ⟨T, embed x T hT⟩)
+
 /-- Removing basic-environment bindings preserves the remaining world facts. -/
 theorem models_basicWorld_restrict {m : Capability} {Δ : BasicEnv}
     (X : Finset Atom) (h : m ⊨ basicWorld Δ) :
@@ -4308,6 +4318,30 @@ theorem models_resultFirst_openAt_lookup {m : Capability}
       (instantiateTerm e σ.toAssignment).reaches v := by
   rw [resultFirst_openAt Δ τ e y closed closedE support fresh] at h
   exact models_resultAt_lookup closed support fresh h
+
+/-- A complete result graph of a basically typed term supplies the basic
+typing of its fresh named result, without making evaluation deterministic. -/
+theorem models_basicWorld_resultFirst_openAt {m : Capability} {Δ : BasicEnv}
+    {τ : ContextType} {e : Term} {y : Atom}
+    (wfτ : τ.WellFormed Δ.domain) (typed : Δ ⊢ₑ e ⋮ τ.erase)
+    (world : m ⊨ basicWorld Δ) (fresh : y ∉ Δ.domain)
+    (graph : m ⊨ (resultFirst Δ τ e).openAt 0 y) :
+    m ⊨ basicWorld (Δ.insert y τ.erase) := by
+  have closed := relevantSupport_locallyClosed Δ τ e wfτ.locallyClosedAt typed.locallyClosed
+  have support := logicSupport_subset_relevantSupport Δ τ e typed.support_subset
+  have freshX : LogicVar.free y ∉ relevantSupport Δ τ e := by
+    rw [free_mem_relevantSupport_iff]
+    exact fun hx => fresh hx.1
+  have sound := models_resultFirst_openAt_lookup closed typed.locallyClosed support freshX graph
+  have hy : y ∈ m.domain := by
+    rw [resultFirst_openAt Δ τ e y closed typed.locallyClosed support freshX] at graph
+    apply Formula.models_scope graph
+    rw [freeAtoms_resultAt]
+    simp [LogicVar.freeAtoms]
+  apply models_basicWorld_insert world hy
+  intro σ hσ
+  obtain ⟨v, hv, reaches⟩ := sound σ hσ
+  exact ⟨v, hv, (instantiateTerm_typed typed ((models_basicWorld_iff m Δ).1 world |>.2 σ hσ)).reaches reaches⟩
 
 theorem models_resultFirst_ret_free_openAt_lookup {m : Capability}
     {Δ : BasicEnv} {τ : ContextType} {y z : Atom}
