@@ -344,6 +344,66 @@ abbrev logicSupport (e : Term) : Finset LogicVar :=
 end Term
 
 mutual
+/-- Opening transports the externally visible support of a value. -/
+theorem Value.logicSupportAt_openAt (v : Value) (d k : Nat) (y : Atom)
+    (fresh : y ∉ v.support) :
+    (v.openAt (k + d) (.free y)).logicSupportAt d =
+      LogicVar.openSupport k y (v.logicSupportAt d) := by
+  cases v with
+  | const c => simp [Value.openAt, Value.logicSupportAt, LogicVar.openSupport]
+  | free x =>
+      have hxy : x ≠ y := by intro h; subst x; simp [Value.support] at fresh
+      simp [Value.openAt, Value.logicSupportAt, LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap, hxy]
+  | bound j =>
+      by_cases same : j = k + d
+      · subst j
+        simp [Value.openAt, Value.logicSupportAt, boundLogicSupportAt,
+          LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap]
+      · by_cases hdj : d ≤ j
+        · have hjk : j - d ≠ k := by omega
+          simp [Value.openAt, Value.logicSupportAt, boundLogicSupportAt, same, hdj,
+            LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap, hjk]
+        · simp [Value.openAt, Value.logicSupportAt, boundLogicSupportAt, same, hdj,
+            LogicVar.openSupport]
+  | lam T e =>
+      simp only [Value.openAt, Value.logicSupportAt]
+      rw [show k + d + 1 = k + (d + 1) by omega,
+        Term.logicSupportAt_openAt e (d + 1) k y fresh]
+  | fix T v =>
+      simp only [Value.openAt, Value.logicSupportAt]
+      rw [show k + d + 1 = k + (d + 1) by omega,
+        Value.logicSupportAt_openAt v (d + 1) k y fresh]
+
+/-- Opening transports the externally visible support of a term. -/
+theorem Term.logicSupportAt_openAt (e : Term) (d k : Nat) (y : Atom)
+    (fresh : y ∉ e.support) :
+    (e.openAt (k + d) (.free y)).logicSupportAt d =
+      LogicVar.openSupport k y (e.logicSupportAt d) := by
+  cases e with
+  | ret v => exact Value.logicSupportAt_openAt v d k y fresh
+  | letE e₁ e₂ =>
+      have hf : y ∉ e₁.support ∧ y ∉ e₂.support := by simpa [Term.support] using fresh
+      simp only [Term.openAt, Term.logicSupportAt]
+      rw [Term.logicSupportAt_openAt e₁ d k y hf.1,
+        show k + d + 1 = k + (d + 1) by omega,
+        Term.logicSupportAt_openAt e₂ (d + 1) k y hf.2]
+      simp [LogicVar.openSupport, Finset.image_union]
+  | primitive op v => exact Value.logicSupportAt_openAt v d k y fresh
+  | app v₁ v₂ =>
+      have hf : y ∉ v₁.support ∧ y ∉ v₂.support := by simpa [Term.support] using fresh
+      simp only [Term.openAt, Term.logicSupportAt]
+      rw [Value.logicSupportAt_openAt v₁ d k y hf.1, Value.logicSupportAt_openAt v₂ d k y hf.2]
+      simp [LogicVar.openSupport, Finset.image_union]
+  | matchBool v e₁ e₂ =>
+      have hf : y ∉ v.support ∧ y ∉ e₁.support ∧ y ∉ e₂.support := by
+        simpa [Term.support, and_assoc] using fresh
+      simp only [Term.openAt, Term.logicSupportAt]
+      rw [Value.logicSupportAt_openAt v d k y hf.1,
+        Term.logicSupportAt_openAt e₁ d k y hf.2.1, Term.logicSupportAt_openAt e₂ d k y hf.2.2]
+      simp [LogicVar.openSupport, Finset.image_union]
+end
+
+mutual
 
   /-- Every bound occurrence in a value is below the ambient binder depth. -/
   def Value.locallyClosedAt (d : Nat) : Value → Prop

@@ -50,6 +50,82 @@ mutual
 
 end
 
+mutual
+/-- Instantiating an opened value is equivalent to transposing the assignment key.
+The new name needs a binding only when the old key is observed. -/
+theorem instantiateValueAt_openAt_swap (v : Value) (d k : Nat) (y : Atom)
+    {ρ : Assignment} (hk : d ≤ k) (fresh : y ∉ v.support)
+    (lookup : .bound (k - d) ∈ v.logicSupportAt d → ∃ u, ρ.lookup (.free y) = some u) :
+    instantiateValueAt (v.openAt k (.free y)) d ρ =
+      instantiateValueAt v d (ρ.swap (.bound (k - d)) (.free y)) := by
+  cases v with
+  | const c => rfl
+  | free x =>
+      have hxy : x ≠ y := by intro h; subst x; simp [Value.support] at fresh
+      simp [Value.openAt, instantiateValueAt, Assignment.lookup_swap, LogicVar.swap, hxy]
+  | bound j =>
+      by_cases same : j = k
+      · subst j
+        obtain ⟨u, hu⟩ := lookup (by simp [Value.logicSupportAt, boundLogicSupportAt, hk])
+        simp [Value.openAt, instantiateValueAt, Assignment.lookup_swap, LogicVar.swap,
+          hu, Nat.not_lt_of_ge hk]
+      · by_cases hjd : j < d
+        · simp [Value.openAt, instantiateValueAt, same, hjd]
+        · have hdiff : j - d ≠ k - d := by omega
+          simp [Value.openAt, instantiateValueAt, same, hjd,
+            Assignment.lookup_swap, LogicVar.swap, hdiff]
+  | lam T e =>
+      simp only [Value.openAt, instantiateValueAt]
+      rw [instantiateTermAt_openAt_swap e (d + 1) (k + 1) y
+        (Nat.add_le_add_right hk 1) fresh (by simpa only [Nat.add_sub_add_right] using lookup),
+        Nat.add_sub_add_right]
+  | fix T v =>
+      simp only [Value.openAt, instantiateValueAt]
+      rw [instantiateValueAt_openAt_swap v (d + 1) (k + 1) y
+        (Nat.add_le_add_right hk 1) fresh (by simpa only [Nat.add_sub_add_right] using lookup),
+        Nat.add_sub_add_right]
+
+/-- Instantiating an opened term transposes the assignment key of that binder. -/
+theorem instantiateTermAt_openAt_swap (e : Term) (d k : Nat) (y : Atom)
+    {ρ : Assignment} (hk : d ≤ k) (fresh : y ∉ e.support)
+    (lookup : .bound (k - d) ∈ e.logicSupportAt d → ∃ u, ρ.lookup (.free y) = some u) :
+    instantiateTermAt (e.openAt k (.free y)) d ρ =
+      instantiateTermAt e d (ρ.swap (.bound (k - d)) (.free y)) := by
+  cases e with
+  | ret v =>
+      simp only [Term.openAt, instantiateTermAt]
+      rw [instantiateValueAt_openAt_swap v d k y hk fresh lookup]
+  | letE e₁ e₂ =>
+      have hf : y ∉ e₁.support ∧ y ∉ e₂.support := by simpa [Term.support] using fresh
+      simp only [Term.openAt, instantiateTermAt]
+      rw [instantiateTermAt_openAt_swap e₁ d k y hk hf.1
+          (fun hb => lookup (Finset.mem_union_left _ hb)),
+        instantiateTermAt_openAt_swap e₂ (d + 1) (k + 1) y
+          (Nat.add_le_add_right hk 1) hf.2 (fun hb => lookup
+            (Finset.mem_union_right _ (by simpa only [Nat.add_sub_add_right] using hb))),
+        Nat.add_sub_add_right]
+  | primitive op v =>
+      simp only [Term.openAt, instantiateTermAt]
+      rw [instantiateValueAt_openAt_swap v d k y hk fresh lookup]
+  | app v₁ v₂ =>
+      have hf : y ∉ v₁.support ∧ y ∉ v₂.support := by simpa [Term.support] using fresh
+      simp only [Term.openAt, instantiateTermAt]
+      rw [instantiateValueAt_openAt_swap v₁ d k y hk hf.1
+          (fun hb => lookup (Finset.mem_union_left _ hb)),
+        instantiateValueAt_openAt_swap v₂ d k y hk hf.2
+          (fun hb => lookup (Finset.mem_union_right _ hb))]
+  | matchBool v e₁ e₂ =>
+      have hf : y ∉ v.support ∧ y ∉ e₁.support ∧ y ∉ e₂.support := by
+        simpa [Term.support, and_assoc] using fresh
+      simp only [Term.openAt, instantiateTermAt]
+      rw [instantiateValueAt_openAt_swap v d k y hk hf.1
+          (fun hb => lookup (Finset.mem_union_left _ (Finset.mem_union_left _ hb))),
+        instantiateTermAt_openAt_swap e₁ d k y hk hf.2.1
+          (fun hb => lookup (Finset.mem_union_left _ (Finset.mem_union_right _ hb))),
+        instantiateTermAt_openAt_swap e₂ d k y hk hf.2.2
+          (fun hb => lookup (Finset.mem_union_right _ hb))]
+end
+
 abbrev instantiateTerm (e : Term) (ρ : Assignment) : Term :=
   instantiateTermAt e 0 ρ
 

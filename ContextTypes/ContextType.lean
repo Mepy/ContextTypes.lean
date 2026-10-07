@@ -69,6 +69,34 @@ theorem free_mem_supportAtDepth_iff (d : Nat) (X : Finset LogicVar)
     apply Finset.mem_biUnion.2
     exact ⟨.free x, hx, by simp [atDepth]⟩
 
+/-- Rebasing a support transports opening of an external input binder. -/
+theorem atDepth_openBinder (d k : Nat) (y : Atom) (ξ : LogicVar) :
+    LogicVar.atDepth d (LogicVar.openBinder (k + d) y ξ) =
+      (LogicVar.atDepth d ξ).map (LogicVar.openBinder k y) := by
+  cases ξ with
+  | free x =>
+      by_cases hxy : x = y
+      all_goals simp [LogicVar.atDepth, LogicVar.openBinder, LogicVar.swap, hxy]
+  | bound j =>
+      by_cases same : j = k + d
+      · subst j
+        simp [LogicVar.atDepth, LogicVar.openBinder, LogicVar.swap]
+      · by_cases hdj : d ≤ j
+        · have hjk : j - d ≠ k := by omega
+          simp [LogicVar.atDepth, LogicVar.openBinder, LogicVar.swap, same, hdj, hjk]
+        · simp [LogicVar.atDepth, LogicVar.openBinder, LogicVar.swap, same, hdj]
+
+/-- Rebase and open a finite support in either order. -/
+theorem supportAtDepth_openSupport (d k : Nat) (y : Atom) (X : Finset LogicVar) :
+    LogicVar.supportAtDepth d (LogicVar.openSupport (k + d) y X) =
+      LogicVar.openSupport k y (LogicVar.supportAtDepth d X) := by
+  simp only [LogicVar.supportAtDepth, LogicVar.openSupport,
+    Finset.image_biUnion, Finset.biUnion_image]
+  apply Finset.biUnion_congr rfl
+  intro ξ hξ
+  rw [LogicVar.atDepth_openBinder]
+  cases LogicVar.atDepth d ξ <;> simp
+
 end LogicVar
 
 namespace ContextType
@@ -127,6 +155,23 @@ def openAt : ContextType → Nat → Atom → ContextType
   | .arrow τ₁ τ₂, k, x => .arrow (τ₁.openAt k x) (τ₂.openAt (k + 1) x)
   | .wand τ₁ τ₂, k, x => .wand (τ₁.openAt k x) (τ₂.openAt (k + 1) x)
   | .persist τ, k, x => .persist (τ.openAt k x)
+
+/-- Context-type opening transports its externally visible logical support. -/
+theorem supportAt_openAt (τ : ContextType) (d k : Nat) (y : Atom) :
+    (τ.openAt (k + d) y).supportAt d = LogicVar.openSupport k y (τ.supportAt d) := by
+  induction τ generalizing d k with
+  | «over» b q | under b q =>
+      simp only [ContextType.openAt, ContextType.supportAt, Qualifier.support_openAt]
+      rw [show k + d + 1 = k + (d + 1) by omega, LogicVar.supportAtDepth_openSupport]
+  | inter τ₁ τ₂ ih₁ ih₂ | union τ₁ τ₂ ih₁ ih₂ | sum τ₁ τ₂ ih₁ ih₂ =>
+      simp only [ContextType.openAt, ContextType.supportAt]
+      rw [ih₁ d k, ih₂ d k]
+      simp only [LogicVar.openSupport, Finset.image_union]
+  | arrow τ₁ τ₂ ih₁ ih₂ | wand τ₁ τ₂ ih₁ ih₂ =>
+      simp only [ContextType.openAt, ContextType.supportAt]
+      rw [ih₁ d k, show k + d + 1 = k + (d + 1) by omega, ih₂ (d + 1) k]
+      simp only [LogicVar.openSupport, Finset.image_union]
+  | persist τ ih => exact ih d k
 
 theorem freeAtoms_openAt_subset (τ : ContextType) (k : Nat) (y : Atom) :
     (τ.openAt k y).freeAtoms ⊆ {y} ∪ τ.freeAtoms := by
