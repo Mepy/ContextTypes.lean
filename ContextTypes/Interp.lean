@@ -430,6 +430,49 @@ abbrev shiftTerm (e : Term) : Term :=
   shiftTermAt e 0
 
 mutual
+/-- Opening above an inserted logical binder commutes with value shifting. -/
+theorem shiftValueAt_openAt (v : Value) (d k : Nat) (y : Atom) (hk : d ≤ k) :
+    (shiftValueAt v d).openAt (k + 1) (.free y) =
+      shiftValueAt (v.openAt k (.free y)) d := by
+  cases v with
+  | const c | free x => rfl
+  | bound j =>
+      by_cases hd : d ≤ j
+      · by_cases same : j = k
+        · subst j
+          simp [shiftValueAt, Value.openAt, hk]
+        · simp [shiftValueAt, Value.openAt, hd, same]
+      · have hj : j ≠ k := by omega
+        have hj' : j ≠ k + 1 := by omega
+        simp [shiftValueAt, Value.openAt, hd, hj, hj']
+  | lam T e =>
+      simp only [shiftValueAt, Value.openAt]
+      rw [shiftTermAt_openAt e (d + 1) (k + 1) y (by omega)]
+  | fix T v =>
+      simp only [shiftValueAt, Value.openAt]
+      rw [shiftValueAt_openAt v (d + 1) (k + 1) y (by omega)]
+
+/-- Opening above an inserted logical binder commutes with term shifting. -/
+theorem shiftTermAt_openAt (e : Term) (d k : Nat) (y : Atom) (hk : d ≤ k) :
+    (shiftTermAt e d).openAt (k + 1) (.free y) =
+      shiftTermAt (e.openAt k (.free y)) d := by
+  cases e with
+  | ret v => simp only [shiftTermAt, Term.openAt, shiftValueAt_openAt v d k y hk]
+  | letE e₁ e₂ =>
+      simp only [shiftTermAt, Term.openAt]
+      rw [shiftTermAt_openAt e₁ d k y hk,
+        shiftTermAt_openAt e₂ (d + 1) (k + 1) y (by omega)]
+  | primitive op v =>
+      simp only [shiftTermAt, Term.openAt, shiftValueAt_openAt v d k y hk]
+  | app v₁ v₂ =>
+      simp only [shiftTermAt, Term.openAt, shiftValueAt_openAt v₁ d k y hk,
+        shiftValueAt_openAt v₂ d k y hk]
+  | matchBool v e₁ e₂ =>
+      simp only [shiftTermAt, Term.openAt, shiftValueAt_openAt v d k y hk,
+        shiftTermAt_openAt e₁ d k y hk, shiftTermAt_openAt e₂ d k y hk]
+end
+
+mutual
 
   theorem shiftValueAt_eq_of_locallyClosedAt (v : Value) (d : Nat)
       (closed : v.locallyClosedAt d) : shiftValueAt v d = v := by
@@ -1033,6 +1076,79 @@ def relevantSupport (Δ : BasicEnv) (τ : ContextType)
       | .bound k => {.bound k}
       | .free _ => ∅
 
+/-- Relevant free inputs are exactly observed atoms supplied by the environment. -/
+theorem free_mem_relevantSupport_iff (Δ : BasicEnv) (τ : ContextType)
+    (e : Term) (x : Atom) :
+    LogicVar.free x ∈ relevantSupport Δ τ e ↔
+      x ∈ Δ.domain ∧ x ∈ τ.freeAtoms ∪ e.support := by
+  simp only [relevantSupport, Finset.mem_union, Finset.mem_image, Finset.mem_biUnion]
+  constructor
+  · rintro (⟨z, hz, same⟩ | ⟨ξ, _, hx⟩)
+    · cases same
+      simpa only [relevantEnv_domain, relevantAtoms, Finset.mem_inter,
+        Finset.mem_union] using hz
+    · cases ξ <;> simp at hx
+  · intro hx
+    exact Or.inl ⟨x, by simpa only [relevantEnv_domain, relevantAtoms,
+      Finset.mem_inter, Finset.mem_union] using hx, rfl⟩
+
+/-- Every observed external bound input is retained by the relevant support. -/
+theorem bound_mem_relevantSupport_iff (Δ : BasicEnv) (τ : ContextType)
+    (e : Term) (k : Nat) :
+    LogicVar.bound k ∈ relevantSupport Δ τ e ↔
+      LogicVar.bound k ∈ τ.support ∪ e.logicSupport := by
+  simp only [relevantSupport, Finset.mem_union, Finset.mem_image, Finset.mem_biUnion]
+  constructor
+  · rintro (⟨_, _, same⟩ | ⟨ξ, hξ, hk⟩)
+    · cases same
+    · cases ξ with
+      | free x => simp at hk
+      | bound j =>
+          simp only [Finset.mem_singleton] at hk
+          cases hk
+          exact hξ
+  · intro hk
+    exact Or.inr ⟨.bound k, hk, by simp⟩
+
+/-- Naming an external binder transports precisely the relevant inputs;
+the inserted erased binding is retained only when the type or term observes it. -/
+theorem relevantSupport_openAt (Δ : BasicEnv) (τ : ContextType) (e : Term)
+    (k : Nat) (y : Atom) (T : SimpleType)
+    (freshΔ : y ∉ Δ.domain) (freshτ : y ∉ τ.freeAtoms) (freshE : y ∉ e.support) :
+    LogicVar.openSupport k y (relevantSupport Δ τ e) =
+      relevantSupport (Δ.insert y T) (τ.openAt k y) (e.openAt k (.free y)) := by
+  have hτ := τ.supportAt_openAt 0 k y
+  have he := e.logicSupportAt_openAt 0 k y freshE
+  simp only [Nat.add_zero] at hτ he
+  change (τ.openAt k y).support = LogicVar.openSupport k y τ.support at hτ
+  change (e.openAt k (.free y)).logicSupport = LogicVar.openSupport k y e.logicSupport at he
+  have hf (e : Term) (x : Atom) : x ∈ e.support ↔ .free x ∈ e.logicSupport := by
+    rw [← freeAtomSet_term_logicSupport, LogicVar.mem_freeAtomSet_iff]
+  have hfy : LogicVar.free y ∉ e.logicSupport := by simpa only [← hf] using freshE
+  have hτy : LogicVar.free y ∉ τ.support := by
+    simpa only [ContextType.free_mem_support_iff] using freshτ
+  ext ξ
+  rw [LogicVar.mem_openSupport]
+  cases ξ with
+  | free x =>
+      rw [free_mem_relevantSupport_iff, Finset.mem_union,
+        ← ContextType.free_mem_support_iff, hf, hτ, he]
+      simp only [LogicVar.mem_openSupport]
+      by_cases hxy : x = y
+      · subst x
+        simp [LogicVar.openBinder, LogicVar.swap, bound_mem_relevantSupport_iff,
+          BasicEnv.domain_insert]
+      · simp [LogicVar.openBinder, LogicVar.swap, hxy, free_mem_relevantSupport_iff,
+          BasicEnv.domain_insert, ContextType.free_mem_support_iff, ← hf]
+  | bound j =>
+      rw [bound_mem_relevantSupport_iff, Finset.mem_union, hτ, he]
+      simp only [LogicVar.mem_openSupport]
+      by_cases same : j = k
+      · subst j
+        simp [LogicVar.openBinder, LogicVar.swap, free_mem_relevantSupport_iff,
+          freshΔ, hτy, hfy]
+      · simp [LogicVar.openBinder, LogicVar.swap, same, bound_mem_relevantSupport_iff]
+
 theorem relevantSupport_locallyClosed (Δ : BasicEnv) (τ : ContextType)
     (e : Term) (closedτ : τ.LocallyClosed) (closedE : e.locallyClosed) :
     LogicVar.LocallyClosed (relevantSupport Δ τ e) := by
@@ -1075,6 +1191,26 @@ theorem logicSupport_subset_relevantSupport (Δ : BasicEnv) (τ : ContextType)
 def resultFirst (Δ : BasicEnv) (τ : ContextType) (e : Term) : Formula :=
   resultAt ((relevantSupport Δ τ e).image (LogicVar.shiftFrom 0))
     (shiftTerm e) (.bound 0)
+
+/-- Opening an input under the result binder preserves the exact result-first
+graph in the environment extended with that input's fresh name. -/
+theorem resultFirst_openAt_input (Δ : BasicEnv) (τ : ContextType) (e : Term)
+    (k : Nat) (y : Atom) (T : SimpleType)
+    (freshΔ : y ∉ Δ.domain) (freshτ : y ∉ τ.freeAtoms) (freshE : y ∉ e.support) :
+    (resultFirst Δ τ e).openAt (k + 1) y =
+      resultFirst (Δ.insert y T) (τ.openAt k y) (e.openAt k (.free y)) := by
+  unfold resultFirst
+  rw [resultAt_openAt _ _ _ _ _ (by simpa using freshE)]
+  have hX : LogicVar.openSupport (k + 1) y
+      ((relevantSupport Δ τ e).image (LogicVar.shiftFrom 0)) =
+      (LogicVar.openSupport k y (relevantSupport Δ τ e)).image (LogicVar.shiftFrom 0) := by
+    simp only [LogicVar.openSupport, Finset.image_image]
+    congr 1
+    funext ξ
+    exact LogicVar.openBinder_shiftFrom 0 k y (Nat.zero_le k) ξ
+  rw [hX, relevantSupport_openAt Δ τ e k y T freshΔ freshτ freshE]
+  simp only [shiftTerm, shiftTermAt_openAt e 0 k y (Nat.zero_le k)]
+  simp [LogicVar.openBinder, LogicVar.swap]
 
 def guard (d : Nat) (Δ : BasicEnv) (τ : ContextType) (e : Term) : Formula :=
   wellFormed d Δ τ ∧ᶜ
