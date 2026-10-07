@@ -416,6 +416,41 @@ theorem fix_reaches_iff {T : SimpleType} {vf u v : Value}
     exact Steps.trans
       (Steps.single (.head (.fix T vf u ⟨body, closed⟩))) steps
 
+/-- Beta reduction preserves and reflects universal termination. -/
+theorem beta_mustTerminate_iff {T : SimpleType} {e : Term} {u : Value}
+    (body : e.locallyClosedAt 1) (closed : u.locallyClosed) :
+    (Term.app (.lam T e) u).MustTerminate ↔ (e.openAt 0 u).MustTerminate := by
+  have step : Step (.app (.lam T e) u) (e.openAt 0 u) :=
+    .head (.beta T e u ⟨body, closed⟩)
+  constructor
+  · intro h
+    exact h.step_inv step
+  · intro h
+    apply MustTerminate.step ⟨e.openAt 0 u, step⟩
+    intro e' hs
+    cases hs with
+    | head hh =>
+        cases hh
+        exact h
+
+/-- Fixed-point unfolding preserves and reflects universal termination. -/
+theorem fix_mustTerminate_iff {T : SimpleType} {vf u : Value}
+    (body : vf.locallyClosedAt 1) (closed : u.locallyClosed) :
+    (Term.app (.fix T vf) u).MustTerminate ↔
+      (Term.app (vf.openAt 0 u) (.fix T vf)).MustTerminate := by
+  have step : Step (.app (.fix T vf) u) (.app (vf.openAt 0 u) (.fix T vf)) :=
+    .head (.fix T vf u ⟨body, closed⟩)
+  constructor
+  · intro h
+    exact h.step_inv step
+  · intro h
+    apply MustTerminate.step ⟨.app (vf.openAt 0 u) (.fix T vf), step⟩
+    intro e' hs
+    cases hs with
+    | head hh =>
+        cases hh
+        exact h
+
 /-- Primitive evaluation reaches exactly a primitive result. -/
 theorem primitive_reaches_iff {op : Primitive} {c : Constant} {v : Value} :
     (Term.primitive op (.const c)).reaches v ↔
