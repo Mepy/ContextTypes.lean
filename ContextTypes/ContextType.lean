@@ -153,6 +153,35 @@ theorem freeAtoms_openAt_subset (τ : ContextType) (k : Nat) (y : Atom) :
   | persist τ ih =>
       simpa [openAt, freeAtoms] using ih k
 
+/-- Once the opened name is observed, opening preserves exactly the old
+free-atom observations; a dependent occurrence can only add that name. -/
+theorem freeAtoms_openAt_union (τ : ContextType) (k : Nat) (y : Atom) :
+    (τ.openAt k y).freeAtoms ∪ {y} = τ.freeAtoms ∪ {y} := by
+  induction τ generalizing k with
+  | «over» b q | under b q =>
+      ext x
+      by_cases hxy : x = y
+      · simp [ContextType.openAt, ContextType.freeAtoms, hxy]
+      · simp only [ContextType.openAt, ContextType.freeAtoms, Finset.mem_union,
+          Finset.mem_singleton, hxy, or_false, Qualifier.mem_freeAtoms_iff,
+          Qualifier.support_openAt, LogicVar.mem_openSupport]
+        simp [LogicVar.openBinder, LogicVar.swap, hxy]
+  | inter τ₁ τ₂ ih₁ ih₂ | union τ₁ τ₂ ih₁ ih₂ | sum τ₁ τ₂ ih₁ ih₂ =>
+      simp only [ContextType.openAt, ContextType.freeAtoms]
+      ext x
+      have h₁ := congrArg (fun X : Finset Atom => x ∈ X) (ih₁ k)
+      have h₂ := congrArg (fun X : Finset Atom => x ∈ X) (ih₂ k)
+      simp only [Finset.mem_union, Finset.mem_singleton] at *
+      tauto
+  | arrow τ₁ τ₂ ih₁ ih₂ | wand τ₁ τ₂ ih₁ ih₂ =>
+      simp only [ContextType.openAt, ContextType.freeAtoms]
+      ext x
+      have h₁ := congrArg (fun X : Finset Atom => x ∈ X) (ih₁ k)
+      have h₂ := congrArg (fun X : Finset Atom => x ∈ X) (ih₂ (k + 1))
+      simp only [Finset.mem_union, Finset.mem_singleton] at *
+      tauto
+  | persist τ ih => exact ih k
+
 /-- Open the outermost context-type binder. -/
 abbrev openOuter (τ : ContextType) (x : Atom) : ContextType :=
   τ.openAt 0 x

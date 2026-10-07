@@ -4381,6 +4381,183 @@ theorem resultFirst_ret_bound_openAt (Δ : BasicEnv) (τ : ContextType)
     resultQualifier_ret_bound_openAt]
 
 
+/-- Naming the symbolic function and argument preserves the application's
+universal termination atom. -/
+theorem total_app_bound_openAt_eq {y z : Atom} (hne : y ≠ z) :
+    ((total (.app (.bound 1) (.bound 0))).openAt 1 z).openAt 0 y =
+      total (.app (.free z) (.free y)) := by
+  have hq : ((totalQualifier (.app (.bound 1) (.bound 0))).openAt 1 z).openAt 0 y =
+      totalQualifier (.app (.free z) (.free y)) := by
+    apply Qualifier.ext
+    · simp [totalQualifier, Term.logicSupportAt, Value.logicSupportAt,
+        boundLogicSupportAt, LogicVar.openSupport, LogicVar.openBinder,
+        LogicVar.swap, Ne.symm hne]
+    · intro ρ σ same
+      have hy : LogicVar.free y ∈ σ.assignment.domain := by
+        rw [σ.domain_eq]
+        simp [totalQualifier, Term.logicSupportAt, Value.logicSupportAt]
+      have hz : LogicVar.free z ∈ σ.assignment.domain := by
+        rw [σ.domain_eq]
+        simp [totalQualifier, Term.logicSupportAt, Value.logicSupportAt]
+      obtain ⟨u, hu⟩ := (Assignment.mem_domain_iff σ.assignment (.free y)).1 hy
+      obtain ⟨v, hv⟩ := (Assignment.mem_domain_iff σ.assignment (.free z)).1 hz
+      simp [Qualifier.openAt, totalQualifier, instantiateTermAt, instantiateValueAt,
+        AssignmentOn.swapBack, Assignment.lookup_swap, LogicVar.swap,
+        Ne.symm hne, same, hu, hv]
+  simp only [total, Formula.fiberAtom, Formula.openAt]
+  change Formula.fiberAtom (((totalQualifier (.app (.bound 1) (.bound 0))).openAt 1 z).openAt 0 y) = _
+  rw [hq]
+  rfl
+
+/-- The result atom underneath the outer result binder is unchanged when
+the symbolic function and argument receive distinct fresh names. -/
+theorem resultQualifier_app_bound_openAt_eq {y z : Atom} (hne : y ≠ z) :
+    ((resultQualifier (.app (.bound 2) (.bound 1)) (.bound 0)).openAt 2 z).openAt 1 y =
+      resultQualifier (.app (.free z) (.free y)) (.bound 0) := by
+  apply Qualifier.ext
+  · simp [resultQualifier, Term.logicSupportAt, Value.logicSupportAt,
+      boundLogicSupportAt, LogicVar.openSupport, LogicVar.openBinder,
+      LogicVar.swap, Ne.symm hne]
+  · intro ρ σ same
+    have hy : LogicVar.free y ∈ σ.assignment.domain := by
+      rw [σ.domain_eq]
+      simp [resultQualifier, Term.logicSupportAt, Value.logicSupportAt]
+    have hz : LogicVar.free z ∈ σ.assignment.domain := by
+      rw [σ.domain_eq]
+      simp [resultQualifier, Term.logicSupportAt, Value.logicSupportAt]
+    obtain ⟨u, hu⟩ := (Assignment.mem_domain_iff σ.assignment (.free y)).1 hy
+    obtain ⟨v, hv⟩ := (Assignment.mem_domain_iff σ.assignment (.free z)).1 hz
+    simp [Qualifier.openAt, resultQualifier, instantiateTermAt, instantiateValueAt,
+      AssignmentOn.swapBack, Assignment.lookup_swap, LogicVar.swap,
+      Ne.symm hne, same, hu, hv, Term.logicSupportAt, Value.logicSupportAt,
+      boundLogicSupportAt]
+
+/-- Opening both input binders retains every old input and names the
+function and argument in the application's complete result graph. -/
+theorem resultAt_app_bound_openAt_eq {A : Finset Atom} {y z : Atom}
+    (freshY : y ∉ A) (freshZ : z ∉ A) (hne : y ≠ z) :
+    ((resultAt (A.image LogicVar.free ∪ {.bound 2, .bound 1})
+      (.app (.bound 2) (.bound 1)) (.bound 0)).openAt 2 z).openAt 1 y =
+      resultAt ((A ∪ {z, y}).image LogicVar.free)
+        (.app (.free z) (.free y)) (.bound 0) := by
+  have hzA : LogicVar.openSupport 2 z (A.image LogicVar.free) = A.image LogicVar.free := by
+    apply LogicVar.openSupport_eq_self_of_fresh
+    · simp
+    · simpa using freshZ
+  have hyA : LogicVar.openSupport 1 y (A.image LogicVar.free) = A.image LogicVar.free := by
+    apply LogicVar.openSupport_eq_self_of_fresh
+    · simp
+    · simpa using freshY
+  have hs : LogicVar.openSupport 1 y
+      (LogicVar.openSupport 2 z (A.image LogicVar.free ∪ {.bound 2, .bound 1})) =
+        (A ∪ {z, y}).image LogicVar.free := by
+    rw [show LogicVar.openSupport 2 z (A.image LogicVar.free ∪ {.bound 2, .bound 1}) =
+      LogicVar.openSupport 2 z (A.image LogicVar.free) ∪
+        LogicVar.openSupport 2 z {.bound 2, .bound 1} by simp [LogicVar.openSupport], hzA]
+    simp only [LogicVar.openSupport, Finset.image_union, Finset.image_insert, Finset.image_singleton]
+    rw [show (A.image LogicVar.free).image (LogicVar.openBinder 1 y) =
+      A.image LogicVar.free from hyA]
+    simp [LogicVar.openBinder, LogicVar.swap, Ne.symm hne]
+  simp only [resultAt, Formula.openAt]
+  rw [hs, resultQualifier_app_bound_openAt_eq hne]
+
+/-- The symbolic application result graph exposes both named inputs after
+opening, with no unobserved erased bindings added to its support. -/
+theorem resultFirst_app_bound_openAt_eq (Δ : BasicEnv) (τ : ContextType)
+    {y z : Atom} (closed : τ.LocallyClosedAt 2)
+    (freshY : y ∉ Δ.domain) (freshZ : z ∉ Δ.domain) (hne : y ≠ z) :
+    ((resultFirst Δ τ (.app (.bound 1) (.bound 0))).openAt 2 z).openAt 1 y =
+      resultAt (((Δ.restrict τ.freeAtoms).domain ∪ {z, y}).image LogicVar.free)
+        (.app (.free z) (.free y)) (.bound 0) := by
+  have env : relevantEnv Δ τ (.app (.bound 1) (.bound 0)) = Δ.restrict τ.freeAtoms := by
+    simp [relevantEnv, relevantAtoms, Term.support, Value.support]
+  have hs : relevantSupport Δ τ (.app (.bound 1) (.bound 0)) =
+      (Δ.restrict τ.freeAtoms).domain.image LogicVar.free ∪ {.bound 1, .bound 0} := by
+    rw [relevantSupport, env]
+    congr 1
+    ext ξ
+    constructor
+    · intro hξ
+      obtain ⟨ζ, hζ, hξζ⟩ := Finset.mem_biUnion.1 hξ
+      cases ζ with
+      | free x => simp at hξζ
+      | bound j =>
+          have same : ξ = LogicVar.bound j := by simpa using hξζ
+          subst ξ
+          rcases Finset.mem_union.1 hζ with hζ | hζ
+          · have hj := contextTypeSupport_bound_lt τ 0 2 closed hζ
+            have : j = 0 ∨ j = 1 := by omega
+            rcases this with rfl | rfl <;> simp
+          · simpa [Term.logicSupportAt, Value.logicSupportAt, boundLogicSupportAt] using hζ
+    · intro hξ
+      rcases Finset.mem_insert.1 hξ with hξ | hξ
+      · subst ξ
+        apply Finset.mem_biUnion.2
+        exact ⟨.bound 1, Finset.mem_union_right _ (by
+          simp [Term.logicSupportAt, Value.logicSupportAt, boundLogicSupportAt]), by simp⟩
+      · have same : ξ = LogicVar.bound 0 := by simpa using hξ
+        subst ξ
+        apply Finset.mem_biUnion.2
+        exact ⟨.bound 0, Finset.mem_union_right _ (by
+          simp [Term.logicSupportAt, Value.logicSupportAt, boundLogicSupportAt]), by simp⟩
+  have freshY' : y ∉ (Δ.restrict τ.freeAtoms).domain := by
+    simp only [BasicEnv.domain_restrict, Finset.mem_inter]
+    exact fun h => freshY h.1
+  have freshZ' : z ∉ (Δ.restrict τ.freeAtoms).domain := by
+    simp only [BasicEnv.domain_restrict, Finset.mem_inter]
+    exact fun h => freshZ h.1
+  simp only [resultFirst, hs, Finset.image_union, Finset.image_insert, Finset.image_singleton]
+  rw [LogicVar.image_shiftFrom_eq_of_locallyClosed _ 0 (by intro j hj; simp at hj)]
+  change ((resultAt ((Δ.restrict τ.freeAtoms).domain.image LogicVar.free ∪ {.bound 2, .bound 1})
+    (.app (.bound 2) (.bound 1)) (.bound 0)).openAt 2 z).openAt 1 y = _
+  simpa only [Finset.image_union, Finset.image_insert, Finset.image_singleton] using
+    resultAt_app_bound_openAt_eq freshY' freshZ' hne
+
+/-- The actual named application retains precisely the codomain's old
+erased inputs together with the function and argument names. -/
+theorem relevantEnv_insert_app_free (Δ : BasicEnv) (τ : ContextType)
+    (y z : Atom) (T U : SimpleType) :
+    Interp.relevantEnv ((Δ.insert z U).insert y T) (τ.openAt 0 y)
+      (.app (.free z) (.free y)) = ((Δ.restrict τ.freeAtoms).insert z U).insert y T := by
+  have hs : (τ.openAt 0 y).freeAtoms ∪ ({z} ∪ {y}) = τ.freeAtoms ∪ ({z} ∪ {y}) := by
+    have h := τ.freeAtoms_openAt_union 0 y
+    simpa only [Finset.union_assoc, Finset.union_left_comm, Finset.union_comm] using
+      congrArg (fun X : Finset Atom => X ∪ {z}) h
+  apply Finmap.ext_lookup
+  intro x
+  change (Interp.relevantEnv ((Δ.insert z U).insert y T) (τ.openAt 0 y)
+    (.app (.free z) (.free y))).lookup x =
+      (((Δ.restrict τ.freeAtoms).insert z U).insert y T).lookup x
+  unfold Interp.relevantEnv Interp.relevantAtoms
+  simp only [Term.support, Value.support, hs]
+  by_cases hxy : x = y
+  · subst x
+    simp
+  · by_cases hxz : x = z
+    · subst x
+      simp [BasicEnv.lookup_insert_of_ne _ _ hxy]
+    · simp [BasicEnv.lookup_insert_of_ne _ _ hxy, BasicEnv.lookup_insert_of_ne _ _ hxz,
+        hxy, hxz]
+
+/-- Opening the symbolic function and parameter result graph gives exactly
+the actual application's result-first atom in the inserted erased environment. -/
+theorem resultFirst_app_bound_openAt_named_eq {Δ : BasicEnv} {τ : ContextType}
+    {y z : Atom} (T U : SimpleType) (wfτ : τ.WellFormedAt 1 Δ.domain)
+    (freshY : y ∉ Δ.domain) (freshZ : z ∉ Δ.domain) (hne : y ≠ z) :
+    ((Interp.resultFirst Δ (τ.shiftFrom 1) (.app (.bound 1) (.bound 0))).openAt 2 z).openAt 1 y =
+      Interp.resultFirst ((Δ.insert z U).insert y T) (τ.openAt 0 y)
+        (.app (.free z) (.free y)) := by
+  have freshτ : y ∉ τ.freeAtoms := fun hy => freshY (wfτ.freeAtoms_subset hy)
+  have closed := (wfτ.openAt freshτ).locallyClosedAt
+  rw [Interp.resultFirst_app_bound_openAt_eq _ _ (wfτ.locallyClosedAt.shiftFrom 1)
+    freshY freshZ hne,
+    ContextType.freeAtoms_shiftFrom,
+    Interp.resultFirst_eq_of_locallyClosed _ _ _ closed (by trivial),
+    Interp.relevantEnv_insert_app_free]
+  simp only [BasicEnv.domain_insert]
+  congr 2
+  simp [Finset.union_comm]
+
 /-- A returned value has an exact result graph on any support observing that value. -/
 theorem models_resultAt_ret_change_support {m : Capability}
     {X Y : Finset LogicVar} {v : Value} {y : Atom}
