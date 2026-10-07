@@ -1,6 +1,7 @@
 import ContextTypes.SemTyp.Structural
 import ContextTypes.SemTyp.Primitive
 import ContextTypes.SemTyp.Persistence
+import ContextTypes.SemTyp.Match
 
 /-!
 # Semantic context typing
