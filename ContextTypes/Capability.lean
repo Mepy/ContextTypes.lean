@@ -53,6 +53,18 @@ def merge (σ ρ : Store) : Store :=
 def Compatible (σ ρ : Store) : Prop :=
   ∀ x v w, σ.lookup x = some v → ρ.lookup x = some w → v = w
 
+/-- A store containing exactly one named value. -/
+def singleton (x : Atom) (v : Value) : Store :=
+  Finmap.singleton x v
+
+@[simp] theorem domain_singleton (x : Atom) (v : Value) :
+    (singleton x v).domain = {x} := by
+  simp [singleton, domain]
+
+@[simp] theorem lookup_singleton (x : Atom) (v : Value) :
+    (singleton x v).lookup x = some v := by
+  simp [singleton, lookup]
+
 @[simp] theorem domain_empty : domain (∅ : Store) = ∅ := by
   rfl
 
