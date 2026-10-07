@@ -381,6 +381,14 @@ def restrict (Δ : BasicEnv) (X : Finset Atom) : BasicEnv :=
     (Δ₁.merge Δ₂).domain = Δ₁.domain ∪ Δ₂.domain :=
   Finmap.keys_union
 
+theorem lookup_merge_left (Δ₁ Δ₂ : BasicEnv) {x : Atom}
+    (mem : x ∈ Δ₁.domain) : (Δ₁.merge Δ₂).lookup x = Δ₁.lookup x :=
+  Finmap.lookup_union_left mem
+
+theorem lookup_merge_right (Δ₁ Δ₂ : BasicEnv) {x : Atom}
+    (fresh : x ∉ Δ₁.domain) : (Δ₁.merge Δ₂).lookup x = Δ₂.lookup x :=
+  Finmap.lookup_union_right fresh
+
 @[simp] theorem domain_restrict (Δ : BasicEnv) (X : Finset Atom) :
     (Δ.restrict X).domain = Δ.domain ∩ X :=
   Finmap.keysLookupEquiv_symm_apply_keys _
