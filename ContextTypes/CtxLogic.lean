@@ -1832,6 +1832,27 @@ theorem and_top (P : Formula) : P ∧ᶜ ⊤ᶜ ⊣⊢ P := by
   · intro m hP
     exact models_and_intro hP (models_top m)
 
+/-- Persistence congruence needs equality of the observed atoms, but only
+truth equivalence on the original capability, not on every projection. -/
+theorem models_persist_congr {m : Capability} {P Q : Formula}
+    (support : P.freeAtoms = Q.freeAtoms) (equiv : m ⊨ P ↔ m ⊨ Q) :
+    m ⊨ (□ P) ↔ m ⊨ (□ Q) := by
+  constructor
+  · intro h
+    obtain ⟨σ, hσ, same, _⟩ := (models_persist_iff m P).1 h
+    apply (models_persist_iff m Q).2
+    refine ⟨σ, hσ.trans support, ?_, ?_⟩
+    · rwa [← support]
+    · rw [← same]
+      simpa only [support] using (models_restrict_iff m Q).1 (equiv.1 (models_persist_elim h))
+  · intro h
+    obtain ⟨σ, hσ, same, _⟩ := (models_persist_iff m Q).1 h
+    apply (models_persist_iff m P).2
+    refine ⟨σ, hσ.trans support.symm, ?_, ?_⟩
+    · rwa [support]
+    · rw [← same]
+      simpa only [support] using (models_restrict_iff m P).1 (equiv.2 (models_persist_elim h))
+
 end Formula
 
 end ContextTypes

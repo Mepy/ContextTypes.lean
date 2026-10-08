@@ -788,4 +788,91 @@ theorem support_eq_freeAtoms_union_domain (Γ : Context) :
 
 end Context
 
+namespace LogicVar
+
+theorem supportAtDepth_union (d : Nat) (X Y : Finset LogicVar) :
+    supportAtDepth d (X ∪ Y) = supportAtDepth d X ∪ supportAtDepth d Y := by
+  simp [supportAtDepth, Finset.union_biUnion]
+
+@[simp] theorem supportAtDepth_zero (X : Finset LogicVar) :
+    supportAtDepth 0 X = X := by
+  unfold supportAtDepth
+  calc
+    _ = X.biUnion (fun ξ => {ξ}) := by
+      apply Finset.biUnion_congr rfl
+      intro ξ _
+      cases ξ <;> simp [atDepth]
+    _ = X := Finset.biUnion_singleton_eq_self
+
+theorem atDepth_add (n d : Nat) (ξ : LogicVar) :
+    atDepth (n + d) ξ = (atDepth d ξ).bind (atDepth n) := by
+  cases ξ with
+  | free x => rfl
+  | bound k =>
+      by_cases h : d ≤ k
+      · by_cases h' : n ≤ k - d
+        · have h'' : n + d ≤ k := by omega
+          simp only [atDepth, if_pos h, if_pos h', if_pos h'', Option.bind_some]
+          congr 2; omega
+        · have h'' : ¬n + d ≤ k := by omega
+          simp [atDepth, h, h', h'']
+      · have h'' : ¬n + d ≤ k := by omega
+        simp [atDepth, h, h'']
+
+theorem supportAtDepth_add (n d : Nat) (X : Finset LogicVar) :
+    supportAtDepth n (supportAtDepth d X) = supportAtDepth (n + d) X := by
+  simp only [supportAtDepth, Finset.biUnion_biUnion]
+  apply Finset.biUnion_congr rfl
+  intro ξ _
+  rw [atDepth_add]
+  cases atDepth d ξ <;> simp
+
+theorem supportAtDepth_shiftFrom (n k : Nat) (X : Finset LogicVar) (h : k ≤ n) :
+    supportAtDepth (n + 1) (X.image (shiftFrom k)) = supportAtDepth n X := by
+  simp only [supportAtDepth, Finset.image_biUnion]
+  apply Finset.biUnion_congr rfl
+  intro ξ _
+  cases ξ with
+  | free x => rfl
+  | bound j =>
+      by_cases hj : k ≤ j
+      · have hn : n + 1 ≤ j + 1 ↔ n ≤ j := by omega
+        simp only [shiftFrom, if_pos hj, atDepth, hn]
+        split_ifs <;> simp
+      · have hn : ¬n ≤ j := by omega
+        have hn' : ¬n + 1 ≤ j := by omega
+        simp [shiftFrom, hj, atDepth, hn, hn']
+
+end LogicVar
+
+namespace ContextType
+
+theorem supportAt_eq (τ : ContextType) (n : Nat) :
+    τ.supportAt n = LogicVar.supportAtDepth n τ.support := by
+  induction τ generalizing n with
+  | «over» b q | under b q =>
+      simp only [supportAt, support, Nat.zero_add, LogicVar.supportAtDepth_add]
+  | inter τ₁ τ₂ ih₁ ih₂ | union τ₁ τ₂ ih₁ ih₂ | sum τ₁ τ₂ ih₁ ih₂ =>
+      simp only [supportAt, support, LogicVar.supportAtDepth_union]
+      rw [ih₁ n, ih₂ n]
+  | arrow τ₁ τ₂ ih₁ ih₂ | wand τ₁ τ₂ ih₁ ih₂ =>
+      simp only [supportAt, support, Nat.zero_add, LogicVar.supportAtDepth_union]
+      rw [ih₁ n, ih₂ (n + 1), ih₂ 1, LogicVar.supportAtDepth_add]
+  | persist τ ih => exact ih n
+
+theorem supportAt_shiftFrom (τ : ContextType) (n k : Nat) (h : k ≤ n) :
+    (τ.shiftFrom k).supportAt (n + 1) = τ.supportAt n := by
+  induction τ generalizing n k with
+  | «over» b q | under b q =>
+      simp only [shiftFrom, supportAt, Qualifier.shiftFrom]
+      exact LogicVar.supportAtDepth_shiftFrom (n + 1) (k + 1) _ (by omega)
+  | inter τ₁ τ₂ ih₁ ih₂ | union τ₁ τ₂ ih₁ ih₂ | sum τ₁ τ₂ ih₁ ih₂ =>
+      simp only [shiftFrom, supportAt, ih₁ n k h, ih₂ n k h]
+  | arrow τ₁ τ₂ ih₁ ih₂ | wand τ₁ τ₂ ih₁ ih₂ =>
+      simp only [shiftFrom, supportAt, ih₁ n k h]
+      rw [ih₂ (n + 1) (k + 1) (by omega)]
+  | persist τ ih => exact ih n k h
+
+end ContextType
+
 end ContextTypes

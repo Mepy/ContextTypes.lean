@@ -8970,4 +8970,298 @@ scoped[ContextTypes] notation:40 (name := semanticContextSubtype)
     «Σ» " ⊢ " Γ₁ " ≤[" X "] " Γ₂ =>
   ContextTypes.SubCtxUnder «Σ» X Γ₁ Γ₂
 
+namespace Formula
+
+theorem supportSetAtDepth_eq (d : Nat) (X : Finset LogicVar) :
+    supportSetAtDepth d X = LogicVar.supportAtDepth d X := by
+  unfold supportSetAtDepth LogicVar.supportAtDepth
+  apply Finset.biUnion_congr rfl
+  intro ξ _
+  cases ξ with
+  | free x => rfl
+  | bound k => by_cases h : d ≤ k <;> simp [LogicVar.atDepth, h]
+
+theorem supportAt_eq (P : Formula) (n : Nat) :
+    P.supportAt n = LogicVar.supportAtDepth n P.support := by
+  induction P generalizing n with
+  | top | bot => simp [supportAt, support]
+  | atom q =>
+      simp [supportAt, support, supportSetAtDepth_eq]
+  | and P Q ihP ihQ | or P Q ihP ihQ | impl P Q ihP ihQ
+  | star P Q ihP ihQ | sum P Q ihP ihQ =>
+      simp only [supportAt, support, LogicVar.supportAtDepth_union]
+      rw [ihP n, ihQ n]
+  | wand d P Q ihP ihQ =>
+      simp only [supportAt, support, Nat.zero_add, LogicVar.supportAtDepth_union]
+      rw [ihP (n + d), ihQ (n + d), ihP d, ihQ d,
+        LogicVar.supportAtDepth_add, LogicVar.supportAtDepth_add]
+  | all P ih =>
+      simp only [supportAt, support, Nat.zero_add]
+      rw [ih (n + 1), ih 1, LogicVar.supportAtDepth_add]
+  | «over» P ih | under P ih | persist P ih => exact ih n
+  | fiber X P ih =>
+      simp only [supportAt, support, supportSetAtDepth_zero, LogicVar.supportAtDepth_union]
+      rw [supportSetAtDepth_eq, ih]
+
+theorem supportAt_fiberAtom (q : Qualifier) (n : Nat) :
+    (fiberAtom q).supportAt n = LogicVar.supportAtDepth n q.support := by
+  simp [fiberAtom, supportAt, supportSetAtDepth_eq]
+
+end Formula
+
+mutual
+  theorem Value.logicSupportAt_eq (v : Value) (n : Nat) :
+      v.logicSupportAt n = LogicVar.supportAtDepth n v.logicSupport := by
+    cases v with
+    | const c => simp [Value.logicSupportAt, Value.logicSupport]
+    | free x => simp [Value.logicSupportAt, Value.logicSupport, LogicVar.supportAtDepth, LogicVar.atDepth]
+    | bound k =>
+        by_cases h : n ≤ k
+        simp [Value.logicSupportAt, Value.logicSupport, boundLogicSupportAt,
+          LogicVar.supportAtDepth, LogicVar.atDepth, h]
+        simp [Value.logicSupportAt, Value.logicSupport, boundLogicSupportAt,
+          LogicVar.supportAtDepth, LogicVar.atDepth, h]
+    | lam T e =>
+        simp only [Value.logicSupportAt, Value.logicSupport, Nat.zero_add]
+        rw [Term.logicSupportAt_eq e (n + 1), Term.logicSupportAt_eq e 1,
+          LogicVar.supportAtDepth_add]
+    | fix T v =>
+        simp only [Value.logicSupportAt, Value.logicSupport, Nat.zero_add]
+        rw [Value.logicSupportAt_eq v (n + 1), Value.logicSupportAt_eq v 1,
+          LogicVar.supportAtDepth_add]
+
+  theorem Term.logicSupportAt_eq (e : Term) (n : Nat) :
+      e.logicSupportAt n = LogicVar.supportAtDepth n e.logicSupport := by
+    cases e with
+    | ret v | primitive _ v => exact Value.logicSupportAt_eq v n
+    | app v₁ v₂ =>
+        simp only [Term.logicSupportAt, Term.logicSupport, LogicVar.supportAtDepth_union]
+        rw [Value.logicSupportAt_eq v₁ n, Value.logicSupportAt_eq v₂ n]
+    | letE e₁ e₂ =>
+        simp only [Term.logicSupportAt, Term.logicSupport, Nat.zero_add,
+          LogicVar.supportAtDepth_union]
+        rw [Term.logicSupportAt_eq e₁ n, Term.logicSupportAt_eq e₂ (n + 1),
+          Term.logicSupportAt_eq e₂ 1, LogicVar.supportAtDepth_add]
+    | matchBool v e₁ e₂ =>
+        simp only [Term.logicSupportAt, Term.logicSupport, LogicVar.supportAtDepth_union]
+        rw [Value.logicSupportAt_eq v n, Term.logicSupportAt_eq e₁ n, Term.logicSupportAt_eq e₂ n]
+end
+
+namespace Interp
+
+theorem supportAt_guard (d n : Nat) (Δ : BasicEnv) (τ : ContextType) (e : Term) :
+    (guard d Δ τ e).supportAt n = Δ.domain.image LogicVar.free ∪ e.logicSupportAt n := by
+  have hΔ : LogicVar.supportAtDepth n (Δ.domain.image LogicVar.free) =
+      Δ.domain.image LogicVar.free := by
+    simp [LogicVar.supportAtDepth, Finset.image_biUnion, LogicVar.atDepth,
+      Finset.biUnion_singleton]
+  simp only [guard, Formula.supportAt, wellFormed, basicWorld, basicTyping, total,
+    Formula.supportAt_fiberAtom, wellFormedQualifier, basicWorldQualifier,
+    basicTypingQualifier, totalQualifier, LogicVar.supportAtDepth_union, hΔ,
+    ← Term.logicSupportAt_eq]
+  simp [Finset.union_assoc]
+
+theorem relevantSupport_eq {Δ : BasicEnv} {τ : ContextType} {e : Term}
+    (scopeτ : τ.freeAtoms ⊆ Δ.domain) (scopeE : e.support ⊆ Δ.domain) :
+    relevantSupport Δ τ e = τ.support ∪ e.logicSupport := by
+  ext ξ
+  cases ξ with
+  | bound k => exact bound_mem_relevantSupport_iff Δ τ e k
+  | free x =>
+      simp only [free_mem_relevantSupport_iff, Finset.mem_union, ContextType.free_mem_support_iff]
+      rw [← LogicVar.mem_freeAtomSet_iff, freeAtomSet_term_logicSupport]
+      exact ⟨And.right, fun h => ⟨h.elim (fun hx => scopeτ hx) (fun hx => scopeE hx), h⟩⟩
+
+theorem supportAt_resultFirst {Δ : BasicEnv} {τ : ContextType} {e : Term}
+    (scopeτ : τ.freeAtoms ⊆ Δ.domain) (scopeE : e.support ⊆ Δ.domain) (n : Nat) :
+    (resultFirst Δ τ e).supportAt (n + 1) = τ.supportAt n ∪ e.logicSupportAt n := by
+  simp only [resultFirst, resultAt, Formula.supportAt, Formula.supportSetAtDepth_eq,
+    resultQualifier, LogicVar.supportAtDepth_union, shiftTerm_logicSupport,
+    LogicVar.supportAtDepth_shiftFrom n 0 _ (Nat.zero_le n),
+    relevantSupport_eq scopeτ scopeE, LogicVar.supportAtDepth_union,
+    ← ContextType.supportAt_eq, ← Term.logicSupportAt_eq]
+  have hb : LogicVar.supportAtDepth (n + 1) ({.bound 0} : Finset LogicVar) = ∅ := by
+    simp [LogicVar.supportAtDepth, LogicVar.atDepth]
+  rw [hb]
+  simp [Finset.union_assoc]
+
+theorem scope_relevantEnv {Δ : BasicEnv} {τ : ContextType} {e : Term}
+    (scopeτ : τ.freeAtoms ⊆ Δ.domain) (scopeE : e.support ⊆ Δ.domain) :
+    τ.freeAtoms ⊆ (relevantEnv Δ τ e).domain ∧ e.support ⊆ (relevantEnv Δ τ e).domain := by
+  rw [relevantEnv_domain]
+  exact ⟨Finset.subset_inter scopeτ Finset.subset_union_left,
+    Finset.subset_inter scopeE Finset.subset_union_right⟩
+
+theorem supportAt_guard_relevant_subset (d n : Nat) (Δ : BasicEnv) (τ : ContextType) (e : Term) :
+    (guard d (relevantEnv Δ τ e) τ e).supportAt n ⊆ τ.supportAt n ∪ e.logicSupportAt n := by
+  rw [supportAt_guard]
+  apply Finset.union_subset _ Finset.subset_union_right
+  rintro ξ hξ
+  obtain ⟨x, hx, rfl⟩ := Finset.mem_image.1 hξ
+  rw [relevantEnv_domain] at hx
+  rcases Finset.mem_union.1 (Finset.mem_inter.1 hx).2 with hx | hx
+  · exact Finset.mem_union_left _ ((ContextType.free_mem_supportAt_iff τ n x).2 hx)
+  · apply Finset.mem_union_right
+    rw [Term.logicSupportAt_eq, LogicVar.free_mem_supportAtDepth_iff,
+      ← LogicVar.mem_freeAtomSet_iff, freeAtomSet_term_logicSupport]
+    exact hx
+
+end Interp
+
+namespace ContextType
+
+open scoped ContextTypes
+
+/-- Interpretation never observes logical inputs outside the type and term. -/
+theorem supportAt_interpFuel_subset (gas d : Nat) (Δ : BasicEnv) (τ : ContextType) (e : Term)
+    (scopeτ : τ.freeAtoms ⊆ Δ.domain) (scopeE : e.support ⊆ Δ.domain) (n : Nat) :
+    (interpFuel gas d Δ τ e).supportAt n ⊆ τ.supportAt n ∪ e.logicSupportAt n := by
+  induction gas generalizing d Δ τ e n with
+  | zero =>
+      simpa only [interpFuel, Formula.supportAt, Finset.union_empty] using
+        Interp.supportAt_guard_relevant_subset d n Δ τ e
+  | succ gas ih =>
+      have hr := Interp.scope_relevantEnv scopeτ scopeE
+      have graph := Interp.supportAt_resultFirst hr.1 hr.2 n
+      have guard := Interp.supportAt_guard_relevant_subset d n Δ τ e
+      have ret (n : Nat) : (Term.ret (.bound 0)).logicSupportAt (n + 1) = ∅ := by
+        simp [Term.logicSupportAt, Value.logicSupportAt, boundLogicSupportAt]
+      have app (n : Nat) : (Term.app (.bound 1) (.bound 0)).logicSupportAt (n + 2) = ∅ := by
+        simp [Term.logicSupportAt, Value.logicSupportAt, boundLogicSupportAt]
+      have child (υ : ContextType) (d' n' : Nat) (t : Term)
+          (hs : υ.freeAtoms ⊆ (Interp.relevantEnv Δ τ e).domain) (empty : t.support = ∅) :=
+        ih d' (Interp.relevantEnv Δ τ e) υ t hs (by rw [empty]; exact Finset.empty_subset _) n'
+      cases τ with
+      | «over» b q | under b q =>
+          simp only [interpFuel, Formula.supportAt]
+          apply Finset.union_subset guard
+          rw [graph]
+          apply Finset.union_subset (Finset.Subset.refl _)
+          simp only [Interp.overResult, Interp.underResult, Formula.supportAt,
+            Formula.supportSetAtDepth_eq, Interp.resultBasicTyping, Interp.basicTyping,
+            Formula.supportAt_fiberAtom, Interp.basicTypingQualifier, BasicEnv.domain_empty,
+            Finset.image_empty, Finset.empty_union,
+            Term.logicSupportAt, Value.logicSupportAt, boundLogicSupportAt,
+            Nat.zero_le, if_true, Nat.sub_zero, LogicVar.supportAtDepth]
+          have hb : ¬n + 1 ≤ 0 := by omega
+          simp only [Finset.singleton_biUnion, LogicVar.atDepth, if_neg hb, Finset.union_empty]
+          apply Finset.union_subset
+          · apply Finset.Subset.trans _ Finset.subset_union_left
+            change LogicVar.supportAtDepth (n + 1) (q.support \ {.bound 0}) ⊆
+              LogicVar.supportAtDepth (n + 1) q.support
+            exact Finset.biUnion_subset_biUnion_of_subset_left _ Finset.sdiff_subset
+          · exact Finset.subset_union_left
+      | inter τ₁ τ₂ | union τ₁ τ₂ =>
+          have h₁ := ih d Δ τ₁ e (Finset.Subset.trans Finset.subset_union_left scopeτ) scopeE n
+          have h₂ := ih d Δ τ₂ e (Finset.Subset.trans Finset.subset_union_right scopeτ) scopeE n
+          simp only [interpFuel, Formula.supportAt]
+          apply Finset.union_subset guard
+          apply Finset.union_subset
+          · exact Finset.Subset.trans h₁ (by simp only [supportAt]; intro ξ hx; grind)
+          · exact Finset.Subset.trans h₂ (by simp only [supportAt]; intro ξ hx; grind)
+      | sum τ₁ τ₂ =>
+          have h₁ := child (τ₁.shiftFrom 0) (d + 1) (n + 1) (.ret (.bound 0))
+            (by simpa only [freeAtoms_shiftFrom] using Finset.Subset.trans Finset.subset_union_left hr.1)
+            (by simp [Term.support, Value.support])
+          have h₂ := child (τ₂.shiftFrom 0) (d + 1) (n + 1) (.ret (.bound 0))
+            (by simpa only [freeAtoms_shiftFrom] using Finset.Subset.trans Finset.subset_union_right hr.1)
+            (by simp [Term.support, Value.support])
+          rw [ret, Finset.union_empty, supportAt_shiftFrom _ n 0 (Nat.zero_le n)] at h₁ h₂
+          simp only [interpFuel, Formula.supportAt]
+          apply Finset.union_subset guard
+          rw [graph]
+          apply Finset.union_subset (Finset.Subset.refl _)
+          exact Finset.Subset.trans (Finset.union_subset_union h₁ h₂) Finset.subset_union_left
+      | arrow τ₁ τ₂ | wand τ₁ τ₂ =>
+          have h₁ := child ((τ₁.shiftFrom 0).shiftFrom 0) (d + 2) (n + 2) (.ret (.bound 0))
+            (by simpa only [freeAtoms_shiftFrom] using Finset.Subset.trans Finset.subset_union_left hr.1)
+            (by simp [Term.support, Value.support])
+          have h₂ := child (τ₂.shiftFrom 1) (d + 2) (n + 2) (.app (.bound 1) (.bound 0))
+            (by simpa only [freeAtoms_shiftFrom] using Finset.Subset.trans Finset.subset_union_right hr.1)
+            (by simp [Term.support, Value.support])
+          rw [show n + 2 = (n + 1) + 1 by omega, ret, Finset.union_empty,
+            supportAt_shiftFrom _ (n + 1) 0 (by omega), supportAt_shiftFrom _ n 0 (by omega)] at h₁
+          rw [app, Finset.union_empty, show n + 2 = (n + 1) + 1 by omega,
+            supportAt_shiftFrom _ (n + 1) 1 (by omega)] at h₂
+          simp only [interpFuel, Formula.supportAt]
+          apply Finset.union_subset guard
+          rw [graph]
+          apply Finset.union_subset (Finset.Subset.refl _)
+          exact Finset.Subset.trans (Finset.union_subset_union h₁ h₂) Finset.subset_union_left
+      | persist τ =>
+          have h := child (τ.shiftFrom 0) (d + 1) (n + 1) (.ret (.bound 0))
+            (by simpa only [freeAtoms_shiftFrom] using hr.1) (by simp [Term.support, Value.support])
+          rw [ret, Finset.union_empty, supportAt_shiftFrom _ n 0 (Nat.zero_le n)] at h
+          simp only [interpFuel, Formula.supportAt]
+          apply Finset.union_subset guard
+          rw [graph]
+          exact Finset.union_subset (Finset.Subset.refl _) (Finset.Subset.trans h Finset.subset_union_left)
+
+/-- With enough fuel, every external input of the type and term is observed.
+This exact support is needed when transporting persistence and magic wand. -/
+theorem supportAt_interpFuel (gas d : Nat) (Δ : BasicEnv) (τ : ContextType) (e : Term)
+    (lower : τ.measure ≤ gas) (scopeτ : τ.freeAtoms ⊆ Δ.domain)
+    (scopeE : e.support ⊆ Δ.domain) (n : Nat) :
+    (interpFuel gas d Δ τ e).supportAt n = τ.supportAt n ∪ e.logicSupportAt n := by
+  apply Finset.Subset.antisymm (supportAt_interpFuel_subset gas d Δ τ e scopeτ scopeE n)
+  induction gas generalizing d Δ τ e n with
+  | zero =>
+      have := τ.measure_pos
+      omega
+  | succ gas ih =>
+      have hr := Interp.scope_relevantEnv scopeτ scopeE
+      have graph := Interp.supportAt_resultFirst hr.1 hr.2 n
+      cases τ with
+      | «over» b q | under b q | sum τ₁ τ₂ | arrow τ₁ τ₂ | wand τ₁ τ₂ | persist τ =>
+          simp only [interpFuel, Formula.supportAt]
+          rw [graph]
+          exact Finset.Subset.trans Finset.subset_union_left Finset.subset_union_right
+      | inter τ₁ τ₂ | union τ₁ τ₂ =>
+          have lower₁ : τ₁.measure ≤ gas := by simp only [measure] at lower; omega
+          have lower₂ : τ₂.measure ≤ gas := by simp only [measure] at lower; omega
+          have h₁ := ih d Δ τ₁ e lower₁ (Finset.Subset.trans Finset.subset_union_left scopeτ) scopeE n
+          have h₂ := ih d Δ τ₂ e lower₂ (Finset.Subset.trans Finset.subset_union_right scopeτ) scopeE n
+          simp only [interpFuel, Formula.supportAt, supportAt]
+          intro ξ hx
+          apply Finset.mem_union_right
+          rcases Finset.mem_union.1 hx with hx | hx
+          · rcases Finset.mem_union.1 hx with hx | hx
+            · exact Finset.mem_union_left _ (h₁ (Finset.mem_union_left _ hx))
+            · exact Finset.mem_union_right _ (h₂ (Finset.mem_union_left _ hx))
+          · exact Finset.mem_union_left _ (h₁ (Finset.mem_union_right _ hx))
+
+theorem support_interpFuel (gas d : Nat) (Δ : BasicEnv) (τ : ContextType) (e : Term)
+    (lower : τ.measure ≤ gas) (scopeτ : τ.freeAtoms ⊆ Δ.domain)
+    (scopeE : e.support ⊆ Δ.domain) :
+    (interpFuel gas d Δ τ e).support = τ.support ∪ e.logicSupport :=
+  supportAt_interpFuel gas d Δ τ e lower scopeτ scopeE 0
+
+end ContextType
+
+/-- Finite opening preserves the exact observed support, independently of
+the two static guard depths. -/
+theorem ContextType.support_interpFuel_openManyAt_eq
+    {gas n n' k d : Nat} {Δ Δ' : BasicEnv} {τ : ContextType} {e : Term}
+    {η : Fin d → Atom}
+    (lower : τ.measure ≤ gas) (lower' : (τ.openManyAt k d η).measure ≤ gas)
+    (scopeτ : τ.freeAtoms ⊆ Δ.domain)
+    (scopeE : e.support ⊆ Δ.domain)
+    (scopeτ' : (τ.openManyAt k d η).freeAtoms ⊆ Δ'.domain)
+    (scopeE' : (e.openManyAt k d η).support ⊆ Δ'.domain)
+    (inj : Function.Injective η) (freshE : ∀ i, η i ∉ e.support) :
+    ((ContextType.interpFuel gas n Δ τ e).openManyAt k d η).support =
+      (ContextType.interpFuel gas n' Δ' (τ.openManyAt k d η) (e.openManyAt k d η)).support := by
+  have hs := Formula.supportAt_openManyAt (ContextType.interpFuel gas n Δ τ e) 0 k d η
+  have hτ := ContextType.supportAt_openManyAt τ 0 k d η
+  have he := Term.logicSupportAt_openManyAt e 0 k d η inj freshE
+  simp only [Nat.add_zero] at hs hτ he
+  change ((ContextType.interpFuel gas n Δ τ e).openManyAt k d η).support =
+    (ContextType.interpFuel gas n Δ τ e).support.image (LogicVar.openManyAt k d η) at hs
+  change (τ.openManyAt k d η).support = τ.support.image (LogicVar.openManyAt k d η) at hτ
+  change (e.openManyAt k d η).logicSupport = e.logicSupport.image (LogicVar.openManyAt k d η) at he
+  rw [ContextType.support_interpFuel gas n' Δ' _ _ lower' scopeτ' scopeE']
+  change _ = (τ.openManyAt k d η).support ∪ (e.openManyAt k d η).logicSupport
+  rw [hτ, he]
+  rw [hs, ContextType.support_interpFuel gas n Δ τ e lower scopeτ scopeE, Finset.image_union]
+
 end ContextTypes
