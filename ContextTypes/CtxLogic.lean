@@ -1855,4 +1855,166 @@ theorem models_persist_congr {m : Capability} {P Q : Formula}
 
 end Formula
 
+namespace Formula
+
+open scoped ContextTypes
+
+/-- A closed wand antecedent can be checked against the entire ambient
+capability. Its separate argument observes precisely the fresh binder names. -/
+theorem models_wand_iff_full (m : Capability) (d : Nat) (P Q : Formula)
+    (closed : P.freeAtoms = ∅) :
+    m ⊨ (P -∗[d] Q) ↔
+      (P -∗[d] Q).freeAtoms ⊆ m.domain ∧
+        ∃ L : Finset Atom,
+          ∀ (η : Fin d → Atom), OpeningInjective η →
+            Disjoint (openingAtoms η) L → Disjoint (openingAtoms η) m.domain →
+            ∀ n (h : Capability.Compatible n m), n.domain = openingAtoms η →
+              n ⊨ P.openMany d η → Capability.product n m h ⊨ Q.openMany d η := by
+  let S := (P -∗[d] Q).freeAtoms
+  let r := m.restrict S
+  have supportQ : Q.freeAtoms ⊆ S := by
+    simp only [S, freeAtoms_wand]
+    exact Finset.subset_union_right
+  have openedScope (R : Formula) (η : Fin d → Atom) :
+      (R.openMany d η).freeAtoms ⊆ R.freeAtoms ∪ openingAtoms η := by
+    rw [openMany_eq_openManyAt]
+    exact freeAtoms_openManyAt_subset R 0 d η
+  constructor
+  · intro h
+    obtain ⟨scopeR, L, hall⟩ := (models_wand_iff m d P Q).1 h
+    have scope : S ⊆ m.domain := models_scope h
+    refine ⟨scope, L, ?_⟩
+    intro η inj fresh _ n compat dom hP
+    have compatR : Capability.Compatible n r := compat.restrict_right S
+    have productDom : (Capability.product n r compatR).domain = r.domain ∪ openingAtoms η := by
+      rw [Capability.product_domain, dom, Finset.union_comm]
+    have hQ := hall η inj fresh n compatR productDom hP
+    exact models_kripke (Capability.product_refines compatR compat
+      (Capability.refines_refl n) (Capability.restrict_refines m S)) hQ
+  · rintro ⟨scope, L, hall⟩
+    apply models_wand_intro scope
+    refine ⟨L ∪ m.domain, ?_⟩
+    intro η inj fresh a compat dom hP
+    have freshL : Disjoint (openingAtoms η) L := Finset.disjoint_union_right.1 fresh |>.1
+    have freshM : Disjoint (openingAtoms η) m.domain := Finset.disjoint_union_right.1 fresh |>.2
+    have rdom : r.domain = S := by
+      change m.domain ∩ S = S
+      exact Finset.inter_eq_right.2 scope
+    have freshR : Disjoint (openingAtoms η) r.domain := freshM.mono_right
+      (Capability.refines_domain_subset (Capability.restrict_refines m S))
+    let n := a.restrict (openingAtoms η)
+    have ndom : n.domain = openingAtoms η := by
+      rw [Capability.restrict_domain]
+      apply Finset.inter_eq_right.2
+      intro x hx
+      have hp : x ∈ (Capability.product a r compat).domain := by
+        rw [dom]
+        exact Finset.mem_union_right _ hx
+      rcases Finset.mem_union.1 hp with hp | hp
+      · exact hp
+      · exact False.elim ((Finset.disjoint_left.1 freshR hx) hp)
+    have compatM : Capability.Compatible n m := Capability.Compatible.of_disjoint (by rwa [ndom])
+    have scopeP : (P.openMany d η).freeAtoms ⊆ openingAtoms η := by
+      simpa only [closed, Finset.empty_union] using openedScope P η
+    have hnP : n ⊨ P.openMany d η := (models_restrict_superset a _ scopeP).1 hP
+    have hnQ := hall η inj freshL freshM n compatM ndom hnP
+    have compatR : Capability.Compatible n r := compatM.restrict_right S
+    have small : Capability.product n r compatR = Capability.product a r compat := by
+      have refines := Capability.product_refines compatR compat
+        (Capability.restrict_refines a (openingAtoms η)) (Capability.refines_refl r)
+      have sameDom : (Capability.product n r compatR).domain = (Capability.product a r compat).domain := by
+        rw [Capability.product_domain, ndom, dom, Finset.union_comm]
+      rw [Capability.Refines, sameDom, Capability.restrict_domain_self] at refines
+      exact refines
+    have href := Capability.product_refines compatR compatM
+      (Capability.refines_refl n) (Capability.restrict_refines m S)
+    have scopeQ : (Q.openMany d η).freeAtoms ⊆ (Capability.product n r compatR).domain := by
+      rw [Capability.product_domain, ndom, rdom, Finset.union_comm]
+      exact Finset.Subset.trans (openedScope Q η)
+        (Finset.union_subset_union supportQ (Finset.Subset.refl _))
+    have equivalent := models_projection (m := Capability.product n r compatR) (n := Capability.product n m compatM)
+      (Capability.product n r compatR).domain scopeQ (by
+        rw [Capability.restrict_domain_self]
+        exact href)
+    rw [← small]
+    exact equivalent.2 hnQ
+
+/-- Closed-antecedent wand congruence retains the complete ambient capability
+when comparing its two consequents. -/
+theorem models_wand_congr_full {m : Capability} {d : Nat} {P Q R : Formula}
+    (closed : P.freeAtoms = ∅) (scopeQ : Q.freeAtoms ⊆ m.domain) (scopeR : R.freeAtoms ⊆ m.domain)
+    (cases : ∃ L : Finset Atom,
+      ∀ (η : Fin d → Atom), OpeningInjective η →
+        Disjoint (openingAtoms η) L → Disjoint (openingAtoms η) m.domain →
+        ∀ n (h : Capability.Compatible n m), n.domain = openingAtoms η →
+          n ⊨ P.openMany d η →
+            (Capability.product n m h ⊨ Q.openMany d η ↔
+              Capability.product n m h ⊨ R.openMany d η)) :
+    m ⊨ (P -∗[d] Q) ↔ m ⊨ (P -∗[d] R) := by
+  obtain ⟨L, equiv⟩ := cases
+  have scopePQ : (P -∗[d] Q).freeAtoms ⊆ m.domain := by
+    simpa only [freeAtoms_wand, closed, Finset.empty_union] using scopeQ
+  have scopePR : (P -∗[d] R).freeAtoms ⊆ m.domain := by
+    simpa only [freeAtoms_wand, closed, Finset.empty_union] using scopeR
+  constructor
+  · intro h
+    obtain ⟨_, L', hall⟩ := (models_wand_iff_full m d P Q closed).1 h
+    apply (models_wand_iff_full m d P R closed).2
+    refine ⟨scopePR, L ∪ L', ?_⟩
+    intro η inj fresh apart n compat dom hP
+    have hf := Finset.disjoint_union_right.1 fresh
+    exact (equiv η inj hf.1 apart n compat dom hP).1
+      (hall η inj hf.2 apart n compat dom hP)
+  · intro h
+    obtain ⟨_, L', hall⟩ := (models_wand_iff_full m d P R closed).1 h
+    apply (models_wand_iff_full m d P Q closed).2
+    refine ⟨scopePQ, L ∪ L', ?_⟩
+    intro η inj fresh apart n compat dom hP
+    have hf := Finset.disjoint_union_right.1 fresh
+    exact (equiv η inj hf.1 apart n compat dom hP).2
+      (hall η inj hf.2 apart n compat dom hP)
+
+end Formula
+
+namespace Formula
+
+open scoped ContextTypes
+
+/-- Quantifier congruence retains every ambient input binding while opening
+the quantified bodies. -/
+theorem models_all_congr_full {m : Capability} {P Q : Formula}
+    (scopeP : P.freeAtoms ⊆ m.domain) (scopeQ : Q.freeAtoms ⊆ m.domain)
+    (cases : ∃ L : Finset Atom, ∀ y, y ∉ L → y ∉ m.domain →
+      ∀ n : Capability, m ⊑ n → n.domain = m.domain ∪ {y} →
+        (n ⊨ P.openAt 0 y ↔ n ⊨ Q.openAt 0 y)) :
+    m ⊨ Formula.all P ↔ m ⊨ Formula.all Q := by
+  obtain ⟨L, equiv⟩ := cases
+  constructor
+  · intro h
+    obtain ⟨_, L', hall⟩ := (models_all_iff_full m P).1 h
+    apply (models_all_iff_full m Q).2
+    refine ⟨scopeQ, L ∪ L', ?_⟩
+    intro y hy fresh n href hdom
+    exact (equiv y (fun hx => hy (Finset.mem_union_left _ hx)) fresh n href hdom).1
+      (hall y (fun hx => hy (Finset.mem_union_right _ hx)) fresh n href hdom)
+  · intro h
+    obtain ⟨_, L', hall⟩ := (models_all_iff_full m Q).1 h
+    apply (models_all_iff_full m P).2
+    refine ⟨scopeP, L ∪ L', ?_⟩
+    intro y hy fresh n href hdom
+    exact (equiv y (fun hx => hy (Finset.mem_union_left _ hx)) fresh n href hdom).2
+      (hall y (fun hx => hy (Finset.mem_union_right _ hx)) fresh n href hdom)
+
+/-- Name the argument, function result, and external inputs in one family. -/
+theorem openManyAt_two (P : Formula) (d : Nat) (η : Fin d → Atom) (y z : Atom)
+    (apart : y ≠ z) (freshY : ∀ i, η i ≠ y) (freshZ : ∀ i, η i ≠ z) :
+    ((P.openManyAt 2 d η).openAt 1 z).openAt 0 y =
+      P.openManyAt 0 (d + 2) (Fin.cons y (Fin.cons z η)) := by
+  rw [openManyAt_openAt_comm _ 2 d η 1 z (fun i => by omega) freshZ,
+    openManyAt_openAt_comm _ 2 d η 0 y (fun i => by omega) freshY,
+    openAt_comm P 1 0 z y (by omega) apart.symm]
+  rw [openManyAt_cons, openManyAt_cons]
+
+end Formula
+
 end ContextTypes

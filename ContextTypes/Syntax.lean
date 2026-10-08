@@ -1029,4 +1029,27 @@ theorem openManyAt_fix (T : SimpleType) (v : Value) (k d : Nat) (η : Fin d → 
 
 end Value
 
+namespace Term
+
+theorem openManyAt_app (v₁ v₂ : Value) (k d : Nat) (η : Fin d → Atom) :
+    (Term.app v₁ v₂).openManyAt k d η =
+      .app (v₁.openManyAt k d η) (v₂.openManyAt k d η) := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [Term.openManyAt, ih, Term.openAt, Value.openManyAt]
+
+theorem openManyAt_two_app (d : Nat) (η : Fin d → Atom) (y z : Atom) :
+    (Term.app (.bound 1) (.bound 0)).openManyAt 0 (d + 2) (Fin.cons y (Fin.cons z η)) =
+      .app (.free z) (.free y) := by
+  rw [openManyAt_cons, openManyAt_cons]
+  simp [Term.openAt, Value.openAt, openManyAt_app, Value.openManyAt_free]
+
+theorem openManyAt_two_ret (d : Nat) (η : Fin d → Atom) (y z : Atom) :
+    (Term.ret (.bound 0)).openManyAt 0 (d + 2) (Fin.cons y (Fin.cons z η)) =
+      .ret (.free y) := by
+  rw [openManyAt_cons, openManyAt_cons]
+  simp [Term.openAt, Value.openAt, openManyAt_ret, Value.openManyAt_free]
+
+end Term
+
 end ContextTypes

@@ -1394,4 +1394,15 @@ end FiberExtension
 
 end Capability
 
+namespace Capability
+
+/-- Disjoint observed domains make capabilities compatible. -/
+theorem Compatible.of_disjoint {m n : Capability} (apart : Disjoint m.domain n.domain) :
+    Compatible m n := by
+  intro σ ρ hσ hρ
+  apply Store.Compatible.of_disjoint
+  simpa only [m.mem_domain hσ, n.mem_domain hρ] using apart
+
+end Capability
+
 end ContextTypes

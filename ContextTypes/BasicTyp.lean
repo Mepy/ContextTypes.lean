@@ -1387,4 +1387,102 @@ theorem WellFormedUnder.erase_domain {Γ : Context} {X : Finset Atom}
 
 end Context
 
+namespace BasicEnv
+
+theorem insertMany_two (Δ : BasicEnv) (d : Nat) (η : Fin d → Atom) (T : Fin d → SimpleType)
+    (y z : Atom) (U V : SimpleType) (apart : y ≠ z)
+    (freshY : ∀ i, y ≠ η i) (freshZ : ∀ i, z ≠ η i) :
+    Δ.insertMany (d + 2) (Fin.cons y (Fin.cons z η)) (Fin.cons U (Fin.cons V T)) =
+      ((Δ.insertMany d η T).insert z V).insert y U := by
+  rw [insertMany_cons, insertMany_cons,
+    insertMany_insert_comm _ d η T z V freshZ,
+    insertMany_insert_comm _ d η T y U freshY,
+    insert_comm _ U V apart]
+
+end BasicEnv
+
+namespace ContextType
+
+/-- A closed type is unchanged by opening external binders at or above its
+closure depth, provided the chosen free names do not occur in it. -/
+theorem openManyAt_eq_of_locallyClosedAt (τ : ContextType) (k d : Nat) (η : Fin d → Atom)
+    (closed : τ.LocallyClosedAt k) (fresh : ∀ i, η i ∉ τ.freeAtoms) :
+    τ.openManyAt k d η = τ := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      rw [ContextType.openManyAt, ih _ (fun i => fresh i.castSucc)]
+      have h := openAt_shiftFrom_eq τ (k + d) (η (Fin.last d))
+        (closed.mono (by omega)) (fresh (Fin.last d))
+      rwa [shiftFrom_eq_of_locallyClosedAt τ (k + d) (closed.mono (by omega))] at h
+
+/-- Remove an inserted binder after opening all inputs above the retained
+inner binders. This also covers a dependent function codomain at depth one. -/
+theorem shift_openManyAt_cons_eq_at {τ : ContextType} {Δ : BasicEnv} {k d : Nat}
+    {η : Fin d → Atom} {z : Atom}
+    (wf : τ.WellFormedAt (k + d) Δ.domain) (inj : Function.Injective η)
+    (fresh : ∀ i, η i ∉ Δ.domain) (freshZ : z ∉ Δ.domain ∪ Finset.univ.image η) :
+    (τ.shiftFrom k).openManyAt k (d + 1) (Fin.cons z η) = τ.openManyAt k d η := by
+  have apart : ∀ i, z ≠ η i := by
+    intro i hi
+    apply freshZ
+    exact Finset.mem_union_right _ (Finset.mem_image.2 ⟨i, Finset.mem_univ _, hi.symm⟩)
+  have freshτ : z ∉ τ.freeAtoms := fun hx => freshZ (Finset.mem_union_left _ (wf.freeAtoms_subset hx))
+  have wfOpen := wf.openManyAt η inj fresh
+  rw [openManyAt_cons, ← openManyAt_openAt_comm (τ.shiftFrom k) (k + 1) d η k z
+    (fun i => by omega) (fun i => Ne.symm (apart i)),
+    openManyAt_shiftFrom_of_le τ k k d η (Nat.le_refl _),
+    openAt_shiftFrom_eq _ k z wfOpen.locallyClosedAt (τ.fresh_openManyAt k d η freshτ apart)]
+
+/-- A fresh argument opens the dependent codomain after its inserted function
+result binder has been removed. -/
+theorem shift_openManyAt_two_eq {τ : ContextType} {Δ : BasicEnv} {d : Nat}
+    {η : Fin d → Atom} {y z : Atom}
+    (wf : τ.WellFormedAt (1 + d) Δ.domain) (inj : Function.Injective η)
+    (fresh : ∀ i, η i ∉ Δ.domain) (freshZ : z ∉ Δ.domain ∪ Finset.univ.image η)
+    (apart : y ≠ z) (freshY : ∀ i, y ≠ η i) :
+    (τ.shiftFrom 1).openManyAt 0 (d + 2) (Fin.cons y (Fin.cons z η)) =
+      (τ.openManyAt 1 d η).openAt 0 y := by
+  rw [openManyAt_cons,
+    ← openManyAt_openAt_comm (τ.shiftFrom 1) 1 (d + 1) (Fin.cons z η) 0 y
+      (fun i => by omega) (by
+        intro i
+        cases i using Fin.cases
+        · exact apart.symm
+        · exact Ne.symm (freshY _)),
+    shift_openManyAt_cons_eq_at wf inj fresh freshZ]
+
+/-- Two inserted binders are discarded from a function's nondependent domain. -/
+theorem shift_twice_openManyAt_two_eq {τ : ContextType} {Δ : BasicEnv} {d : Nat}
+    {η : Fin d → Atom} {y z : Atom}
+    (wf : τ.WellFormedAt d Δ.domain) (inj : Function.Injective η)
+    (fresh : ∀ i, η i ∉ Δ.domain) (freshZ : z ∉ Δ.domain ∪ Finset.univ.image η)
+    (freshY : y ∉ (Δ.domain ∪ Finset.univ.image η) ∪ {z}) :
+    ((τ.shiftFrom 0).shiftFrom 0).openManyAt 0 (d + 2) (Fin.cons y (Fin.cons z η)) =
+      τ.openManyAt 0 d η := by
+  have apartZ : ∀ i, z ≠ η i := by
+    intro i hi
+    exact freshZ (Finset.mem_union_right _ (Finset.mem_image.2 ⟨i, Finset.mem_univ _, hi.symm⟩))
+  have inj' : Function.Injective (Fin.cons z η) :=
+    Fin.cons_injective_of_injective (by rintro ⟨i, hi⟩; exact apartZ i hi.symm) inj
+  have fresh' : ∀ i, Fin.cons (α := fun _ => Atom) z η i ∉ Δ.domain := by
+    intro i
+    cases i using Fin.cases
+    · exact fun hz => freshZ (Finset.mem_union_left _ hz)
+    · exact fresh _
+  have freshY' : y ∉ Δ.domain ∪ Finset.univ.image (Fin.cons z η) := by
+    intro hy
+    apply freshY
+    rcases Finset.mem_union.1 hy with hy | hy
+    · exact Finset.mem_union_left _ (Finset.mem_union_left _ hy)
+    · obtain ⟨i, _, hi⟩ := Finset.mem_image.1 hy
+      cases i using Fin.cases
+      · exact Finset.mem_union_right _ (by simpa using hi.symm)
+      · exact Finset.mem_union_left _ (Finset.mem_union_right _
+          (Finset.mem_image.2 ⟨_, Finset.mem_univ _, hi⟩))
+  rw [shift_openManyAt_cons_eq (Δ := Δ) (wf.shiftFrom 0) inj' fresh' freshY',
+    shift_openManyAt_cons_eq (Δ := Δ) wf inj fresh freshZ]
+
+end ContextType
+
 end ContextTypes
