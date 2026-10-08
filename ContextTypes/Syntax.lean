@@ -884,6 +884,13 @@ def openManyAt (k : Nat) : (d : Nat) → (Fin d → Atom) → Value → Value
   | d + 1, η, v => (openManyAt k d (fun i => η i.castSucc) v).openAt
       (k + d) (.free (η (Fin.last d)))
 
+/-- Core free names are unaffected by opening any finite binder family. -/
+theorem openManyAt_free (x : Atom) (k d : Nat) (η : Fin d → Atom) :
+    (Value.free x).openManyAt k d η = .free x := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp [openManyAt, ih, openAt]
+
 end Value
 
 namespace Term

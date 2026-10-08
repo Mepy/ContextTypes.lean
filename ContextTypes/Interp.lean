@@ -1510,6 +1510,13 @@ theorem models_basicWorld_of_subset {m : Capability} {Δ Δ' : BasicEnv}
   obtain ⟨T, hT⟩ := (BasicEnv.mem_domain_iff Δ x).1 hx
   exact scope ((BasicEnv.mem_domain_iff Δ' x).2 ⟨T, embed x T hT⟩)
 
+/-- Restricting possible stores preserves pointwise basic-world obligations. -/
+theorem models_basicWorld_of_capability_subset {m n : Capability} {Δ : BasicEnv}
+    (embed : n ⊆ m) (world : m ⊨ basicWorld Δ) : n ⊨ basicWorld Δ := by
+  obtain ⟨scope, typed⟩ := (models_basicWorld_iff m Δ).1 world
+  apply (models_basicWorld_iff n Δ).2
+  exact ⟨by rwa [embed.1], fun σ hσ x T hx => typed σ (embed.2 σ hσ) x T hx⟩
+
 /-- Removing basic-environment bindings preserves the remaining world facts. -/
 theorem models_basicWorld_restrict {m : Capability} {Δ : BasicEnv}
     (X : Finset Atom) (h : m ⊨ basicWorld Δ) :
@@ -6927,6 +6934,22 @@ theorem AgreeOn.mono {X Y : Finset Atom} {Δ₁ Δ₂ : BasicEnv}
     (h : AgreeOn X Δ₁ Δ₂) (hYX : Y ⊆ X) : AgreeOn Y Δ₁ Δ₂ :=
   fun x hx => h x (hYX hx)
 
+/-- Environment agreement extends to the same fresh-name input family. -/
+theorem AgreeOn.insertMany {Δ Δ' : BasicEnv} {X : Finset Atom}
+    (h : AgreeOn X Δ Δ') (d : Nat) (η : Fin d → Atom) (T : Fin d → SimpleType)
+    (inj : Function.Injective η) :
+    AgreeOn (X ∪ Finset.univ.image η) (Δ.insertMany d η T) (Δ'.insertMany d η T) := by
+  intro x hx
+  by_cases named : x ∈ Finset.univ.image η
+  · obtain ⟨i, _, rfl⟩ := Finset.mem_image.1 named
+    rw [lookup_insertMany _ _ _ _ inj, lookup_insertMany _ _ _ _ inj]
+  · have apart : ∀ i, x ≠ η i := by
+      intro i hi
+      exact named (Finset.mem_image.2 ⟨i, Finset.mem_univ _, hi.symm⟩)
+    rw [lookup_insertMany_of_apart _ _ _ _ _ apart,
+      lookup_insertMany_of_apart _ _ _ _ _ apart]
+    exact h x ((Finset.mem_union.1 hx).resolve_right named)
+
 theorem restrict_eq_of_agreeOn {X : Finset Atom} {Δ₁ Δ₂ : BasicEnv}
     (h : AgreeOn X Δ₁ Δ₂) : Δ₁.restrict X = Δ₂.restrict X := by
   apply Finmap.ext_lookup
@@ -6947,6 +6970,26 @@ theorem relevantEnv_eq_of_agreeOn {Δ₁ Δ₂ : BasicEnv}
     (h : BasicEnv.AgreeOn (τ.freeAtoms ∪ e.support) Δ₁ Δ₂) :
     relevantEnv Δ₁ τ e = relevantEnv Δ₂ τ e :=
   BasicEnv.restrict_eq_of_agreeOn h
+
+/-- Relevant source inputs and freshly named inputs agree wherever an opened
+child type can observe them. -/
+theorem relevantEnv_openManyAt_agreeOn {Δ : BasicEnv} {τ υ : ContextType} {e : Term}
+    {d : Nat} {η : Fin d → Atom} {T : Fin d → SimpleType}
+    (inj : Function.Injective η) (source : υ.freeAtoms ⊆ τ.freeAtoms)
+    (target : (υ.openManyAt 0 d η).freeAtoms ⊆ (τ.openManyAt 0 d η).freeAtoms) :
+    BasicEnv.AgreeOn (υ.openManyAt 0 d η).freeAtoms
+      ((relevantEnv Δ τ e).insertMany d η T)
+      (relevantEnv (Δ.insertMany d η T) (τ.openManyAt 0 d η) (e.openManyAt 0 d η)) := by
+  have agree : BasicEnv.AgreeOn (relevantAtoms τ e) (relevantEnv Δ τ e) Δ := by
+    intro x hx
+    simp only [relevantEnv, BasicEnv.lookup_restrict, if_pos hx]
+  have inputs := agree.insertMany d η T inj
+  intro x hx
+  rw [inputs x (Finset.Subset.trans (υ.freeAtoms_openManyAt_subset 0 d η)
+    (Finset.union_subset_union (Finset.Subset.trans source Finset.subset_union_left)
+      (Finset.Subset.refl _)) hx)]
+  simp only [relevantEnv, BasicEnv.lookup_restrict,
+    if_pos (Finset.mem_union_left _ (target hx)), relevantAtoms]
 
 end Interp
 

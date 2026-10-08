@@ -172,6 +172,45 @@ theorem subset_insert_of_fresh (Δ : BasicEnv) (y : Atom) (U : SimpleType)
   rw [lookup_insert_of_ne _ U hzy]
   exact hz
 
+/-- Prepending a named input inserts it before the remaining finite family. -/
+theorem insertMany_cons (Δ : BasicEnv) (d : Nat) (z : Atom) (U : SimpleType)
+    (η : Fin d → Atom) (T : Fin d → SimpleType) :
+    Δ.insertMany (d + 1) (Fin.cons z η) (Fin.cons U T) =
+      (Δ.insert z U).insertMany d η T := by
+  induction d with
+  | zero => simp [insertMany]
+  | succ d ih =>
+      have hη : (fun i : Fin (d + 1) => Fin.cons (α := fun _ => Atom) z η i.castSucc) =
+          Fin.cons (α := fun _ => Atom) z (fun i : Fin d => η i.castSucc) := by
+        funext i
+        cases i using Fin.cases <;> simp
+      have hT : (fun i : Fin (d + 1) => Fin.cons (α := fun _ => SimpleType) U T i.castSucc) =
+          Fin.cons (α := fun _ => SimpleType) U (fun i : Fin d => T i.castSucc) := by
+        funext i
+        cases i using Fin.cases <;> simp
+      rw [insertMany, hη, hT, ih]
+      conv_rhs => rw [insertMany]
+      simp only [Fin.cons_last]
+
+/-- An independent named binding commutes with a finite input environment. -/
+theorem insertMany_insert_comm (Δ : BasicEnv) (d : Nat) (η : Fin d → Atom)
+    (T : Fin d → SimpleType) (z : Atom) (U : SimpleType) (apart : ∀ i, z ≠ η i) :
+    (Δ.insert z U).insertMany d η T = (Δ.insertMany d η T).insert z U := by
+  induction d with
+  | zero => rfl
+  | succ d ih =>
+      rw [insertMany, ih _ _ (fun i => apart i.castSucc),
+        insert_comm _ U _ (apart (Fin.last d))]
+      rfl
+
+/-- Extending both environments by the same inputs preserves their inclusion. -/
+theorem Subset.insertMany {Δ Δ' : BasicEnv} (h : Δ.Subset Δ')
+    (d : Nat) (η : Fin d → Atom) (T : Fin d → SimpleType) :
+    (Δ.insertMany d η T).Subset (Δ'.insertMany d η T) := by
+  induction d with
+  | zero => exact h
+  | succ d ih => exact (ih _ _).insert _ _
+
 /-- Erased-environment composition is associative. -/
 theorem merge_assoc (Δ₁ Δ₂ Δ₃ : BasicEnv) :
     (Δ₁.merge Δ₂).merge Δ₃ = Δ₁.merge (Δ₂.merge Δ₃) := by
@@ -1237,6 +1276,28 @@ theorem WellFormedAt.openManyAt {τ : ContextType} {n d : Nat} {X : Finset Atom}
       rw [ContextType.openManyAt, openManyAt_openAt_comm τ n d (fun i => η i.castSucc)
         (n + d) (η (Fin.last d)) (fun i => by omega) names]
       simpa only [hX] using hbody
+
+/-- Opening external inputs and the inserted result binder fully removes a
+type shift, including dependent qualifiers in compound result types. -/
+theorem shift_openManyAt_cons_eq {τ : ContextType} {Δ : BasicEnv} {d : Nat}
+    {η : Fin d → Atom} {z : Atom}
+    (wf : τ.WellFormedAt d Δ.domain) (inj : Function.Injective η)
+    (fresh : ∀ i, η i ∉ Δ.domain) (freshZ : z ∉ Δ.domain ∪ Finset.univ.image η) :
+    (τ.shiftFrom 0).openManyAt 0 (d + 1) (Fin.cons z η) = τ.openManyAt 0 d η := by
+  have apart : ∀ i, z ≠ η i := by
+    intro i hi
+    apply freshZ
+    exact Finset.mem_union_right _ (Finset.mem_image.2 ⟨i, Finset.mem_univ _, hi.symm⟩)
+  have freshτ : z ∉ τ.freeAtoms := by
+    intro hx
+    apply freshZ
+    exact Finset.mem_union_left _ (wf.freeAtoms_subset hx)
+  have wf' : τ.WellFormedAt (0 + d) Δ.domain := by simpa only [Nat.zero_add] using wf
+  have wfOpen := wf'.openManyAt η inj fresh
+  rw [openManyAt_cons, ← openManyAt_openAt_comm (τ.shiftFrom 0) 1 d η 0 z
+    (fun i => by omega) (fun i => Ne.symm (apart i)),
+    openManyAt_shiftFrom_of_le τ 0 0 d η (Nat.le_refl _),
+    openAt_shiftFrom_eq _ 0 z wfOpen.locallyClosedAt (τ.fresh_openManyAt 0 d η freshτ apart)]
 
 end ContextType
 
