@@ -3,6 +3,7 @@ import ContextTypes.SemTyp.Primitive
 import ContextTypes.SemTyp.Persistence
 import ContextTypes.SemTyp.Match
 import ContextTypes.SemTyp.Let
+import ContextTypes.SemTyp.Function
 
 /-!
 # Semantic context typing

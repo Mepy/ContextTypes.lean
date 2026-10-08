@@ -1215,4 +1215,55 @@ theorem models_interp_app_bound_openAt_iff
   simpa only [interp, measure_openAt] using
     models_interpFuel_app_bound_openAt_iff (Nat.le_refl τ.measure) wf freshY freshZ apart world
 
+/-- Pointwise equality of instantiated terms preserves their entire type
+interpretation, even when their syntactic free supports differ. -/
+theorem models_interp_of_instantiate_eq_iff
+    {m : Capability} {Δ : BasicEnv} {τ : ContextType} {e₁ e₂ : Term}
+    (wf : τ.WellFormed Δ.domain) (typed₁ : Δ ⊢ₑ e₁ ⋮ τ.erase)
+    (typed₂ : Δ ⊢ₑ e₂ ⋮ τ.erase) (world : m ⊨ Interp.basicWorld Δ)
+    (same : ∀ σ, σ ∈ m →
+      Interp.instantiateTerm e₁ σ.toAssignment = Interp.instantiateTerm e₂ σ.toAssignment) :
+    m ⊨ interp Δ τ e₁ ↔ m ⊨ interp Δ τ e₂ := by
+  have scope := (Interp.models_basicWorld_iff m Δ).1 world |>.1
+  have total : m ⊨ Interp.total e₁ ↔ m ⊨ Interp.total e₂ := by
+    rw [Interp.models_total_iff typed₁.locallyClosed, Interp.models_total_iff typed₂.locallyClosed]
+    constructor
+    · rintro ⟨_, h⟩
+      exact ⟨Finset.Subset.trans typed₂.support_subset scope,
+        fun σ hσ => same σ hσ ▸ h σ hσ⟩
+    · rintro ⟨_, h⟩
+      exact ⟨Finset.Subset.trans typed₁.support_subset scope,
+        fun σ hσ => (same σ hσ).symm ▸ h σ hσ⟩
+  have results : Interp.ResultsEquivOn τ.freeAtoms m m e₁ e₂ := by
+    intro s v
+    constructor
+    · rintro ⟨σ, hσ, hs, hv⟩
+      exact ⟨σ, hσ, hs, same σ hσ ▸ hv⟩
+    · rintro ⟨σ, hσ, hs, hv⟩
+      exact ⟨σ, hσ, hs, (same σ hσ).symm ▸ hv⟩
+  constructor
+  · intro h
+    exact models_interp_of_resultsEquivOn wf wf typed₁ typed₂ world
+      (total.1 (models_interp_total h)) (fun _ _ => rfl) results h
+  · intro h
+    exact models_interp_of_resultsEquivOn wf wf typed₂ typed₁ world
+      (total.2 (models_interp_total h)) (fun _ _ => rfl) results.symm h
+
+/-- A function argument does not observe the fresh function-result binder.
+Its opened interpretation is the ordinary interpretation of its fresh name. -/
+theorem models_interp_arg_bound_openAt_iff
+    {m : Capability} {Δ : BasicEnv} {τ : ContextType} {gas : Nat} {y z : Atom}
+    (lower : τ.measure ≤ gas) (wf : τ.WellFormed Δ.domain)
+    (freshY : y ∉ Δ.domain) (freshZ : z ∉ Δ.domain) :
+    m ⊨ ((interpFuel gas 2 Δ ((τ.shiftFrom 0).shiftFrom 0) (.ret (.bound 0))).openAt 1 z).openAt 0 y ↔
+      m ⊨ interp (Δ.insert y τ.erase) τ (.ret (.free y)) := by
+  simp only [shiftFrom_eq_of_locallyClosedAt τ 0 wf.locallyClosedAt]
+  rw [interpFuel_openAt_fresh gas 2 Δ τ (.ret (.bound 0)) 1 z
+    (wf.locallyClosedAt.mono (by omega)) (by simp [Term.locallyClosedAt, Value.locallyClosedAt])
+    freshZ (fun hz => freshZ (wf.freeAtoms_subset hz)) (by simp [Term.support, Value.support])]
+  rw [models_interpFuel_ret_bound_openAt_iff wf freshY]
+  rw [interpFuel_eq_of_measure_le gas τ.measure 0 (Δ.insert y τ.erase) τ (.ret (.free y)) lower
+    (Nat.le_refl _)]
+  rfl
+
 end ContextTypes.ContextType
