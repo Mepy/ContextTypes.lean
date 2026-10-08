@@ -2017,4 +2017,344 @@ theorem openManyAt_two (P : Formula) (d : Nat) (η : Fin d → Atom) (y z : Atom
 
 end Formula
 
+namespace LogicVar
+
+@[simp] theorem freeAtomSet_swap (X : Finset LogicVar) (x y : Atom) :
+    freeAtomSet (X.image (swap (.free x) (.free y))) =
+      (freeAtomSet X).image (Equiv.swap x y) := by
+  ext z
+  rw [mem_freeAtomSet_iff, LogicVar.mem_image_swap, swap_free, Finset.mem_image]
+  constructor
+  · intro h
+    exact ⟨Equiv.swap x y z, (mem_freeAtomSet_iff X _).2 h, by simp⟩
+  · rintro ⟨w, hw, rfl⟩
+    simpa only [Equiv.swap_apply_self] using (mem_freeAtomSet_iff X w).1 hw
+
+end LogicVar
+
+namespace Store
+
+theorem toAssignment_swap (σ : Store) (x y : Atom) :
+    (σ.swap x y).toAssignment = σ.toAssignment.swap (.free x) (.free y) := by
+  apply Assignment.ext
+  intro ξ
+  cases ξ <;> simp
+
+end Store
+
+namespace Qualifier
+
+theorem HoldsStore.swap {q : Qualifier} {σ : Store} (h : q.HoldsStore σ) (x y : Atom) :
+    (q.swap x y).HoldsStore (σ.swap x y) := by
+  obtain ⟨dom, ρ, holds, lookup⟩ := h
+  refine ⟨?_, ρ.swapFront (.free x) (.free y), ?_, ?_⟩
+  · simp only [Store.domain_swap, freeAtoms_swap, dom]
+  · simpa only [Qualifier.swap, AssignmentOn.swapBack_swapFront] using holds
+  · intro z
+    simp only [AssignmentOn.swapFront, Assignment.lookup_swap, LogicVar.swap_free,
+      lookup, Store.lookup_swap]
+
+theorem holdsStore_swap_iff (q : Qualifier) (σ : Store) (x y : Atom) :
+    (q.swap x y).HoldsStore (σ.swap x y) ↔ q.HoldsStore σ := by
+  constructor
+  · intro h
+    simpa only [Qualifier.swap_involutive, Store.swap_involutive] using h.swap x y
+  · exact fun h => h.swap x y
+
+theorem Exactly.swap {q : Qualifier} {m : Capability} (h : q.Exactly m) (x y : Atom) :
+    (q.swap x y).Exactly (m.swap x y) := by
+  obtain ⟨closed, scope, exactQ⟩ := h
+  refine ⟨?_, ?_, ?_⟩
+  · intro k hk
+    rw [support_swap, LogicVar.mem_image_swap, LogicVar.swap_bound] at hk
+    exact closed k hk
+  · simpa only [freeAtoms_swap, Capability.swap_domain] using Finset.image_subset_image scope
+  · intro σ hσ
+    have dom : (σ.swap x y).domain = q.freeAtoms := by
+      have h := congrArg (fun X : Finset Atom => X.image (Equiv.swap x y)) hσ
+      simpa only [Store.domain_swap, freeAtoms_swap, Finset.image_image, Function.comp_def,
+        Equiv.swap_apply_self, Finset.image_id'] using h
+    have hs := holdsStore_swap_iff q (σ.swap x y) x y
+    simp only [Store.swap_involutive] at hs
+    rw [hs, exactQ _ dom, freeAtoms_swap, ← Capability.swap_restrict]
+    rfl
+
+end Qualifier
+
+namespace Formula
+
+@[simp] theorem freeAtoms_swap (P : Formula) (x y : Atom) :
+    (P.swap x y).freeAtoms = P.freeAtoms.image (Equiv.swap x y) := by
+  induction P <;> simp_all [swap, Finset.image_union, LogicVar.freeAtomSet_swap]
+
+theorem swap_openAt (P : Formula) (k : Nat) (x y z : Atom) :
+    (P.openAt k z).swap x y = (P.swap x y).openAt k (Equiv.swap x y z) := by
+  induction P generalizing k <;> simp_all [swap, openAt, Qualifier.swap_openAt]
+  simp only [LogicVar.openSupport, Finset.image_image]
+  apply Finset.image_congr
+  intro ξ _
+  exact LogicVar.swap_free_openBinder x y z k ξ
+
+theorem swap_openMany (P : Formula) (d : Nat) (η : Fin d → Atom) (x y : Atom) :
+    (P.openMany d η).swap x y = (P.swap x y).openMany d (fun i => Equiv.swap x y (η i)) := by
+  induction d with
+  | zero => rfl
+  | succ d ih => simp only [openMany, swap_openAt, ih]
+
+theorem swap_substitute (P : Formula) (ρ : Assignment) (x y : Atom) :
+    (P.substitute ρ).swap x y = (P.swap x y).substitute (ρ.swap (.free x) (.free y)) := by
+  induction P <;> simp_all [swap, substitute, Qualifier.swap_substitute]
+  exact Finset.image_sdiff _ _ (fun ξ ζ h => by
+    have h' := congrArg (LogicVar.swap (.free x) (.free y)) h
+    simpa only [LogicVar.swap_involutive] using h')
+
+theorem swap_substituteStore (P : Formula) (σ : Store) (x y : Atom) :
+    (P.substituteStore σ).swap x y = (P.swap x y).substituteStore (σ.swap x y) := by
+  simp only [substituteStore, Store.toAssignment_swap, swap_substitute]
+
+theorem swap_fresh (P : Formula) (x y : Atom) (hx : x ∉ P.freeAtoms) (hy : y ∉ P.freeAtoms) :
+    P.swap x y = P := by
+  induction P with
+  | top | bot => rfl
+  | atom q =>
+      simp only [freeAtoms_atom] at hx hy
+      change Formula.atom (q.swap x y) = .atom q
+      congr 1
+      exact q.swap_fresh x y (fun h => hx ((Qualifier.mem_freeAtoms_iff q x).2 h))
+        (fun h => hy ((Qualifier.mem_freeAtoms_iff q y).2 h))
+  | and P Q ihP ihQ | or P Q ihP ihQ | impl P Q ihP ihQ
+  | star P Q ihP ihQ | wand d P Q ihP ihQ | sum P Q ihP ihQ =>
+      simp only [freeAtoms_and, freeAtoms_or, freeAtoms_impl, freeAtoms_star,
+        freeAtoms_wand, freeAtoms_sum, Finset.mem_union, not_or] at hx hy
+      simp only [swap, ihP hx.1 hy.1, ihQ hx.2 hy.2]
+  | all P ih | «over» P ih | «under» P ih | persist P ih =>
+      simp_all [swap]
+  | fiber X P ih =>
+      simp only [freeAtoms_fiber, Finset.mem_union, not_or] at hx hy
+      simp only [swap, ih hx.2 hy.2]
+      congr 1
+      exact LogicVar.image_swap_eq_self_of_fresh (.free x) (.free y) X
+        (fun h => hx.1 ((LogicVar.mem_freeAtomSet_iff X x).2 h))
+        (fun h => hy.1 ((LogicVar.mem_freeAtomSet_iff X y).2 h))
+
+theorem openingAtoms_swap {d : Nat} (η : Fin d → Atom) (x y : Atom) :
+    openingAtoms (fun i => Equiv.swap x y (η i)) = (openingAtoms η).image (Equiv.swap x y) := by
+  simp only [openingAtoms, Finset.image_image, Function.comp_def]
+
+set_option maxHeartbeats 800000 in
+/-- Satisfaction is equivariant under a simultaneous exchange of free names. -/
+theorem models_swap (m : Capability) (P : Formula) (x y : Atom) :
+    m ⊨ P ↔ m.swap x y ⊨ P.swap x y := by
+  have go : ∀ j (P : Formula), P.measure = j → ∀ m x y,
+      m ⊨ P → m.swap x y ⊨ P.swap x y := by
+    intro j
+    induction j using Nat.strong_induction_on with
+    | h j ih =>
+      intro P eq m x y hp
+      have child (Q : Formula) (small : Q.measure < P.measure) (n : Capability) :
+          n ⊨ Q ↔ n.swap x y ⊨ Q.swap x y := by
+        constructor
+        · exact ih Q.measure (by omega) Q rfl n x y
+        · intro hq
+          have h := ih Q.measure (by omega) (Q.swap x y) (measure_swap Q x y) (n.swap x y) x y hq
+          simpa only [Capability.swap_involutive, swap_involutive] using h
+      have scope : (P.swap x y).freeAtoms ⊆ (m.swap x y).domain := by
+        simpa only [freeAtoms_swap, Capability.swap_domain] using Finset.image_subset_image (models_scope hp)
+      cases P with
+      | top => exact models_top _
+      | bot => exact (not_models_bot m hp).elim
+      | atom q =>
+        obtain ⟨dom, exactQ⟩ := (models_atom_iff m q).1 hp
+        apply (models_atom_iff _ _).2
+        rw [Qualifier.freeAtoms_swap, ← Capability.swap_restrict]
+        exact ⟨by simp only [Capability.swap_domain, dom], exactQ.swap x y⟩
+      | and P Q =>
+        obtain ⟨hP, hQ⟩ := (models_and_iff m P Q).1 hp
+        exact models_and_intro ((child P (by simp only [measure]; omega) m).1 hP)
+          ((child Q (by simp only [measure]; omega) m).1 hQ)
+      | or P Q =>
+        apply (models_or_iff _ _ _ scope).2
+        rcases (models_or_iff m P Q (models_scope hp)).1 hp with hP | hQ
+        · exact Or.inl ((child P (by simp only [measure]; omega) m).1 hP)
+        · exact Or.inr ((child Q (by simp only [measure]; omega) m).1 hQ)
+      | impl P Q =>
+        obtain ⟨_, h⟩ := (models_impl_iff m P Q).1 hp
+        apply models_impl_intro scope
+        intro n href hP
+        change (m.swap x y).restrict ((P ⇒ᶜ Q).swap x y).freeAtoms ⊑ n at href
+        rw [freeAtoms_swap, ← Capability.swap_restrict] at href
+        have back := Capability.refines_swap href x y
+        simp only [Capability.swap_involutive] at back
+        have hQ := h (n.swap x y) back ((child P (by simp only [measure]; omega) (n.swap x y)).2
+          (by simpa only [Capability.swap_involutive] using hP))
+        have out := (child Q (by simp only [measure]; omega) (n.swap x y)).1 hQ
+        simpa only [Capability.swap_involutive] using out
+      | star P Q =>
+        obtain ⟨_, m₁, m₂, compat, href, hP, hQ⟩ := (models_star_iff m P Q).1 hp
+        apply models_star_intro (compat.swap x y) scope
+        · have out := Capability.refines_swap href x y
+          change _ ⊑ (m.swap x y).restrict ((P ∗ Q).swap x y).freeAtoms
+          rw [freeAtoms_swap]
+          simpa only [Capability.swap_product, Capability.swap_restrict, freeAtoms_swap] using out
+        · exact (child P (by simp only [measure]; omega) m₁).1 hP
+        · exact (child Q (by simp only [measure]; omega) m₂).1 hQ
+      | sum P Q =>
+        obtain ⟨_, m₁, m₂, dom, href, hP, hQ⟩ := (models_sum_iff m P Q).1 hp
+        apply models_sum_intro (dom.swap x y) scope
+        · have out := Capability.refines_swap href x y
+          change _ ⊑ (m.swap x y).restrict ((P ⊕ Q).swap x y).freeAtoms
+          rw [freeAtoms_swap]
+          simpa only [Capability.swap_sum, Capability.swap_restrict, freeAtoms_swap] using out
+        · exact (child P (by simp only [measure]; omega) m₁).1 hP
+        · exact (child Q (by simp only [measure]; omega) m₂).1 hQ
+      | «over» P =>
+        obtain ⟨dom, n, incl, hP⟩ := (models_over_iff m P).1 hp
+        apply (models_over_iff _ _).2
+        rw [freeAtoms_swap, ← Capability.swap_restrict]
+        exact ⟨by simp only [Capability.swap_domain, dom], n.swap x y, Capability.subset_swap incl x y,
+          (child P (by simp only [measure]; omega) n).1 hP⟩
+      | «under» P =>
+        obtain ⟨dom, n, incl, hP⟩ := (models_under_iff m P).1 hp
+        apply (models_under_iff _ _).2
+        rw [freeAtoms_swap, ← Capability.swap_restrict]
+        exact ⟨by simp only [Capability.swap_domain, dom], n.swap x y, Capability.subset_swap incl x y,
+          (child P (by simp only [measure]; omega) n).1 hP⟩
+      | persist P =>
+        obtain ⟨σ, dom, same, hP⟩ := (models_persist_iff m P).1 hp
+        apply (models_persist_iff _ _).2
+        refine ⟨σ.swap x y, by simp only [Store.domain_swap, freeAtoms_swap, dom], ?_, ?_⟩
+        · rw [freeAtoms_swap, ← Capability.swap_restrict, same, Capability.swap_singleton]
+        · simpa only [Capability.swap_singleton] using (child P (by simp only [measure]; omega) (.singleton σ)).1 hP
+      | all P =>
+        obtain ⟨_, L, hall⟩ := (models_all_iff_refines m P).1 hp
+        apply (models_all_iff_refines _ _).2
+        refine ⟨by simpa only [swap, freeAtoms_all] using scope, L.image (Equiv.swap x y), ?_⟩
+        intro z hz fresh n href hdom
+        have freshL : Equiv.swap x y z ∉ L := fun h => hz (Finset.mem_image.2 ⟨_, h, by simp⟩)
+        have freshP : Equiv.swap x y z ∉ P.freeAtoms := fun h => fresh (by
+          rw [freeAtoms_swap]; exact Finset.mem_image.2 ⟨_, h, by simp⟩)
+        rw [freeAtoms_swap, ← Capability.swap_restrict] at href
+        have back := Capability.refines_swap href x y
+        simp only [Capability.swap_involutive] at back
+        have dom : (n.swap x y).domain = P.freeAtoms ∪ {Equiv.swap x y z} := by
+          simp only [Capability.swap_domain, hdom, freeAtoms_swap, Finset.image_union,
+            Finset.image_image, Function.comp_def, Equiv.swap_apply_self, Finset.image_id', Finset.image_singleton]
+        have hP := hall _ freshL freshP (n.swap x y) back dom
+        have out := (child (P.openAt 0 (Equiv.swap x y z)) (by simp only [measure_openAt, measure]; omega) (n.swap x y)).1 hP
+        simpa only [Capability.swap_involutive, swap_openAt, Equiv.swap_apply_self] using out
+      | wand d P Q =>
+        obtain ⟨dom, L, hall⟩ := (models_wand_iff m d P Q).1 hp
+        apply models_wand_intro scope
+        refine ⟨L.image (Equiv.swap x y), ?_⟩
+        intro η inj fresh n compat hdom hP
+        let r := m.restrict (P -∗[d] Q).freeAtoms
+        have rEq : (m.swap x y).restrict (P.swap x y -∗[d] Q.swap x y).freeAtoms = r.swap x y := by
+          change (m.swap x y).restrict ((P -∗[d] Q).swap x y).freeAtoms = _
+          rw [freeAtoms_swap, ← Capability.swap_restrict]
+        rw [rEq] at compat
+        simp only [rEq] at hdom
+        let η' := fun i => Equiv.swap x y (η i)
+        have fresh' : Disjoint (openingAtoms η') L := by
+          apply Finset.disjoint_left.2
+          intro z hz hzL
+          obtain ⟨i, _, hi⟩ := Finset.mem_image.1 hz
+          apply Finset.disjoint_left.1 fresh (Finset.mem_image.2 ⟨i, Finset.mem_univ _, rfl⟩)
+          exact Finset.mem_image.2 ⟨z, hzL, by simpa only [η', Equiv.swap_apply_self] using congrArg (Equiv.swap x y) hi.symm⟩
+        have compat' : Capability.Compatible (n.swap x y) r := by
+          have back : Capability.Compatible (n.swap x y) ((r.swap x y).swap x y) :=
+            Capability.Compatible.swap (m := n) (n := r.swap x y) compat x y
+          intro σ ρ hσ hρ
+          exact back hσ (by simpa only [Capability.swap_involutive] using hρ)
+        have dom' : (Capability.product (n.swap x y) r compat').domain = r.domain ∪ openingAtoms η' := by
+          have hdom' : n.domain ∪ (r.swap x y).domain = (r.swap x y).domain ∪ openingAtoms η := hdom
+          have hs := congrArg (fun X : Finset Atom => X.image (Equiv.swap x y)) hdom'
+          simpa only [Capability.product_domain, Capability.swap_domain, Finset.image_union,
+            Finset.image_image, Function.comp_def, Equiv.swap_apply_self, Finset.image_id', η', openingAtoms_swap] using hs
+        have arg : n.swap x y ⊨ P.openMany d η' := by
+          have out := (child (P.swap x y |>.openMany d η) (by simp only [measure_openMany, measure_swap, measure]; omega) n).1 hP
+          simpa only [swap_openMany, swap_involutive] using out
+        have hQ := hall η' ((Equiv.swap x y).injective.comp inj) fresh' (n.swap x y) compat' dom' arg
+        have out := (child (Q.openMany d η') (by simp only [measure_openMany, measure]; omega)
+          (Capability.product (n.swap x y) r compat')).1 hQ
+        simpa only [Capability.swap_product, Capability.swap_involutive, swap_openMany,
+          η', Equiv.swap_apply_self, rEq] using out
+      | fiber X P =>
+        obtain ⟨dom, closed, hf⟩ := (models_fiber_iff m X P).1 hp
+        apply (models_fiber_iff _ _ _).2
+        have rEq : (m.swap x y).restrict ((Formula.fiber X P).swap x y).freeAtoms =
+            (m.restrict (Formula.fiber X P).freeAtoms).swap x y := by
+          rw [freeAtoms_swap, ← Capability.swap_restrict]
+        refine ⟨?_, ?_, ?_⟩
+        · rw [Capability.restrict_domain]
+          exact Finset.inter_eq_right.2 (by simpa only [swap] using scope)
+        · intro k hk
+          rw [LogicVar.mem_image_swap, LogicVar.swap_bound] at hk
+          exact closed k hk
+        · intro σ f hF
+          change Capability.IsFiber f ((m.swap x y).restrict ((Formula.fiber X P).swap x y).freeAtoms)
+            (LogicVar.freeAtomSet (X.image (LogicVar.swap (.free x) (.free y)))) σ at hF
+          rw [rEq, LogicVar.freeAtomSet_swap] at hF
+          have back := hF.swap x y
+          simp only [Capability.swap_involutive, Finset.image_image, Function.comp_def,
+            Equiv.swap_apply_self, Finset.image_id'] at back
+          have hP := hf (σ.swap x y) (f.swap x y) back
+          have out := (child (P.substituteStore (σ.swap x y)) (by simp only [measure_substituteStore, measure]; omega) (f.swap x y)).1 hP
+          simpa only [Capability.swap_involutive, swap_substituteStore, Store.swap_involutive] using out
+  constructor
+  · exact go P.measure P rfl m x y
+  · intro h
+    simpa only [Capability.swap_involutive, swap_involutive] using go P.measure (P.swap x y) (measure_swap P x y) (m.swap x y) x y h
+
+/-- Cofinite universal quantification applies to every fresh name, including
+names in its original finite exclusion set. -/
+theorem models_all_openAt_of_refines {m n : Capability} {P : Formula} {x : Atom}
+    (h : m ⊨ Formula.all P) (fresh : x ∉ m.domain)
+    (href : m ⊑ n) (dom : n.domain = m.domain ∪ {x}) :
+    n ⊨ P.openAt 0 x := by
+  obtain ⟨scope, L, hall⟩ := (models_all_iff_full m P).1 h
+  obtain ⟨y, hy⟩ := Finset.exists_nat_subset_range (L ∪ n.domain)
+  have freshY : y ∉ L ∪ n.domain := by
+    intro h
+    have := hy h
+    simp at this
+  have freshL : y ∉ L := fun h => freshY (Finset.mem_union_left _ h)
+  have freshN : y ∉ n.domain := fun h => freshY (Finset.mem_union_right _ h)
+  have freshM : y ∉ m.domain := fun h => freshN (Capability.refines_domain_subset href h)
+  have sameM := Capability.swap_fresh m x y fresh freshM
+  have img : m.domain.image (Equiv.swap x y) = m.domain := congrArg Capability.domain sameM
+  have href' := Capability.refines_swap href x y
+  rw [sameM] at href'
+  have dom' : (n.swap x y).domain = m.domain ∪ {y} := by
+    simp only [Capability.swap_domain, dom, Finset.image_union, Finset.image_singleton,
+      Equiv.swap_apply_left, img]
+  have opened := hall y freshL freshM (n.swap x y) href' dom'
+  apply (models_swap n (P.openAt 0 x) x y).2
+  rw [swap_openAt, swap_fresh P x y (fun h => fresh (scope h)) (fun h => freshM (scope h)),
+    Equiv.swap_apply_left]
+  exact opened
+
+/-- A name already present in the capability may instantiate a universal
+formula when that name is not among its free observations. -/
+theorem models_all_elim_named {m : Capability} {P : Formula} {x : Atom}
+    (h : m ⊨ Formula.all P) (fresh : x ∉ P.freeAtoms) (present : x ∈ m.domain) :
+    m ⊨ P.openAt 0 x := by
+  have scope : P.freeAtoms ⊆ m.domain := by simpa using models_scope h
+  let r := m.restrict P.freeAtoms
+  let n := m.restrict (P.freeAtoms ∪ {x})
+  have rdom : r.domain = P.freeAtoms := by
+    rw [Capability.restrict_domain, Finset.inter_eq_right.2 scope]
+  have ndom : n.domain = P.freeAtoms ∪ {x} := by
+    rw [Capability.restrict_domain, Finset.inter_eq_right.2
+      (Finset.union_subset scope (by simpa using present))]
+  have href : r ⊑ n := by
+    change r = n.restrict r.domain
+    rw [rdom, Capability.restrict_restrict, Finset.inter_eq_right.2 Finset.subset_union_left]
+  have hr : r ⊨ Formula.all P := by
+    simpa only [r, freeAtoms_all] using (models_restrict_iff m (Formula.all P)).1 h
+  have opened := models_all_openAt_of_refines hr (by rwa [rdom]) href (by rwa [rdom])
+  exact (models_restrict_superset m (P.openAt 0 x)
+    (by simpa only [Finset.union_comm] using freeAtoms_openAt_subset P 0 x)).2 opened
+
+end Formula
+
 end ContextTypes

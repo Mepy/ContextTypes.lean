@@ -1052,4 +1052,57 @@ theorem openManyAt_two_ret (d : Nat) (η : Fin d → Atom) (y z : Atom) :
 
 end Term
 
+namespace LogicVar
+
+theorem image_swap_eq_self_of_fresh (ξ₁ ξ₂ : LogicVar)
+    (X : Finset LogicVar) (h₁ : ξ₁ ∉ X) (h₂ : ξ₂ ∉ X) :
+    X.image (swap ξ₁ ξ₂) = X := by
+  apply Finset.ext
+  intro ξ
+  rw [Finset.mem_image]
+  constructor
+  · rintro ⟨ζ, hζ, rfl⟩
+    have hn₁ : ζ ≠ ξ₁ := fun same => h₁ (same ▸ hζ)
+    have hn₂ : ζ ≠ ξ₂ := fun same => h₂ (same ▸ hζ)
+    simpa [swap, hn₁, hn₂] using hζ
+  · intro hξ
+    have hn₁ : ξ ≠ ξ₁ := fun same => h₁ (same ▸ hξ)
+    have hn₂ : ξ ≠ ξ₂ := fun same => h₂ (same ▸ hξ)
+    exact ⟨ξ, hξ, by simp [swap, hn₁, hn₂]⟩
+
+theorem mem_image_swap (X : Finset LogicVar) (ξ₁ ξ₂ ξ : LogicVar) :
+    ξ ∈ X.image (LogicVar.swap ξ₁ ξ₂) ↔ LogicVar.swap ξ₁ ξ₂ ξ ∈ X := by
+  rw [Finset.mem_image]
+  constructor
+  · rintro ⟨ζ, hζ, rfl⟩
+    simpa using hζ
+  · intro h
+    exact ⟨LogicVar.swap ξ₁ ξ₂ ξ, h, LogicVar.swap_involutive _ _ _⟩
+
+@[simp] theorem swap_free (x y z : Atom) :
+    swap (.free x) (.free y) (.free z) = .free (Equiv.swap x y z) := by
+  by_cases hz : z = x <;> by_cases hy : z = y <;> simp [swap, Equiv.swap_apply_def, hz, hy]
+
+@[simp] theorem swap_bound (x y : Atom) (k : Nat) :
+    swap (.free x) (.free y) (.bound k) = .bound k := by simp [swap]
+
+theorem swap_free_openBinder (x y z : Atom) (k : Nat) (ξ : LogicVar) :
+    swap (.free x) (.free y) (openBinder k z ξ) =
+      openBinder k (Equiv.swap x y z) (swap (.free x) (.free y) ξ) := by
+  cases ξ with
+  | bound j =>
+      by_cases hj : j = k
+      · subst j; simp [openBinder]
+      · simp [openBinder, swap, hj]
+  | free w =>
+      have hfree (w z : Atom) : openBinder k z (.free w) = if w = z then .bound k else .free w := by
+        simp [openBinder, swap]
+      by_cases hw : w = z
+      · subst w
+        simp [hfree]
+      · have h : Equiv.swap x y w ≠ Equiv.swap x y z := fun h => hw ((Equiv.swap x y).injective h)
+        simp only [hfree, hw, if_false, swap_free, h]
+
+end LogicVar
+
 end ContextTypes

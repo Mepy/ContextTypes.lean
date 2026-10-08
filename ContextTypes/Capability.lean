@@ -1405,4 +1405,230 @@ theorem Compatible.of_disjoint {m n : Capability} (apart : Disjoint m.domain n.d
 
 end Capability
 
+namespace Store
+
+/-- Exchange two keys without changing their stored values. -/
+def swap (σ : Store) (x y : Atom) : Store :=
+  Finmap.keysLookupEquiv.symm
+    ⟨(σ.domain.image (Equiv.swap x y), fun z => σ.lookup (Equiv.swap x y z)), by
+      intro z
+      change (σ.lookup (Equiv.swap x y z)).isSome = true ↔ z ∈ σ.domain.image (Equiv.swap x y)
+      have mem : (σ.lookup (Equiv.swap x y z)).isSome = true ↔ Equiv.swap x y z ∈ σ.domain :=
+        Finmap.lookup_isSome.trans Finmap.mem_keys.symm
+      rw [mem]
+      simp only [Finset.mem_image]
+      constructor
+      · intro h
+        exact ⟨Equiv.swap x y z, h, by simp⟩
+      · rintro ⟨w, hw, rfl⟩
+        simpa using hw⟩
+
+@[simp] theorem domain_swap (σ : Store) (x y : Atom) :
+    (σ.swap x y).domain = σ.domain.image (Equiv.swap x y) :=
+  Finmap.keysLookupEquiv_symm_apply_keys _
+
+@[simp] theorem lookup_swap (σ : Store) (x y z : Atom) :
+    (σ.swap x y).lookup z = σ.lookup (Equiv.swap x y z) :=
+  Finmap.keysLookupEquiv_symm_apply_lookup _ _
+
+@[simp] theorem swap_involutive (σ : Store) (x y : Atom) :
+    (σ.swap x y).swap x y = σ := by
+  apply ext
+  intro z
+  simp
+
+theorem swap_restrict (σ : Store) (X : Finset Atom) (x y : Atom) :
+    (σ.restrict X).swap x y = (σ.swap x y).restrict (X.image (Equiv.swap x y)) := by
+  apply ext
+  intro z
+  simp only [lookup_swap, lookup_restrict]
+  have mem : z ∈ X.image (Equiv.swap x y) ↔ Equiv.swap x y z ∈ X := by
+    constructor
+    · rintro h
+      obtain ⟨w, hw, h⟩ := Finset.mem_image.1 h
+      have h' := congrArg (Equiv.swap x y) h
+      have heq : w = Equiv.swap x y z := by simpa using h'
+      exact heq ▸ hw
+    · intro h
+      exact Finset.mem_image.2 ⟨Equiv.swap x y z, h, by simp⟩
+  simp [mem]
+
+theorem swap_merge (σ ρ : Store) (x y : Atom) :
+    (σ.merge ρ).swap x y = (σ.swap x y).merge (ρ.swap x y) := by
+  apply ext
+  intro z
+  simp only [lookup_swap]
+  by_cases hz : Equiv.swap x y z ∈ σ.domain
+  · rw [lookup_merge_left _ _ hz, lookup_merge_left]
+    · simp
+    · rw [domain_swap]
+      exact Finset.mem_image.2 ⟨Equiv.swap x y z, hz, by simp⟩
+  · rw [lookup_merge_right _ _ hz, lookup_merge_right]
+    · simp
+    · intro h
+      rw [domain_swap] at h
+      obtain ⟨w, hw, heq⟩ := Finset.mem_image.1 h
+      apply hz
+      have h' := congrArg (Equiv.swap x y) heq
+      have heq' : w = Equiv.swap x y z := by simpa using h'
+      exact heq' ▸ hw
+
+theorem swap_fresh (σ : Store) (x y : Atom) (hx : x ∉ σ.domain) (hy : y ∉ σ.domain) :
+    σ.swap x y = σ := by
+  apply ext
+  intro z
+  by_cases hzx : z = x
+  · subst z
+    simp [(lookup_eq_none_iff σ x).2 hx, (lookup_eq_none_iff σ y).2 hy]
+  · by_cases hzy : z = y
+    · subst z
+      simp [(lookup_eq_none_iff σ x).2 hx, (lookup_eq_none_iff σ y).2 hy]
+    · simp [Equiv.swap_apply_of_ne_of_ne hzx hzy]
+
+theorem Compatible.swap {σ ρ : Store} (h : Compatible σ ρ) (x y : Atom) :
+    Compatible (σ.swap x y) (ρ.swap x y) := by
+  intro z v w hv hw
+  exact h (Equiv.swap x y z) v w (by simpa using hv) (by simpa using hw)
+
+end Store
+
+namespace Capability
+
+/-- Exchange atom names uniformly in every possible store. -/
+def swap (m : Capability) (x y : Atom) : Capability where
+  domain := m.domain.image (Equiv.swap x y)
+  stores := fun σ => σ.swap x y ∈ m
+  nonempty := by
+    obtain ⟨σ, hσ⟩ := m.nonempty
+    exact ⟨σ.swap x y, by simpa using hσ⟩
+  fixedDomain := by
+    intro σ hσ
+    have h := congrArg (fun X : Finset Atom => X.image (Equiv.swap x y)) (m.mem_domain hσ)
+    simpa [Finset.image_image, Function.comp_def] using h
+
+@[simp] theorem swap_domain (m : Capability) (x y : Atom) :
+    (m.swap x y).domain = m.domain.image (Equiv.swap x y) := rfl
+
+@[simp] theorem mem_swap_iff (m : Capability) (σ : Store) (x y : Atom) :
+    σ ∈ m.swap x y ↔ σ.swap x y ∈ m := Iff.rfl
+
+@[simp] theorem swap_involutive (m : Capability) (x y : Atom) :
+    (m.swap x y).swap x y = m := by
+  apply ext
+  · simp [Finset.image_image, Function.comp_def]
+  · intro σ
+    simp
+
+theorem swap_restrict (m : Capability) (X : Finset Atom) (x y : Atom) :
+    (m.restrict X).swap x y = (m.swap x y).restrict (X.image (Equiv.swap x y)) := by
+  apply ext
+  · simp only [swap_domain, restrict_domain]
+    exact Finset.image_inter _ _ (Equiv.swap x y).injective
+  · intro σ
+    constructor
+    · rintro ⟨ρ, hρ, h⟩
+      refine ⟨ρ.swap x y, by simpa using hρ, ?_⟩
+      rw [← Store.swap_restrict, h, Store.swap_involutive]
+    · rintro ⟨ρ, hρ, rfl⟩
+      change ((ρ.restrict (X.image (Equiv.swap x y))).swap x y) ∈ m.restrict X
+      rw [Store.swap_restrict]
+      simp only [Finset.image_image, Function.comp_def, Equiv.swap_apply_self]
+      simp only [Finset.image_id']
+      exact ⟨ρ.swap x y, hρ, rfl⟩
+
+theorem swap_fresh (m : Capability) (x y : Atom) (hx : x ∉ m.domain) (hy : y ∉ m.domain) :
+    m.swap x y = m := by
+  have fresh (σ : Store) (hσ : σ ∈ m) : σ.swap x y = σ :=
+    Store.swap_fresh σ x y (by rwa [m.mem_domain hσ]) (by rwa [m.mem_domain hσ])
+  have dom : m.domain.image (Equiv.swap x y) = m.domain := by
+    obtain ⟨σ, hσ⟩ := m.nonempty
+    rw [← m.mem_domain hσ, ← Store.domain_swap, fresh σ hσ]
+  apply ext dom
+  intro σ
+  constructor
+  · intro h
+    change σ.swap x y ∈ m at h
+    have hs := fresh (σ.swap x y) h
+    have hs' : σ.swap x y = σ := by simpa using hs.symm
+    rwa [hs'] at h
+  · intro h
+    change σ.swap x y ∈ m
+    rwa [fresh σ h]
+
+theorem refines_swap {m n : Capability} (h : m ⊑ n) (x y : Atom) :
+    m.swap x y ⊑ n.swap x y := by
+  change m.swap x y = (n.swap x y).restrict (m.swap x y).domain
+  rw [swap_domain, ← swap_restrict, ← h]
+
+theorem subset_swap {m n : Capability} (h : m ⊆ n) (x y : Atom) :
+    m.swap x y ⊆ n.swap x y := by
+  constructor
+  · exact congrArg (fun X : Finset Atom => X.image (Equiv.swap x y)) h.1
+  · intro σ hσ
+    exact h.2 (σ.swap x y) hσ
+
+theorem Compatible.swap {m n : Capability} (h : Compatible m n) (x y : Atom) :
+    Compatible (m.swap x y) (n.swap x y) := by
+  intro σ ρ hσ hρ
+  simpa using (h hσ hρ).swap x y
+
+theorem swap_product {m n : Capability} (h : Compatible m n) (x y : Atom) :
+    (product m n h).swap x y = product (m.swap x y) (n.swap x y) (h.swap x y) := by
+  apply ext
+  · simp [product_domain, Finset.image_union]
+  · intro σ
+    constructor
+    · rintro ⟨ρ, hρ, υ, hυ, hc, hs⟩
+      refine ⟨ρ.swap x y, by simpa using hρ, υ.swap x y, by simpa using hυ, hc.swap x y, ?_⟩
+      rw [← Store.swap_merge, ← hs, Store.swap_involutive]
+    · rintro ⟨ρ, hρ, υ, hυ, hc, rfl⟩
+      change (ρ.merge υ).swap x y ∈ product m n h
+      rw [Store.swap_merge]
+      exact ⟨ρ.swap x y, hρ, υ.swap x y, hυ, hc.swap x y, rfl⟩
+
+theorem SumDefined.swap {m n : Capability} (h : SumDefined m n) (x y : Atom) :
+    SumDefined (m.swap x y) (n.swap x y) := congrArg (fun X : Finset Atom => X.image (Equiv.swap x y)) h
+
+theorem swap_sum {m n : Capability} (h : SumDefined m n) (x y : Atom) :
+    (sum m n h).swap x y = sum (m.swap x y) (n.swap x y) (h.swap x y) := by
+  apply ext
+  · rfl
+  · intro σ
+    rfl
+
+@[simp] theorem swap_singleton (σ : Store) (x y : Atom) :
+    (singleton σ).swap x y = singleton (σ.swap x y) := by
+  apply ext
+  · simp
+  · intro ρ
+    simp only [mem_swap_iff, mem_singleton_iff]
+    constructor
+    · intro h
+      have := congrArg (fun σ : Store => σ.swap x y) h
+      simpa using this
+    · intro h
+      rw [h, Store.swap_involutive]
+
+theorem IsFiber.swap {f m : Capability} {X : Finset Atom} {σ : Store}
+    (h : IsFiber f m X σ) (x y : Atom) :
+    IsFiber (f.swap x y) (m.swap x y) (X.image (Equiv.swap x y)) (σ.swap x y) := by
+  refine ⟨?_, congrArg (fun X : Finset Atom => X.image (Equiv.swap x y)) h.domain_eq, ?_⟩
+  · rw [← swap_restrict]
+    simpa using h.projection_mem
+  · intro ρ
+    simp only [mem_swap_iff, Store.domain_swap]
+    rw [h.mem_iff]
+    constructor
+    · rintro ⟨hρ, hs⟩
+      refine ⟨hρ, ?_⟩
+      have eq := congrArg (fun σ : Store => σ.swap x y) hs
+      simpa only [Store.swap_restrict, Store.swap_involutive] using eq
+    · rintro ⟨hρ, hs⟩
+      refine ⟨hρ, ?_⟩
+      have eq := congrArg (fun σ : Store => σ.swap x y) hs
+      simpa only [Store.swap_restrict, Store.swap_involutive, Finset.image_image,
+        Function.comp_def, Equiv.swap_apply_self, Finset.image_id'] using eq
+
+end Capability
+
 end ContextTypes

@@ -349,21 +349,6 @@ structure Qualifier where
 
 namespace Qualifier
 
-private theorem image_swap_eq_self_of_fresh (ξ₁ ξ₂ : LogicVar)
-    (X : Finset LogicVar) (h₁ : ξ₁ ∉ X) (h₂ : ξ₂ ∉ X) :
-    X.image (LogicVar.swap ξ₁ ξ₂) = X := by
-  apply Finset.ext
-  intro ξ
-  rw [Finset.mem_image]
-  constructor
-  · rintro ⟨ζ, hζ, rfl⟩
-    have hn₁ : ζ ≠ ξ₁ := fun same => h₁ (same ▸ hζ)
-    have hn₂ : ζ ≠ ξ₂ := fun same => h₂ (same ▸ hζ)
-    simpa [LogicVar.swap, hn₁, hn₂] using hζ
-  · intro hξ
-    have hn₁ : ξ ≠ ξ₁ := fun same => h₁ (same ▸ hξ)
-    have hn₂ : ξ ≠ ξ₂ := fun same => h₂ (same ▸ hξ)
-    exact ⟨ξ, hξ, by simp [LogicVar.swap, hn₁, hn₂]⟩
 
 /-- Qualifiers are extensional in their support and predicate. -/
 theorem ext {q r : Qualifier} (support : q.support = r.support)
@@ -640,7 +625,7 @@ theorem swap_fresh (q : Qualifier) (x y : Atom)
     (hx : LogicVar.free x ∉ q.support) (hy : LogicVar.free y ∉ q.support) :
     q.swap x y = q := by
   apply ext
-  · exact image_swap_eq_self_of_fresh (.free x) (.free y) q.support hx hy
+  · exact LogicVar.image_swap_eq_self_of_fresh (.free x) (.free y) q.support hx hy
   · intro ρ σ same
     change q.holds (ρ.swapBack (.free x) (.free y)) ↔ q.holds σ
     have back : ρ.swapBack (.free x) (.free y) = σ := by
@@ -656,7 +641,7 @@ theorem openAt_fresh (q : Qualifier) (k : Nat) (x : Atom)
     (hk : LogicVar.bound k ∉ q.support)
     (hx : LogicVar.free x ∉ q.support) : q.openAt k x = q := by
   apply ext
-  · exact image_swap_eq_self_of_fresh (.bound k) (.free x) q.support hk hx
+  · exact LogicVar.image_swap_eq_self_of_fresh (.bound k) (.free x) q.support hk hx
   · intro ρ σ same
     change q.holds (ρ.swapBack (.bound k) (.free x)) ↔ q.holds σ
     have back : ρ.swapBack (.bound k) (.free x) = σ := by
@@ -831,6 +816,84 @@ theorem openAt_top (x : Atom) :
     top.openAt 0 x = topOn {LogicVar.free x} := by
   rw [top, openAt_topOn]
   congr 2
+
+end Qualifier
+
+namespace Assignment
+
+theorem lookup_merge (ρ σ : Assignment) (ξ : LogicVar) :
+    (ρ.merge σ).lookup ξ = if ξ ∈ ρ.domain then ρ.lookup ξ else σ.lookup ξ := by
+  by_cases h : ξ ∈ ρ.domain
+  · rw [if_pos h]
+    exact Finmap.lookup_union_left (Finmap.mem_keys.1 h)
+  · rw [if_neg h]
+    exact Finmap.lookup_union_right (fun h' => h (Finmap.mem_keys.2 h'))
+
+theorem swap_restrict (ρ : Assignment) (X : Finset LogicVar) (ξ₁ ξ₂ : LogicVar) :
+    (ρ.restrict X).swap ξ₁ ξ₂ = (ρ.swap ξ₁ ξ₂).restrict (X.image (LogicVar.swap ξ₁ ξ₂)) := by
+  apply ext
+  intro ξ
+  simp only [lookup_swap, lookup_restrict, LogicVar.mem_image_swap]
+
+theorem swap_merge (ρ σ : Assignment) (ξ₁ ξ₂ : LogicVar) :
+    (ρ.merge σ).swap ξ₁ ξ₂ = (ρ.swap ξ₁ ξ₂).merge (σ.swap ξ₁ ξ₂) := by
+  apply ext
+  intro ξ
+  simp only [lookup_swap, lookup_merge, domain_swap, LogicVar.mem_image_swap]
+
+end Assignment
+
+namespace Qualifier
+
+/-- Free-atom exchange commutes with opening after exchanging the chosen name. -/
+theorem swap_openAt (q : Qualifier) (k : Nat) (x y z : Atom) :
+    (q.openAt k z).swap x y = (q.swap x y).openAt k (Equiv.swap x y z) := by
+  apply ext
+  · simp only [support_swap, support_openAt, LogicVar.openSupport, Finset.image_image]
+    apply Finset.image_congr
+    intro ξ _
+    exact LogicVar.swap_free_openBinder x y z k ξ
+  · intro ρ σ same
+    change q.holds ((ρ.swapBack (.free x) (.free y)).swapBack (.bound k) (.free z)) ↔
+      q.holds ((σ.swapBack (.bound k) (.free (Equiv.swap x y z))).swapBack (.free x) (.free y))
+    have back : (ρ.swapBack (.free x) (.free y)).swapBack (.bound k) (.free z) =
+        (σ.swapBack (.bound k) (.free (Equiv.swap x y z))).swapBack (.free x) (.free y) := by
+      apply AssignmentOn.ext
+      apply Assignment.ext
+      intro ξ
+      simp only [AssignmentOn.swapBack, Assignment.lookup_swap, ← same]
+      exact congrArg ρ.assignment.lookup (LogicVar.swap_free_openBinder x y z k ξ)
+    rw [back]
+
+@[simp] theorem freeAtoms_swap (q : Qualifier) (x y : Atom) :
+    (q.swap x y).freeAtoms = q.freeAtoms.image (Equiv.swap x y) := by
+  ext z
+  rw [mem_freeAtoms_iff, support_swap, LogicVar.mem_image_swap, LogicVar.swap_free]
+  rw [Finset.mem_image]
+  constructor
+  · intro h
+    exact ⟨Equiv.swap x y z, (mem_freeAtoms_iff q _).2 h, by simp⟩
+  · rintro ⟨w, hw, rfl⟩
+    simpa only [Equiv.swap_apply_self] using (mem_freeAtoms_iff q w).1 hw
+
+/-- Substitution is equivariant under a simultaneous exchange of free keys. -/
+theorem swap_substitute (q : Qualifier) (ρ : Assignment) (x y : Atom) :
+    (q.substitute ρ).swap x y = (q.swap x y).substitute (ρ.swap (.free x) (.free y)) := by
+  apply ext
+  · simp only [support_swap, support_substitute, Assignment.domain_swap]
+    exact Finset.image_sdiff _ _ (fun ξ ζ h => by
+      have h' := congrArg (LogicVar.swap (.free x) (.free y)) h
+      simpa only [LogicVar.swap_involutive] using h')
+  · intro σ υ same
+    change q.holds ((σ.swapBack (.free x) (.free y)).substituteBack q.support ρ) ↔
+      q.holds ((υ.substituteBack (q.swap x y).support (ρ.swap (.free x) (.free y))).swapBack (.free x) (.free y))
+    have back : (σ.swapBack (.free x) (.free y)).substituteBack q.support ρ =
+        (υ.substituteBack (q.swap x y).support (ρ.swap (.free x) (.free y))).swapBack (.free x) (.free y) := by
+      apply AssignmentOn.ext
+      simp only [AssignmentOn.swapBack, AssignmentOn.substituteBack, support_swap,
+        Assignment.swap_merge, Assignment.swap_restrict, Assignment.swap_involutive,
+        Finset.image_image, Function.comp_def, LogicVar.swap_involutive, Finset.image_id', same]
+    rw [back]
 
 end Qualifier
 
