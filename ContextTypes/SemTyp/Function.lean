@@ -196,6 +196,233 @@ theorem lam
       exact namedApp)
   exact opened
 
+/-- Separating lambda compatibility frames the argument capability with the
+captured input capability. -/
+theorem lamSep
+    {Φ : PrimitiveContext} {«Σ» : BasicEnv} {Γ : Context}
+    {τₓ τ : ContextType} {e : Term} (L : Finset Atom)
+    (wf : SynTyp.WellFormed «Σ» Γ (.ret (.lam τₓ.erase e)) (.wand τₓ τ))
+    (wf₂ : ∀ y, y ∉ L → SynTyp.WellFormed «Σ» (Γ ∗ (y ∷ τₓ))
+      (e.openAt 0 (.free y)) (τ.openAt 0 y))
+    (body : ∀ y, y ∉ L → Φ ; «Σ» ; (Γ ∗ (y ∷ τₓ)) ⊨
+      (e.openAt 0 (.free y)) ⋮ (τ.openAt 0 y)) :
+    Φ ; «Σ» ; Γ ⊨ (.ret (.lam τₓ.erase e)) ⋮ (.wand τₓ τ) := by
+  intro m hΓ
+  let Δ := Γ.erase
+  let gas := max τₓ.measure τ.measure
+  let v := Value.lam τₓ.erase e
+  let Δr := Interp.relevantEnv Δ (.wand τₓ τ) (.ret v)
+  let A := Interp.resultFirst Δ (.wand τₓ τ) (.ret v)
+  let B := ContextType.interpFuel gas 2 Δ ((τₓ.shiftFrom 0).shiftFrom 0) (.ret (.bound 0))
+  let C := ContextType.interpFuel gas 2 Δ (τ.shiftFrom 1) (.app (.bound 1) (.bound 0))
+  have wfₓ : τₓ.WellFormed Δ.domain := wf.2.1.1.mono (Finset.empty_subset _)
+  have closedτ : τₓ.freeAtoms = ∅ := Finset.eq_empty_iff_forall_notMem.2
+    (fun x hx => Finset.notMem_empty x (wf.2.1.1.freeAtoms_subset hx))
+  have world := Context.models_interpUnder_erase_basicWorld wf.1 hΓ
+  have scopeΔ : Δ.domain ⊆ m.domain := (Interp.models_basicWorld_iff m Δ).1 world |>.1
+  have typedV : Δ ⊢ᵥ v ⋮ (.arrow τₓ.erase τ.erase) := by
+    cases wf.2.2 with
+    | ret h => exact h
+  have total : m ⊨ Interp.total (.ret v) := by
+    apply (Interp.models_total_iff wf.2.2.locallyClosed).2
+    refine ⟨Finset.Subset.trans wf.2.2.support_subset scopeΔ, ?_⟩
+    intro σ hσ
+    exact Term.MustTerminate.ret _
+      (Interp.instantiateTerm_typed wf.2.2 ((Interp.models_basicWorld_iff m Δ).1 world |>.2 σ hσ)).locallyClosed
+  have guard := Interp.models_guard_relevant_of_world wf.2.1 wf.2.2 world total
+  have agree (υ : ContextType) (u : Term)
+      (hs : υ.freeAtoms ∪ u.support ⊆ (.wand τₓ τ : ContextType).freeAtoms ∪ (.ret v : Term).support) :
+      BasicEnv.AgreeOn (υ.freeAtoms ∪ u.support) Δr Δ := by
+    intro x hx
+    simp only [Δr, Interp.relevantEnv, BasicEnv.lookup_restrict,
+      Interp.relevantAtoms, if_pos (hs hx)]
+  have envB : ContextType.interpFuel gas 2 Δr ((τₓ.shiftFrom 0).shiftFrom 0)
+      (.ret (.bound 0)) = B := by
+    apply ContextType.interpFuel_eq_of_agreeOn
+    apply agree
+    simp [ContextType.freeAtoms, Term.support, Value.support]
+  have envC : ContextType.interpFuel gas 2 Δr (τ.shiftFrom 1)
+      (.app (.bound 1) (.bound 0)) = C := by
+    apply ContextType.interpFuel_eq_of_agreeOn
+    apply agree
+    simp only [ContextType.freeAtoms_shiftFrom, Term.support, Value.support,
+      Finset.union_empty, ContextType.freeAtoms]
+    exact Finset.Subset.trans Finset.subset_union_right Finset.subset_union_left
+  change m ⊨ ContextType.interp Δ (.wand τₓ τ) (.ret v)
+  simp only [ContextType.interp, ContextType.measure, Nat.add_comm 1]
+  change m ⊨ ContextType.interpFuel (gas + 1) 0 Δ (.wand τₓ τ) (.ret v)
+  simp only [ContextType.interpFuel, Nat.zero_add, Interp.resultFirst_relevantEnv]
+  rw [envB, envC, Formula.models_and_iff]
+  refine ⟨guard, ?_⟩
+  have scopeA : A.freeAtoms ⊆ Δ.domain := by
+    simp only [A, Interp.freeAtoms_resultFirst]
+    exact Finset.union_subset
+      (by rw [Interp.relevantEnv_domain]; exact Finset.inter_subset_left)
+      wf.2.2.support_subset
+  have scopeB : B.freeAtoms ⊆ Δ.domain := by
+    apply Finset.Subset.trans (ContextType.freeAtoms_interpFuel_subset _ _ _ _ _)
+    simpa [ContextType.freeAtoms_shiftFrom, Term.support, Value.support] using wfₓ.freeAtoms_subset
+  have scopeC : C.freeAtoms ⊆ Δ.domain := by
+    apply Finset.Subset.trans (ContextType.freeAtoms_interpFuel_subset _ _ _ _ _)
+    simpa [ContextType.freeAtoms_shiftFrom, Term.support, Value.support] using wf.2.1.2.freeAtoms_subset
+  have scopeP : (A ⇒ᶜ (B -∗[1] C)).freeAtoms ⊆ m.domain := by
+    simp only [Formula.freeAtoms_impl, Formula.freeAtoms_wand]
+    exact Finset.Subset.trans (Finset.union_subset scopeA (Finset.union_subset scopeB scopeC)) scopeΔ
+  apply (Formula.models_all_iff_full m _).2
+  refine ⟨scopeP, ∅, ?_⟩
+  intro z _ freshZ n href hdom
+  have scopeN : ((A ⇒ᶜ (B -∗[1] C)).openAt 0 z).freeAtoms ⊆ n.domain := by
+    apply Finset.Subset.trans (Formula.freeAtoms_openAt_subset _ _ _)
+    rw [hdom]
+    exact Finset.union_subset (by simp) (Finset.Subset.trans scopeP Finset.subset_union_left)
+  simp only [Formula.openAt]
+  apply (Formula.models_impl_iff_of_scope n _ _ scopeN).2
+  intro graph
+  have freshZΔ : z ∉ Δ.domain := fun hz => freshZ (scopeΔ hz)
+  have worldN := Interp.models_basicWorld_resultFirst_openAt wf.2.1 wf.2.2
+    (Formula.models_kripke href world) freshZΔ graph
+  have scopeInner : ((B -∗[1] C).openAt 0 z).freeAtoms ⊆ n.domain := by
+    apply Finset.Subset.trans (Formula.freeAtoms_openAt_subset _ _ _)
+    rw [hdom]
+    exact Finset.union_subset (by simp)
+      (Finset.Subset.trans (by simpa only [Formula.freeAtoms_wand] using Finset.union_subset scopeB scopeC)
+        (Finset.Subset.trans scopeΔ Finset.subset_union_left))
+  have openedB : B.openAt 1 z = B := by
+    simp only [B, ContextType.shiftFrom_eq_of_locallyClosedAt τₓ 0 wfₓ.locallyClosedAt]
+    exact ContextType.interpFuel_openAt_fresh gas 2 Δ τₓ (.ret (.bound 0)) 1 z
+      (wfₓ.locallyClosedAt.mono (by omega))
+      (by simp [Term.locallyClosedAt, Value.locallyClosedAt])
+      freshZΔ (by simp [closedτ]) (by simp [Term.support, Value.support])
+  have closedB : (B.openAt 1 z).freeAtoms = ∅ := by
+    rw [openedB]
+    apply Finset.eq_empty_iff_forall_notMem.2
+    intro x hx
+    have hs := ContextType.freeAtoms_interpFuel_subset gas 2 Δ
+      ((τₓ.shiftFrom 0).shiftFrom 0) (.ret (.bound 0)) hx
+    simp [closedτ, Term.support, Value.support] at hs
+  apply (Formula.models_wand_iff_full n 1 _ _ closedB).2
+  refine ⟨scopeInner, L, ?_⟩
+  intro η _ freshAtomsL freshAtomsN a compat hdomA arg
+  let y := η 0
+  have hy : y ∈ Formula.openingAtoms η := Finset.mem_image.2 ⟨0, Finset.mem_univ _, rfl⟩
+  have freshL : y ∉ L := fun h => Finset.disjoint_left.1 freshAtomsL hy h
+  have freshY : y ∉ n.domain := fun h => Finset.disjoint_left.1 freshAtomsN hy h
+  let p := Capability.product a n compat
+  have hrefP : n ⊑ p := Capability.product_refines_right compat
+  have hdomP : p.domain = n.domain ∪ {y} := by
+    rw [Capability.product_domain, hdomA]
+    have hs : Formula.openingAtoms η = {y} := by
+      ext x
+      simp only [Formula.openingAtoms, Finset.mem_image, Finset.mem_singleton]
+      constructor
+      · rintro ⟨i, _, hi⟩
+        have hi0 : i = 0 := Subsingleton.elim _ _
+        simpa only [hi0] using hi.symm
+      · intro h
+        exact ⟨0, Finset.mem_univ _, h.symm⟩
+    rw [hs, Finset.union_comm]
+  change a ⊨ (B.openAt 1 z).openAt 0 y at arg
+  change p ⊨ (C.openAt 1 z).openAt 0 y
+  have hrefMP := Capability.refines_trans href hrefP
+  have freshYΔ : y ∉ Δ.domain := fun hy => freshY
+    (Capability.refines_domain_subset href (scopeΔ hy))
+  have apart : y ≠ z := by
+    intro h
+    apply freshY
+    rw [h, hdom]
+    simp
+  have namedA := (ContextType.models_interp_arg_bound_openAt_iff
+    (Nat.le_max_left _ _) wfₓ freshYΔ freshZΔ).1 arg
+  have namedA' : a ⊨ ContextType.interp (BasicEnv.singleton y τₓ.erase) τₓ (.ret (.free y)) := by
+    rw [← ContextType.interp_eq_of_agreeOn (Δ₁ := Δ.insert y τₓ.erase)]
+    · exact namedA
+    · intro x hx
+      have hxy : x = y := by simpa [closedτ, Term.support, Value.support] using hx
+      subst x
+      simp
+  have named := Formula.models_kripke (Capability.product_refines_left compat) namedA
+  have freshYCtx : y ∉ (Context.erasureUnder «Σ» Γ).domain := by
+    intro hy
+    exact freshY (Capability.refines_domain_subset href
+      (((Interp.models_basicWorld_iff m _).1 (Context.models_interpUnder_basicWorld hΓ)).1 hy))
+  have ctx := Context.models_interpUnder_star_bind_closed compat.symm closedτ freshYCtx
+    (Formula.models_kripke href hΓ) namedA'
+  rw [← Capability.product_comm compat] at ctx
+  have hbody := body y freshL p ctx
+  have wfbody := wf₂ y freshL
+  have envBody : (Γ ∗ (y ∷ τₓ) : Context).erase = Δ.insert y τₓ.erase := by
+    simp only [Context.erase]
+    exact BasicEnv.merge_singleton_eq_insert freshYΔ
+  rw [envBody] at hbody
+  have typedBody : Δ.insert y τₓ.erase ⊢ₑ e.openAt 0 (.free y) ⋮ (τ.openAt 0 y).erase := by
+    simpa only [envBody] using wfbody.2.2
+  have formedBody : (τ.openAt 0 y).WellFormed (Δ.insert y τₓ.erase).domain := by
+    simpa only [envBody] using wfbody.2.1
+  let Δ' := (Δ.insert z (.arrow τₓ.erase τ.erase)).insert y τₓ.erase
+  have embed : (Δ.insert y τₓ.erase).Subset Δ' :=
+    (BasicEnv.subset_insert_of_fresh Δ z _ freshZΔ).insert y τₓ.erase
+  have typedApp : Δ' ⊢ₑ (.app v (.free y)) ⋮ (τ.openAt 0 y).erase := by
+    rw [ContextType.erase_openAt]
+    exact BasicTermTyp.app (typedV.weaken
+      ((BasicEnv.subset_insert_of_fresh Δ z _ freshZΔ).trans
+        (BasicEnv.subset_insert_of_fresh _ y _ (by simp [BasicEnv.domain_insert, freshYΔ, apart]))))
+      (BasicValTyp.free (BasicEnv.lookup_insert _ _ _))
+  have formed : (τ.openAt 0 y).WellFormed Δ'.domain :=
+    formedBody.mono (by
+      intro x hx
+      obtain ⟨T, hT⟩ := (BasicEnv.mem_domain_iff _ x).1 hx
+      exact (BasicEnv.mem_domain_iff _ x).2 ⟨T, embed x T hT⟩)
+  have worldP := Formula.models_kripke hrefP worldN
+  have worldArg := ContextType.models_interp_basicWorld named
+  have worldFull : p ⊨ Interp.basicWorld Δ' := by
+    apply Interp.models_basicWorld_insert worldP
+      (by rw [hdomP]; simp)
+    intro σ hσ
+    apply ((Interp.models_basicWorld_iff p _).1 worldArg).2 σ hσ y τₓ.erase
+    simp [Interp.relevantEnv, Interp.relevantAtoms, Term.support, Value.support]
+  have sameEnv : BasicEnv.AgreeOn
+      ((τ.openAt 0 y).freeAtoms ∪ (e.openAt 0 (.free y)).support) (Δ.insert y τₓ.erase) Δ' := by
+    intro x hx
+    by_cases hxy : x = y
+    · subst x; simp [Δ']
+    · simp only [Δ', BasicEnv.lookup_insert_of_ne _ _ hxy]
+      rw [BasicEnv.lookup_insert_of_ne _ _]
+      intro hxz
+      subst x
+      have hs := Finset.union_subset formedBody.freeAtoms_subset typedBody.support_subset hx
+      simp only [BasicEnv.domain_insert, Finset.mem_union, Finset.mem_singleton] at hs
+      exact hs.elim (fun h => apart h.symm) freshZΔ
+  have bodyFull : p ⊨ ContextType.interp Δ' (τ.openAt 0 y) (e.openAt 0 (.free y)) := by
+    rw [← ContextType.interp_eq_of_agreeOn sameEnv]
+    exact hbody
+  have beta := (ContextType.models_interp_beta_iff formed typedApp worldFull).2 bodyFull
+  have graphP := Formula.models_kripke hrefP graph
+  have lookup := Interp.models_resultFirst_openAt_lookup
+    (Interp.relevantSupport_locallyClosed Δ (.wand τₓ τ) (.ret v) wf.2.1.locallyClosedAt wf.2.2.locallyClosed)
+    wf.2.2.locallyClosed (Interp.logicSupport_subset_relevantSupport Δ _ _ wf.2.2.support_subset)
+    (by rw [Interp.free_mem_relevantSupport_iff]; exact fun hz => freshZΔ hz.1) graphP
+  have typedNamed : Δ' ⊢ₑ (.app (.free z) (.free y)) ⋮ (τ.openAt 0 y).erase := by
+    rw [ContextType.erase_openAt]
+    exact BasicTermTyp.app
+      (BasicValTyp.free (by rw [BasicEnv.lookup_insert_of_ne _ _ apart.symm, BasicEnv.lookup_insert]))
+      (BasicValTyp.free (BasicEnv.lookup_insert _ _ _))
+  have namedApp := (ContextType.models_interp_of_instantiate_eq_iff formed typedApp typedNamed worldFull
+    (by
+      intro σ hσ
+      obtain ⟨u, hu, heval⟩ := lookup σ hσ
+      have hv : u = Interp.instantiateValueAt v 0 σ.toAssignment := Term.ret.inj heval.ret_eq
+      simp only [Interp.instantiateTerm, Interp.instantiateTermAt, Interp.instantiateValueAt,
+        Store.toAssignment_lookup_free, hu, Option.getD_some]
+      rw [hv])).1 beta
+  have opened := (ContextType.models_interpFuel_app_bound_openAt_iff
+    (Nat.le_max_right _ _) wf.2.1.2 freshYΔ freshZΔ apart worldFull).2
+    (by
+      rw [ContextType.interpFuel_eq_of_measure_le gas (τ.openAt 0 y).measure 0 Δ'
+        (τ.openAt 0 y) (.app (.free z) (.free y))
+        (by simpa only [ContextType.measure_openAt] using Nat.le_max_right τₓ.measure τ.measure) (Nat.le_refl _)]
+      exact namedApp)
+  exact opened
+
 end SemTyp
 
 end ContextTypes
