@@ -2355,6 +2355,45 @@ theorem models_all_elim_named {m : Capability} {P : Formula} {x : Atom}
   exact (models_restrict_superset m (P.openAt 0 x)
     (by simpa only [Finset.union_comm] using freeAtoms_openAt_subset P 0 x)).2 opened
 
+/-- A closed-antecedent wand accepts any fresh argument name, not just names
+outside the cofinite exclusion set. -/
+theorem models_wand_elim_named {m n : Capability} {P Q : Formula} {x : Atom}
+    (h : m ⊨ (P -∗[1] Q)) (closed : P.freeAtoms = ∅)
+    (fresh : x ∉ m.domain) (compat : Capability.Compatible n m)
+    (dom : n.domain = {x}) (arg : n ⊨ P.openAt 0 x) :
+    Capability.product n m compat ⊨ Q.openAt 0 x := by
+  obtain ⟨scope, L, hall⟩ := (models_wand_iff_full m 1 P Q closed).1 h
+  obtain ⟨y, hy⟩ := Finset.exists_nat_subset_range (L ∪ m.domain ∪ {x})
+  have freshY : y ∉ L ∪ m.domain ∪ {x} := by
+    intro h
+    have := hy h
+    simp at this
+  have freshL : y ∉ L := fun h => freshY (Finset.mem_union_left _ (Finset.mem_union_left _ h))
+  have freshM : y ∉ m.domain := fun h => freshY (Finset.mem_union_left _ (Finset.mem_union_right _ h))
+  have sameM := Capability.swap_fresh m x y fresh freshM
+  have compat' : Capability.Compatible (n.swap x y) (m.swap x y) := compat.swap x y
+  rw [sameM] at compat'
+  let η : Fin 1 → Atom := fun _ => y
+  have atoms : openingAtoms η = {y} := by simp [openingAtoms, η]
+  have dom' : (n.swap x y).domain = openingAtoms η := by
+    rw [Capability.swap_domain, dom, Finset.image_singleton, Equiv.swap_apply_left, atoms]
+  have arg' : n.swap x y ⊨ P.openAt 0 y := by
+    have out := (models_swap n (P.openAt 0 x) x y).1 arg
+    simpa only [swap_openAt, swap_fresh P x y (by simp [closed]) (by simp [closed]),
+      Equiv.swap_apply_left] using out
+  have result := hall η (fun i j _ => Subsingleton.elim i j)
+    (by simpa [atoms] using freshL) (by simpa [atoms] using freshM)
+    (n.swap x y) compat' dom' (by exact arg')
+  change Capability.product (n.swap x y) m compat' ⊨ Q.openAt 0 y at result
+  apply (models_swap (Capability.product n m compat) (Q.openAt 0 x) x y).2
+  have scopeQ : Q.freeAtoms ⊆ m.domain := by
+    rw [freeAtoms_wand] at scope
+    exact Finset.Subset.trans Finset.subset_union_right scope
+  rw [swap_openAt, swap_fresh Q x y (fun h => fresh (scopeQ h))
+    (fun h => freshM (scopeQ h)), Equiv.swap_apply_left, Capability.swap_product]
+  simpa only [sameM] using result
+
+
 end Formula
 
 end ContextTypes
