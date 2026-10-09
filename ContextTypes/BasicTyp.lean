@@ -1485,4 +1485,99 @@ theorem shift_twice_openManyAt_two_eq {τ : ContextType} {Δ : BasicEnv} {d : Na
 
 end ContextType
 
+def BasicEnv.AgreeOn (X : Finset Atom) (Δ₁ Δ₂ : BasicEnv) : Prop :=
+  ∀ x, x ∈ X → Δ₁.lookup x = Δ₂.lookup x
+
+namespace BasicEnv
+
+theorem AgreeOn.mono {X Y : Finset Atom} {Δ₁ Δ₂ : BasicEnv}
+    (h : AgreeOn X Δ₁ Δ₂) (hYX : Y ⊆ X) : AgreeOn Y Δ₁ Δ₂ :=
+  fun x hx => h x (hYX hx)
+
+/-- Environment agreement extends to the same fresh-name input family. -/
+theorem AgreeOn.insertMany {Δ Δ' : BasicEnv} {X : Finset Atom}
+    (h : AgreeOn X Δ Δ') (d : Nat) (η : Fin d → Atom) (T : Fin d → SimpleType)
+    (inj : Function.Injective η) :
+    AgreeOn (X ∪ Finset.univ.image η) (Δ.insertMany d η T) (Δ'.insertMany d η T) := by
+  intro x hx
+  by_cases named : x ∈ Finset.univ.image η
+  · obtain ⟨i, _, rfl⟩ := Finset.mem_image.1 named
+    rw [lookup_insertMany _ _ _ _ inj, lookup_insertMany _ _ _ _ inj]
+  · have apart : ∀ i, x ≠ η i := by
+      intro i hi
+      exact named (Finset.mem_image.2 ⟨i, Finset.mem_univ _, hi.symm⟩)
+    rw [lookup_insertMany_of_apart _ _ _ _ _ apart,
+      lookup_insertMany_of_apart _ _ _ _ _ apart]
+    exact h x ((Finset.mem_union.1 hx).resolve_right named)
+
+theorem restrict_eq_of_agreeOn {X : Finset Atom} {Δ₁ Δ₂ : BasicEnv}
+    (h : AgreeOn X Δ₁ Δ₂) : Δ₁.restrict X = Δ₂.restrict X := by
+  apply Finmap.ext_lookup
+  intro x
+  change (Δ₁.restrict X).lookup x = (Δ₂.restrict X).lookup x
+  simp only [lookup_restrict]
+  by_cases hx : x ∈ X
+  · simp only [if_pos hx]
+    exact h x hx
+  · simp [hx]
+
+end BasicEnv
+
+theorem BasicEnv.AgreeOn.insert {X : Finset Atom} {Δ Δ' : BasicEnv}
+    (h : BasicEnv.AgreeOn X Δ Δ') (x : Atom) (T : SimpleType) :
+    BasicEnv.AgreeOn (X ∪ {x}) (Δ.insert x T) (Δ'.insert x T) := by
+  intro y hy
+  by_cases hxy : y = x
+  · subst y; simp
+  · rw [BasicEnv.lookup_insert_of_ne _ _ hxy, BasicEnv.lookup_insert_of_ne _ _ hxy]
+    exact h y ((Finset.mem_union.1 hy).resolve_right (by simpa using hxy))
+
+/-- Basic typing depends only on the environment bindings actually used by
+the term, including the newly opened names beneath core binders. -/
+theorem BasicTermTyp.of_agreeOn {Δ Δ' : BasicEnv} {e : Term} {T : SimpleType}
+    (typed : Δ ⊢ₑ e ⋮ T) (env : BasicEnv.AgreeOn e.support Δ Δ') :
+    Δ' ⊢ₑ e ⋮ T := by
+  refine (BasicTermTyp.rec
+    (motive_1 := fun Δ v T _ => ∀ Δ', BasicEnv.AgreeOn v.support Δ Δ' → Δ' ⊢ᵥ v ⋮ T)
+    (motive_2 := fun Δ e T _ => ∀ Δ', BasicEnv.AgreeOn e.support Δ Δ' → Δ' ⊢ₑ e ⋮ T)
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ typed) Δ' env
+  · intro Δ c Δ' env
+    exact BasicValTyp.const Δ' c
+  · intro Δ x T typed Δ' env
+    exact BasicValTyp.free ((env x (by simp [Value.support])).symm.trans typed)
+  · intro Δ T U e L typed ih Δ' env
+    apply BasicValTyp.lam L
+    intro x hx
+    exact ih x hx (Δ'.insert x T) ((env.insert x T).mono
+      (by simpa only [Value.support] using Term.support_openAt_subset e 0 (.free x)))
+  · intro Δ T U v L typed ih Δ' env
+    apply BasicValTyp.fix L
+    intro x hx
+    exact ih x hx (Δ'.insert x T) ((env.insert x T).mono
+      (by simpa only [Value.support] using Value.support_openAt_subset v 0 (.free x)))
+  · intro Δ v T typed ih Δ' env
+    exact BasicTermTyp.ret (ih Δ' env)
+  · intro Δ T U e₁ e₂ L left right ih₁ ih₂ Δ' env
+    apply BasicTermTyp.letE L (ih₁ Δ' (env.mono Finset.subset_union_left))
+    intro x hx
+    exact ih₂ x hx (Δ'.insert x T) (((env.mono Finset.subset_union_right).insert x T).mono
+      (by simpa only [Value.support] using Term.support_openAt_subset e₂ 0 (.free x)))
+  · intro Δ op v b₁ b₂ signature typed ih Δ' env
+    exact BasicTermTyp.primitive signature (ih Δ' env)
+  · intro Δ T U v₁ v₂ fn arg ih₁ ih₂ Δ' env
+    exact BasicTermTyp.app (ih₁ Δ' (env.mono Finset.subset_union_left))
+      (ih₂ Δ' (env.mono Finset.subset_union_right))
+  · intro Δ v e₁ e₂ T scrutinee trueBranch falseBranch ih ih₁ ih₂ Δ' env
+    exact BasicTermTyp.matchBool
+      (ih Δ' (env.mono (Finset.Subset.trans Finset.subset_union_left Finset.subset_union_left)))
+      (ih₁ Δ' (env.mono (Finset.Subset.trans Finset.subset_union_right Finset.subset_union_left)))
+      (ih₂ Δ' (env.mono Finset.subset_union_right))
+
+theorem BasicValTyp.of_agreeOn {Δ Δ' : BasicEnv} {v : Value} {T : SimpleType}
+    (typed : Δ ⊢ᵥ v ⋮ T) (env : BasicEnv.AgreeOn v.support Δ Δ') :
+    Δ' ⊢ᵥ v ⋮ T := by
+  have h := (BasicTermTyp.ret typed).of_agreeOn env
+  cases h with
+  | ret h => exact h
+
 end ContextTypes

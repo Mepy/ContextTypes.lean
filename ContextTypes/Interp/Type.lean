@@ -373,43 +373,6 @@ scoped[ContextTypes] notation:20 (name := contextTypeInterp)
 end ContextType
 
 
-def BasicEnv.AgreeOn (X : Finset Atom) (Δ₁ Δ₂ : BasicEnv) : Prop :=
-  ∀ x, x ∈ X → Δ₁.lookup x = Δ₂.lookup x
-
-namespace BasicEnv
-
-theorem AgreeOn.mono {X Y : Finset Atom} {Δ₁ Δ₂ : BasicEnv}
-    (h : AgreeOn X Δ₁ Δ₂) (hYX : Y ⊆ X) : AgreeOn Y Δ₁ Δ₂ :=
-  fun x hx => h x (hYX hx)
-
-/-- Environment agreement extends to the same fresh-name input family. -/
-theorem AgreeOn.insertMany {Δ Δ' : BasicEnv} {X : Finset Atom}
-    (h : AgreeOn X Δ Δ') (d : Nat) (η : Fin d → Atom) (T : Fin d → SimpleType)
-    (inj : Function.Injective η) :
-    AgreeOn (X ∪ Finset.univ.image η) (Δ.insertMany d η T) (Δ'.insertMany d η T) := by
-  intro x hx
-  by_cases named : x ∈ Finset.univ.image η
-  · obtain ⟨i, _, rfl⟩ := Finset.mem_image.1 named
-    rw [lookup_insertMany _ _ _ _ inj, lookup_insertMany _ _ _ _ inj]
-  · have apart : ∀ i, x ≠ η i := by
-      intro i hi
-      exact named (Finset.mem_image.2 ⟨i, Finset.mem_univ _, hi.symm⟩)
-    rw [lookup_insertMany_of_apart _ _ _ _ _ apart,
-      lookup_insertMany_of_apart _ _ _ _ _ apart]
-    exact h x ((Finset.mem_union.1 hx).resolve_right named)
-
-theorem restrict_eq_of_agreeOn {X : Finset Atom} {Δ₁ Δ₂ : BasicEnv}
-    (h : AgreeOn X Δ₁ Δ₂) : Δ₁.restrict X = Δ₂.restrict X := by
-  apply Finmap.ext_lookup
-  intro x
-  change (Δ₁.restrict X).lookup x = (Δ₂.restrict X).lookup x
-  simp only [lookup_restrict]
-  by_cases hx : x ∈ X
-  · simp only [if_pos hx]
-    exact h x hx
-  · simp [hx]
-
-end BasicEnv
 
 namespace Interp
 
