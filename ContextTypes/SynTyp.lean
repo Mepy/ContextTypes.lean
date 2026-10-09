@@ -77,6 +77,43 @@ namespace PrimitiveContext
 def WellFormed (Φ : PrimitiveContext) : Prop :=
   ∀ op, (Φ op).WellFormed op
 
+/-- The core primitive context uses unrestricted overapproximate arguments
+and graph-precise results, including every generator outcome. -/
+def concrete : PrimitiveContext := fun op =>
+  { argBase := op.signature.1
+    argQualifier := Qualifier.top
+    resultBase := op.signature.2
+    resultQualifier := Interp.resultQualifier (.primitive op (.bound 1)) (.bound 0) }
+
+theorem concrete_erasure (op : Primitive) : (concrete op).ErasureOk op := by
+  rfl
+
+theorem concrete_arg_wellFormed (op : Primitive) :
+    (concrete op).argType.WellFormed ∅ := by
+  intro ξ hξ
+  change ξ ∈ Qualifier.top.support at hξ
+  simp only [Qualifier.top, Qualifier.support_topOn, Finset.mem_singleton] at hξ
+  subst ξ
+  exact Nat.zero_lt_succ 0
+
+theorem concrete_result_wellFormed (op : Primitive) :
+    (concrete op).resultType.WellFormedAt 1 ∅ := by
+  refine ⟨?_, ?_, rfl⟩
+  all_goals
+    intro ξ hξ
+    change ξ ∈ (Interp.resultQualifier (.primitive op (.bound 1)) (.bound 0)).support at hξ
+    simp [Interp.resultQualifier, Term.logicSupportAt, Value.logicSupportAt,
+      boundLogicSupportAt] at hξ
+    rcases hξ with rfl | rfl <;> decide
+
+theorem concrete_result_openAt (op : Primitive) (x : Atom) :
+    (concrete op).resultType.openAt 0 x =
+      ContextType.precise op.signature.2
+        (Interp.resultQualifier (.primitive op (.free x)) (.bound 0)) := by
+  simp only [concrete, PrimitiveSignature.resultType, ContextType.precise, ContextType.openAt]
+  rw [Interp.resultQualifier_openAt _ _ 1 x (by simp [Term.support, Value.support])]
+  simp [Term.openAt, Value.openAt, LogicVar.openBinder, LogicVar.swap]
+
 end PrimitiveContext
 
 /-! ## Shared side conditions -/
