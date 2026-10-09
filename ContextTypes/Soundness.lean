@@ -57,4 +57,12 @@ theorem denotational {Φ : PrimitiveContext} {e : Term} {τ : ContextType}
       (Formula.models_kripke href source)
     simpa only [BasicEnv.insert_empty] using h
 
+/-- Closed-program denotational soundness for the concrete core primitives. -/
+theorem concrete {e : Term} {τ : ContextType}
+    (typed : PrimitiveContext.concrete ; ∅ ; Context.empty ⊢ e ⋮ τ) (x : Atom) :
+    ∃ m : Capability,
+      (∀ σ, σ ∈ m ↔ ∃ v, e.reaches v ∧ σ = Store.singleton x v) ∧
+      m ⊨ (⟦τ⟧[BasicEnv.singleton x τ.erase] (.ret (.free x))) :=
+  denotational PrimitiveContext.concrete_wellFormed typed x
+
 end ContextTypes.Soundness
