@@ -2390,11 +2390,8 @@ theorem supportAt_interpFuel_subset (gas d : Nat) (Δ : BasicEnv) (τ : ContextT
           rw [graph]
           apply Finset.union_subset (Finset.Subset.refl _)
           simp only [Interp.overResult, Interp.underResult, Formula.supportAt,
-            Formula.supportSetAtDepth_eq, Interp.resultBasicTyping, Interp.basicTyping,
-            Formula.supportAt_fiberAtom, Interp.basicTypingQualifier, BasicEnv.domain_empty,
-            Finset.image_empty, Finset.empty_union,
-            Term.logicSupportAt, Value.logicSupportAt, boundLogicSupportAt,
-            Nat.zero_le, if_true, Nat.sub_zero, LogicVar.supportAtDepth]
+            Formula.supportSetAtDepth_eq, Interp.resultBasicTyping,
+            Formula.supportAt_fiberAtom, LogicVar.supportAtDepth]
           have hb : ¬n + 1 ≤ 0 := by omega
           simp only [Finset.singleton_biUnion, LogicVar.atDepth, if_neg hb, Finset.union_empty]
           apply Finset.union_subset
@@ -2602,10 +2599,10 @@ theorem ContextType.models_over_less_ret_free_lookup
       LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap, apartZ.symm, LogicVar.freeAtoms]
   have freeBody : (Formula.fiber {LogicVar.free y}
       (🄾 (Atom(q.openAt 0 z) ∧ᶜ (Interp.resultBasicTyping b).openAt 0 z))).freeAtoms = {z, y} := by
-    simp [Formula.freeAtoms_fiber, Interp.resultBasicTyping, Interp.basicTyping,
-      Formula.fiberAtom, Interp.basicTypingQualifier, Formula.openAt, Qualifier.freeAtoms,
+    simp [Formula.freeAtoms_fiber, Interp.resultBasicTyping,
+      Formula.fiberAtom, Formula.openAt, Qualifier.freeAtoms,
       LogicVar.freeAtomSet, LogicVar.freeAtoms, LogicVar.openSupport, LogicVar.openBinder,
-      LogicVar.swap, boundLogicSupportAt, Term.logicSupportAt, Value.logicSupportAt,
+      LogicVar.swap,
       q, Qualifier.lessThanBase, Value.logicalSupport, apartZ.symm, Finset.union_comm]
     ext a
     simp [or_comm]
