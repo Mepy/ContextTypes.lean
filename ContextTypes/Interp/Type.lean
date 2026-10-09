@@ -2671,4 +2671,174 @@ theorem ContextType.models_over_less_ret_free_lookup
   exact ⟨c₁, c₂, by simpa [eq] using valueX, hy, lt⟩
 
 
+namespace ContextType
+
+/-- A term's own exact result graph satisfies both base-type modalities. -/
+theorem models_self_result {m : Capability} {Δ : BasicEnv} {e : Term} {b : BaseType}
+    (wf : (Interp.resultQualifier e (.bound 0)).ScopedAt 1 Δ.domain)
+    (typed : Δ ⊢ₑ e ⋮ (.base b)) (world : m ⊨ Interp.basicWorld Δ)
+    (total : m ⊨ Interp.total e) :
+    (m ⊨ interp Δ (.over b (Interp.resultQualifier e (.bound 0))) e) ∧
+    (m ⊨ interp Δ (.under b (Interp.resultQualifier e (.bound 0))) e) := by
+  let q := Interp.resultQualifier e (.bound 0)
+  have wfOver : (.over b q : ContextType).WellFormed Δ.domain := wf
+  have wfUnder : (.under b q : ContextType).WellFormed Δ.domain := wf
+  have scopeΔ := ((Interp.models_basicWorld_iff m Δ).1 world).1
+  have supp : e.support ⊆ Δ.domain := typed.support_subset
+  have hinput : q.support \ {LogicVar.bound 0} = e.logicSupport := by
+    change (e.logicSupport ∪ {.bound 0}) \ {.bound 0} = e.logicSupport
+    have fresh : LogicVar.bound 0 ∉ e.logicSupport :=
+      Interp.termLogicSupport_locallyClosed e typed.locallyClosed 0
+    ext ξ
+    simp only [Finset.mem_sdiff, Finset.mem_union, Finset.mem_singleton]
+    aesop
+  have hopen (z : Atom) (fresh : z ∉ e.support) :
+      LogicVar.openSupport 0 z (q.support \ {.bound 0}) = e.logicSupport := by
+    rw [hinput]
+    apply LogicVar.openSupport_eq_self_of_fresh
+    · exact Interp.termLogicSupport_locallyClosed e typed.locallyClosed 0
+    · intro hz
+      exact fresh (by
+        rw [← Interp.freeAtomSet_term_logicSupport e, LogicVar.mem_freeAtomSet_iff]
+        exact hz)
+  constructor
+  case left =>
+    let P := Interp.resultFirst Δ (.over b q) e ⇒ᶜ
+      Formula.fiber (q.support \ {.bound 0}) (Interp.overResult b q)
+    simp only [interp, measure, interpFuel, Interp.resultFirst_relevantEnv]
+    apply Formula.models_and_intro
+      (Interp.models_guard_relevant_of_world wfOver typed world total)
+    change m ⊨ Formula.all P
+    have scopeP : P.freeAtoms ⊆ m.domain := by
+      apply Finset.Subset.trans (show _ ⊆ Δ.domain from ?_) scopeΔ
+      simp only [P, Interp.overResult, Formula.freeAtoms_impl,
+        Interp.freeAtoms_resultFirst, Formula.freeAtoms_fiber, Formula.freeAtoms_over,
+        Formula.freeAtoms_and, Formula.freeAtoms_atom,
+        Interp.freeAtoms_resultBasicTyping, Finset.union_empty]
+      apply Finset.union_subset
+      · exact Finset.union_subset
+          (by rw [Interp.relevantEnv_domain]; exact Finset.inter_subset_left) supp
+      · apply Finset.union_subset
+        · rw [hinput, Interp.freeAtomSet_term_logicSupport]
+          exact supp
+        · exact wf.freeAtoms_subset
+    apply (Formula.models_all_iff_full m P).2
+    refine ⟨scopeP, Δ.domain, ?_⟩
+    intro z freshZ _ n href hdom
+    have freshE : z ∉ e.support := fun hz => freshZ (supp hz)
+    have closedX := Interp.relevantSupport_locallyClosed Δ (.over b q) e
+      wfOver.locallyClosedAt typed.locallyClosed
+    have suppX := Interp.logicSupport_subset_relevantSupport Δ (.over b q) e supp
+    have freshX : LogicVar.free z ∉ Interp.relevantSupport Δ (.over b q) e := by
+      rw [Interp.free_mem_relevantSupport_iff]
+      exact fun hz => freshZ hz.1
+    have scope : (P.openAt 0 z).freeAtoms ⊆ n.domain := by
+      apply Finset.Subset.trans (Formula.freeAtoms_openAt_subset P 0 z)
+      rw [hdom]
+      exact Finset.union_subset (by simp)
+        (Finset.Subset.trans scopeP Finset.subset_union_left)
+    simp only [P, Formula.openAt]
+    apply (Formula.models_impl_iff_of_scope n _ _ scope).2
+    intro graph
+    have graph' : n ⊨ Interp.resultAt (Interp.relevantSupport Δ (.over b q) e) e (.free z) := by
+      change n ⊨ (Interp.resultFirst Δ (.over b q) e).openAt 0 z at graph
+      rwa [Interp.resultFirst_openAt Δ _ e z closedX typed.locallyClosed suppX freshX] at graph
+    have body := Interp.models_resultAt_typed_body closedX typed.locallyClosed suppX freshX
+      graph' (Formula.models_kripke href (Interp.models_basicTyping_of_world typed world))
+    simp only [Interp.overResult, Formula.openAt]
+    rw [hopen z freshE, Interp.resultQualifier_openAt e (.bound 0) 0 z freshE]
+    simp only [Term.openAt_eq_self_of_locallyClosed e (.free z) 0 typed.locallyClosed,
+      LogicVar.openBinder, LogicVar.swap]
+    exact Formula.models_fiber_over_intro body
+  case right =>
+    let P := Interp.resultFirst Δ (.under b q) e ⇒ᶜ
+      Formula.fiber (q.support \ {.bound 0}) (Interp.underResult b q)
+    simp only [interp, measure, interpFuel, Interp.resultFirst_relevantEnv]
+    apply Formula.models_and_intro
+      (Interp.models_guard_relevant_of_world wfUnder typed world total)
+    change m ⊨ Formula.all P
+    have scopeP : P.freeAtoms ⊆ m.domain := by
+      apply Finset.Subset.trans (show _ ⊆ Δ.domain from ?_) scopeΔ
+      simp only [P, Interp.underResult, Formula.freeAtoms_impl,
+        Interp.freeAtoms_resultFirst, Formula.freeAtoms_fiber,
+        Formula.freeAtoms_under, Formula.freeAtoms_and, Formula.freeAtoms_atom,
+        Interp.freeAtoms_resultBasicTyping, Finset.union_empty]
+      apply Finset.union_subset
+      · exact Finset.union_subset
+          (by rw [Interp.relevantEnv_domain]; exact Finset.inter_subset_left) supp
+      · apply Finset.union_subset
+        · rw [hinput, Interp.freeAtomSet_term_logicSupport]
+          exact supp
+        · exact wf.freeAtoms_subset
+    apply (Formula.models_all_iff_full m P).2
+    refine ⟨scopeP, Δ.domain, ?_⟩
+    intro z freshZ _ n href hdom
+    have freshE : z ∉ e.support := fun hz => freshZ (supp hz)
+    have closedX := Interp.relevantSupport_locallyClosed Δ (.under b q) e
+      wfUnder.locallyClosedAt typed.locallyClosed
+    have suppX := Interp.logicSupport_subset_relevantSupport Δ (.under b q) e supp
+    have freshX : LogicVar.free z ∉ Interp.relevantSupport Δ (.under b q) e := by
+      rw [Interp.free_mem_relevantSupport_iff]
+      exact fun hz => freshZ hz.1
+    have scope : (P.openAt 0 z).freeAtoms ⊆ n.domain := by
+      apply Finset.Subset.trans (Formula.freeAtoms_openAt_subset P 0 z)
+      rw [hdom]
+      exact Finset.union_subset (by simp)
+        (Finset.Subset.trans scopeP Finset.subset_union_left)
+    simp only [P, Formula.openAt]
+    apply (Formula.models_impl_iff_of_scope n _ _ scope).2
+    intro graph
+    have graph' : n ⊨ Interp.resultAt (Interp.relevantSupport Δ (.under b q) e) e (.free z) := by
+      change n ⊨ (Interp.resultFirst Δ (.under b q) e).openAt 0 z at graph
+      rwa [Interp.resultFirst_openAt Δ _ e z closedX typed.locallyClosed suppX freshX] at graph
+    have body := Interp.models_resultAt_typed_body closedX typed.locallyClosed suppX freshX
+      graph' (Formula.models_kripke href (Interp.models_basicTyping_of_world typed world))
+    simp only [Interp.underResult, Formula.openAt]
+    rw [hopen z freshE, Interp.resultQualifier_openAt e (.bound 0) 0 z freshE]
+    simp only [Term.openAt_eq_self_of_locallyClosed e (.free z) 0 typed.locallyClosed,
+      LogicVar.openBinder, LogicVar.swap]
+    exact Formula.models_fiber_under_intro body
+
+/-- The unrestricted overapproximate base type adds no condition to its guard. -/
+theorem models_over_top {m : Capability} {Δ : BasicEnv} {e : Term} {b : BaseType}
+    (typed : Δ ⊢ₑ e ⋮ (.base b)) (world : m ⊨ Interp.basicWorld Δ)
+    (total : m ⊨ Interp.total e) :
+    m ⊨ (⟦.over b Qualifier.top⟧[Δ] e) := by
+  let τ := ContextType.over b Qualifier.top
+  have wf : τ.WellFormed Δ.domain := by
+    intro ξ hξ
+    simp only [Qualifier.top, Qualifier.support_topOn, Finset.mem_singleton] at hξ
+    subst ξ
+    exact Nat.zero_lt_succ 0
+  let P := Interp.resultFirst (Interp.relevantEnv Δ τ e) τ e ⇒ᶜ
+    Formula.fiber (Qualifier.top.support \ {.bound 0}) (Interp.overResult b Qualifier.top)
+  have scopeP : P.freeAtoms ⊆ m.domain := by
+    apply Finset.Subset.trans (show _ ⊆ Δ.domain from ?_)
+      ((Interp.models_basicWorld_iff m Δ).1 world).1
+    simp only [P, Interp.freeAtoms_resultFirst, Formula.freeAtoms_impl,
+      Interp.overResult, Formula.freeAtoms_fiber, Formula.freeAtoms_over,
+      Formula.freeAtoms_and, Formula.freeAtoms_atom, Interp.freeAtoms_resultBasicTyping]
+    simp [Qualifier.top, Qualifier.freeAtoms, LogicVar.freeAtoms, Interp.relevantEnv_domain]
+    exact Finset.union_subset Finset.inter_subset_left typed.support_subset
+  simp only [interp, measure, interpFuel]
+  apply Formula.models_and_intro (Interp.models_guard_relevant_of_world wf typed world total)
+  change m ⊨ Formula.all P
+  apply (Formula.models_all_iff_full m P).2
+  refine ⟨scopeP, ∅, ?_⟩
+  intro y _ _ n _ dom
+  have scope : (P.openAt 0 y).freeAtoms ⊆ n.domain := by
+    apply Finset.Subset.trans (Formula.freeAtoms_openAt_subset P 0 y)
+    rw [dom]
+    exact Finset.union_subset (by simp) (Finset.Subset.trans scopeP Finset.subset_union_left)
+  simp only [P, Formula.openAt]
+  apply (Formula.models_impl_iff_of_scope n _ _ scope).2
+  intro _
+  have hy : y ∈ n.domain := by simp [dom]
+  apply (Formula.models_fiber_empty_iff n _).2
+  simpa [Qualifier.top, Interp.overResult, Formula.openAt,
+    LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap, Qualifier.openAt_topOn] using
+    Interp.models_over_top_body n b y hy
+
+end ContextType
+
 end ContextTypes

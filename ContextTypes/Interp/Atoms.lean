@@ -6339,4 +6339,140 @@ end Interp
 
 end
 
+namespace Interp
+
+theorem models_resultAt_typed_body {m : Capability}
+    {X : Finset LogicVar} {Δ : BasicEnv} {e : Term} {b : BaseType} {z : Atom}
+    (closedX : LogicVar.LocallyClosed X) (closedE : e.locallyClosed)
+    (support : e.logicSupport ⊆ X) (fresh : LogicVar.free z ∉ X)
+    (graph : m ⊨ resultAt X e (.free z))
+    (typed : m ⊨ basicTyping Δ e (.base b)) :
+    m ⊨ Formula.fiber e.logicSupport
+      (Atom(resultQualifier e (.free z)) ∧ᶜ (resultBasicTyping b).openAt 0 z) := by
+  let q := Qualifier.top.openAt 0 z
+  have hq : (resultBasicTyping b).openAt 0 z = Formula.fiberAtom q := by
+    rw [resultBasicTyping_eq_fiberAtom_top]
+    rfl
+  have hqsupp : q.support = {.free z} := by
+    simp [q, Qualifier.top, LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap]
+  have hqfree : q.freeAtoms = {z} := by
+    simp [Qualifier.freeAtoms, hqsupp, LogicVar.freeAtoms]
+  have input : m ⊨ resultAt e.logicSupport e (.free z) :=
+    Formula.models_kripke (Capability.restrict_refines m _)
+      (models_resultAt_restrict_support closedX support (Finset.Subset.refl _) fresh graph)
+  have out : m ⊨ Formula.fiberAtom q := by
+    rw [← hq]
+    exact models_resultBasicTyping_openAt closedX closedE support fresh graph typed
+  have scopeEq :
+      (Formula.fiber e.logicSupport
+        (Atom(resultQualifier e (.free z)) ∧ᶜ Formula.fiberAtom q)).freeAtoms =
+        (resultAt e.logicSupport e (.free z)).freeAtoms := by
+    simp [resultAt, resultQualifier, Formula.fiberAtom, Qualifier.freeAtoms, hqsupp,
+      LogicVar.freeAtoms]
+  rw [hq]
+  obtain ⟨dom, closed, fibers⟩ := (Formula.models_fiber_iff _ _ _).1 input
+  apply Formula.models_fiber_intro
+  · rw [scopeEq]
+    exact Formula.models_scope input
+  · exact closed
+  · intro σ f hf
+    have hf' : Capability.IsFiber f
+        (m.restrict (resultAt e.logicSupport e (.free z)).freeAtoms)
+        (LogicVar.freeAtomSet e.logicSupport) σ := by
+      rwa [scopeEq] at hf
+    have out' : f ⊨ Formula.fiberAtom q := by
+      have outR : m.restrict (resultAt e.logicSupport e (.free z)).freeAtoms ⊨
+          Formula.fiberAtom q := (Formula.models_restrict_superset m _ (by
+            rw [Formula.freeAtoms_fiberAtom, hqfree, freeAtoms_resultAt]
+            simp [LogicVar.freeAtoms])).1 out
+      exact Formula.models_fiberAtom_of_subset outR
+        ⟨hf'.domain_eq, fun ρ hρ => hf'.source_mem hρ⟩
+    have freshσ : Disjoint q.support σ.toAssignment.domain := by
+      rw [hqsupp, Store.toAssignment_domain]
+      apply Finset.disjoint_left.2
+      intro ξ hξ hσ
+      have same : ξ = .free z := Finset.mem_singleton.1 hξ
+      subst ξ
+      have hzσ : z ∈ σ.domain := by simpa using hσ
+      have hdomσ := (m.restrict
+        (resultAt e.logicSupport e (.free z)).freeAtoms).restrict
+          (LogicVar.freeAtomSet e.logicSupport) |>.mem_domain hf'.projection_mem
+      rw [hdomσ, Capability.restrict_domain] at hzσ
+      exact fresh (support ((LogicVar.mem_freeAtomSet_iff _ _).1
+        (Finset.mem_inter.1 hzσ).2))
+    have same : (Formula.fiberAtom q).substituteStore σ = Formula.fiberAtom q := by
+      simp only [Formula.fiberAtom, Formula.substituteStore, Formula.substitute,
+        Finset.sdiff_eq_self_of_disjoint freshσ, q.substitute_fresh _ freshσ]
+    apply Formula.models_and_intro (fibers σ f hf')
+    change f ⊨ (Formula.fiberAtom q).substituteStore σ
+    rwa [same]
+
+theorem models_over_top_body (m : Capability) (b : BaseType) (y : Atom)
+    (hy : y ∈ m.domain) :
+    m ⊨ (🄾 (Atom(Qualifier.topOn {.free y}) ∧ᶜ
+      (resultBasicTyping b).openAt 0 y)) := by
+  let q := Qualifier.topOn {LogicVar.free y}
+  let n : Capability :=
+    { domain := {y}
+      stores := fun σ => σ.domain = {y}
+      nonempty := ⟨Store.singleton y (.const .unit), by simp⟩
+      fixedDomain := fun _ h => h }
+  have free : q.freeAtoms = {y} := by
+    simp [q, Qualifier.freeAtoms, LogicVar.freeAtoms]
+  have restrictN : n.restrict q.freeAtoms = n := by
+    rw [free]
+    exact Capability.restrict_domain_self n
+  have atom : n ⊨ Atom(q) := by
+    apply (Formula.models_atom_iff n q).2
+    rw [restrictN]
+    refine ⟨by rw [free], ?_⟩
+    refine ⟨?_, by simp [free, n], ?_⟩
+    · intro k hk
+      simp [q] at hk
+    · intro σ dom
+      rw [restrictN]
+      change q.HoldsStore σ ↔ σ.domain = {y}
+      constructor
+      · intro _
+        simpa [free] using dom
+      · intro _
+        let a : AssignmentOn q.support :=
+          { assignment := σ.toAssignment
+            domain_eq := by simp [Store.toAssignment_domain, dom, free, q] }
+        exact ⟨dom, a, trivial, fun x => Store.toAssignment_lookup_free σ x⟩
+  have typed : n ⊨ (resultBasicTyping b).openAt 0 y :=
+    (models_resultBasicTyping_openAt_iff n b y).2 (by simp [n])
+  have freeBody : (Atom(q) ∧ᶜ (resultBasicTyping b).openAt 0 y).freeAtoms = {y} := by
+    simp [resultBasicTyping_eq_fiberAtom_top, Formula.openAt,
+      Formula.fiberAtom, Qualifier.freeAtoms,
+      q, Qualifier.top, LogicVar.openSupport, LogicVar.openBinder,
+      LogicVar.swap, LogicVar.freeAtoms]
+  apply (Formula.models_over_iff m _).2
+  refine ⟨?_, n, ?_, Formula.models_and_intro atom typed⟩
+  · rw [freeBody, Capability.restrict_domain]
+    simp [hy]
+  · refine ⟨?_, ?_⟩
+    · rw [freeBody, Capability.restrict_domain]
+      simp [n, hy]
+    · intro σ hσ
+      change σ.domain = {y}
+      simpa [freeBody, hy] using
+        (m.restrict (Atom(q) ∧ᶜ (resultBasicTyping b).openAt 0 y).freeAtoms).mem_domain hσ
+
+theorem models_total_primitive {m : Capability} {Δ : BasicEnv}
+    {op : Primitive} {x : Atom} (world : m ⊨ basicWorld Δ)
+    (lookup : Δ.lookup x = some (.base op.signature.1)) :
+    m ⊨ total (.primitive op (.free x)) := by
+  have hw := (models_basicWorld_iff m Δ).1 world
+  apply (models_total_iff (show (Term.primitive op (.free x)).locallyClosed from trivial)).2
+  refine ⟨?_, ?_⟩
+  · simpa [Term.support, Value.support] using
+      hw.1 ((BasicEnv.mem_domain_iff Δ x).2 ⟨_, lookup⟩)
+  · intro σ hσ
+    obtain ⟨v, hv, typed⟩ := hw.2 σ hσ x _ lookup
+    simpa [instantiateTerm, instantiateTermAt, instantiateValueAt,
+      Store.toAssignment_lookup_free, hv] using Term.primitive_mustTerminate typed
+
+end Interp
+
 end ContextTypes

@@ -2394,6 +2394,32 @@ theorem models_wand_elim_named {m n : Capability} {P Q : Formula} {x : Atom}
   simpa only [sameM] using result
 
 
+theorem models_fiberAtom_of_subset {m n : Capability} {q : Qualifier}
+    (h : m ⊨ fiberAtom q) (sub : n ⊆ m) : n ⊨ fiberAtom q := by
+  obtain ⟨closed, scope, holds⟩ := (models_fiberAtom_iff m q).1 h
+  exact (models_fiberAtom_iff n q).2
+    ⟨closed, by rwa [sub.1], fun σ hσ => holds σ (sub.2 σ hσ)⟩
+
+theorem models_fiber_over_intro {m : Capability} {X : Finset LogicVar}
+    {P : Formula} (h : m ⊨ Formula.fiber X P) :
+    m ⊨ Formula.fiber X (🄾 P) := by
+  obtain ⟨dom, closed, fibers⟩ := (models_fiber_iff _ _ _).1 h
+  apply models_fiber_intro
+  · simpa using models_scope h
+  · exact closed
+  · intro σ f hf
+    exact models_over_intro (fibers σ f hf)
+
+theorem models_fiber_under_intro {m : Capability} {X : Finset LogicVar}
+    {P : Formula} (h : m ⊨ Formula.fiber X P) :
+    m ⊨ Formula.fiber X (🅄 P) := by
+  obtain ⟨dom, closed, fibers⟩ := (models_fiber_iff _ _ _).1 h
+  apply models_fiber_intro
+  · simpa using models_scope h
+  · exact closed
+  · intro σ f hf
+    exact models_under_intro (fibers σ f hf)
+
 end Formula
 
 end ContextTypes

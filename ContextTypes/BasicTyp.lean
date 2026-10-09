@@ -1580,4 +1580,33 @@ theorem BasicValTyp.of_agreeOn {Δ Δ' : BasicEnv} {v : Value} {T : SimpleType}
   cases h with
   | ret h => exact h
 
+namespace Term
+
+/-- Base-typed primitive inputs admit a step, and every step returns a constant. -/
+theorem primitive_mustTerminate {op : Primitive} {v : Value}
+    (typed : (∅ : BasicEnv) ⊢ᵥ v ⋮ (.base op.signature.1)) :
+    (Term.primitive op v).MustTerminate := by
+  have returns : ∃ c c', v = .const c ∧ Primitive.Step op c c' := by
+    generalize hb : SimpleType.base op.signature.1 = T at typed
+    cases typed with
+    | const Δ c =>
+      cases op <;> cases c <;> simp_all [Primitive.signature, Constant.baseType]
+      · exact ⟨_, .eqZero _⟩
+      · exact ⟨_, .plusOne _⟩
+      · exact ⟨_, .minusOne _⟩
+      · exact ⟨_, .boolGen true⟩
+      · exact ⟨_, .natGen 0⟩
+    | free hx => simp at hx
+    | lam _ _ => cases hb
+    | fix _ _ => cases hb
+  obtain ⟨c, c', rfl, step⟩ := returns
+  apply MustTerminate.step ⟨.ret (.const c'), .head (.primitive op c c' step trivial)⟩
+  intro e' next
+  cases next with
+  | head next =>
+    cases next with
+    | primitive _ _ c'' _ _ => exact MustTerminate.ret (.const c'') trivial
+
+end Term
+
 end ContextTypes
