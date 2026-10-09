@@ -20,6 +20,10 @@ namespace BasicEnv
 def insert (Δ : BasicEnv) (x : Atom) (T : SimpleType) : BasicEnv :=
   Finmap.insert x T Δ
 
+@[simp] theorem insert_empty (x : Atom) (T : SimpleType) :
+    (∅ : BasicEnv).insert x T = singleton x T :=
+  rfl
+
 /-- Remove one binding from an erased environment. -/
 def erase (Δ : BasicEnv) (x : Atom) : BasicEnv :=
   Finmap.erase x Δ

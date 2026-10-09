@@ -12,6 +12,7 @@ import ContextTypes.Pretty
 import ContextTypes.SynTyp
 import ContextTypes.SemTyp
 import ContextTypes.Fundamental
+import ContextTypes.Soundness
 
 /-!
 This module is the public root of the `ContextTypes` library.
