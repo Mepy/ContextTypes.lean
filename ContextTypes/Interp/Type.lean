@@ -2532,4 +2532,146 @@ namespace ContextType
 
 end ContextType
 
+/-- A strict-decrease refinement yields the corresponding pointwise order
+between the two stored constants. -/
+theorem ContextType.models_over_less_ret_free_lookup
+    {m : Capability} {Δ : BasicEnv} {b : BaseType} {x y : Atom}
+    (wf : (.over b (Qualifier.lessThanBase b (.bound 0) (.free y)) : ContextType).WellFormed Δ.domain)
+    (typed : Δ ⊢ᵥ (.free x) ⋮ (.base b))
+    (h : m ⊨ ContextType.interp Δ
+      (.over b (Qualifier.lessThanBase b (.bound 0) (.free y))) (.ret (.free x))) :
+    ∀ σ, σ ∈ m → ∃ c₁ c₂,
+      σ.lookup x = some (.const c₁) ∧ σ.lookup y = some (.const c₂) ∧
+      Qualifier.constantMeasure b c₁ < Qualifier.constantMeasure b c₂ := by
+  let q := Qualifier.lessThanBase b (.bound 0) (.free y)
+  let τ := ContextType.over b q
+  let e := Term.ret (.free x)
+  let X := Interp.relevantSupport Δ τ e
+  have typedE : Δ ⊢ₑ e ⋮ τ.erase := BasicTermTyp.ret typed
+  have closedX : LogicVar.LocallyClosed X :=
+    Interp.relevantSupport_locallyClosed Δ τ e wf.locallyClosedAt typedE.locallyClosed
+  have logicX : e.logicSupport ⊆ X := Interp.logicSupport_subset_relevantSupport _ _ _ typedE.support_subset
+  have scopeX : X ⊆ m.domain.image LogicVar.free := by
+    rw [LogicVar.eq_image_free_of_locallyClosed closedX, Interp.freeAtomSet_relevantSupport]
+    exact Finset.image_subset_image
+      ((Interp.models_basicWorld_iff m _).1 (ContextType.models_interp_basicWorld h)).1
+  have total := ContextType.models_interp_total h
+  have returns : ∀ σ, σ ∈ m → ∃ u, (Interp.instantiateTerm e σ.toAssignment).reaches u :=
+    fun σ hσ => (Interp.models_total_term typedE.locallyClosed total hσ).reaches_result
+  obtain ⟨z, hz⟩ := Finset.exists_nat_subset_range m.domain
+  have freshZ : z ∉ m.domain := by
+    intro h
+    have := hz h
+    simp at this
+  have scopeE : e.support ⊆ m.domain := (Interp.models_total_iff typedE.locallyClosed).1 total |>.1
+  have presentX : x ∈ m.domain := scopeE (by simp [e, Term.support, Value.support])
+  have presentY : y ∈ m.domain := Formula.models_scope h (by
+    simp [ContextType.interp, ContextType.interpFuel, ContextType.measure,
+      Interp.freeAtoms_guard, Interp.freeAtoms_resultFirst,
+      Qualifier.lessThanBase, Qualifier.freeAtoms, Value.logicalSupport, LogicVar.freeAtoms])
+  have apartZ : z ≠ y := fun h => freshZ (h ▸ presentY)
+  let g := Interp.resultCapability m m.domain e z (Finset.Subset.refl _) returns
+  have href : m ⊑ g := by
+    change m = g.restrict m.domain
+    rw [Interp.resultCapability_restrict, Capability.restrict_domain_self]
+  have graphFull := Interp.models_resultCapability m m.domain e z
+    (Finset.Subset.refl _) returns typedE.locallyClosed scopeE freshZ
+  have graph : g ⊨ (Interp.resultFirst Δ τ e).openAt 0 z := by
+    rw [Interp.resultFirst_openAt _ _ _ z closedX typedE.locallyClosed logicX
+      (fun h => freshZ (by simpa using scopeX h))]
+    exact Formula.models_kripke (Capability.restrict_refines g _)
+      (Interp.models_resultAt_restrict_support (by intro k hk; simp at hk) scopeX logicX
+        (by simpa using freshZ) graphFull)
+  have universal : m ⊨ Formula.all (Interp.resultFirst Δ τ e ⇒ᶜ
+      Formula.fiber (q.support \ {.bound 0}) (Interp.overResult b q)) := by
+    have body := Formula.models_and_elim_right h
+    simpa only [ContextType.interp, ContextType.measure, ContextType.interpFuel,
+      Interp.resultFirst_relevantEnv] using body
+  have opened := Formula.models_all_openAt_of_refines universal freshZ href (by rfl)
+  have body := Formula.models_impl_elim opened graph
+  have keys : q.support \ {LogicVar.bound 0} = {LogicVar.free y} := by
+    ext ξ
+    cases ξ <;> simp [q, Qualifier.lessThanBase, Value.logicalSupport]
+  have body' : g ⊨ Formula.fiber {LogicVar.free y}
+      (🄾 (Atom(q.openAt 0 z) ∧ᶜ (Interp.resultBasicTyping b).openAt 0 z)) := by
+    simpa [Formula.openAt, keys,
+      LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap, apartZ.symm,
+      Interp.overResult] using body
+  have freeQ : (q.openAt 0 z).freeAtoms = {z, y} := by
+    simp [q, Qualifier.lessThanBase, Qualifier.freeAtoms, Value.logicalSupport,
+      LogicVar.openSupport, LogicVar.openBinder, LogicVar.swap, apartZ.symm, LogicVar.freeAtoms]
+  have freeBody : (Formula.fiber {LogicVar.free y}
+      (🄾 (Atom(q.openAt 0 z) ∧ᶜ (Interp.resultBasicTyping b).openAt 0 z))).freeAtoms = {z, y} := by
+    simp [Formula.freeAtoms_fiber, Interp.resultBasicTyping, Interp.basicTyping,
+      Formula.fiberAtom, Interp.basicTypingQualifier, Formula.openAt, Qualifier.freeAtoms,
+      LogicVar.freeAtomSet, LogicVar.freeAtoms, LogicVar.openSupport, LogicVar.openBinder,
+      LogicVar.swap, boundLogicSupportAt, Term.logicSupportAt, Value.logicSupportAt,
+      q, Qualifier.lessThanBase, Value.logicalSupport, apartZ.symm, Finset.union_comm]
+    ext a
+    simp [or_comm]
+  obtain ⟨_, _, fibers⟩ := (Formula.models_fiber_iff _ _ _).1 body'
+  intro σ hσ
+  obtain ⟨u, hu⟩ := returns σ hσ
+  let ρ := (σ.restrict m.domain).merge (Store.singleton z u)
+  have hρ : ρ ∈ g := ⟨σ, hσ, u, hu, rfl⟩
+  have hzρ : ρ.lookup z = some u := by
+    simp [ρ, Store.lookup_merge_right, freshZ]
+  have hyρ : ρ.lookup y = σ.lookup y := by
+    rw [Store.lookup_merge_left _ _ (by simp [presentY, m.mem_domain hσ]), Store.lookup_restrict, if_pos presentY]
+  have valueX : σ.lookup x = some u := by
+    have world := (Interp.models_basicWorld_iff m _).1 (ContextType.models_interp_basicWorld h)
+    have lookup : (Interp.relevantEnv Δ τ e).lookup x = some (.base b) := by
+      simp only [Interp.relevantEnv, BasicEnv.lookup_restrict]
+      rw [if_pos (by simp [Interp.relevantAtoms, e, Term.support, Value.support])]
+      cases typed with | free hx => exact hx
+    obtain ⟨w, hw, _⟩ := world.2 σ hσ x (.base b) lookup
+    have same : u = w := by
+      have eval : (Term.ret w).reaches u := by
+        simpa [e, Interp.instantiateTerm, Interp.instantiateTermAt, Interp.instantiateValueAt,
+          Store.toAssignment_lookup_free, hw] using hu
+      exact Term.ret.inj eval.ret_eq
+    simpa [same] using hw
+  let r := g.restrict {z, y}
+  let s := ρ.restrict {z, y}
+  have hs : s ∈ r := ⟨ρ, hρ, rfl⟩
+  obtain ⟨f, hf, hsf⟩ := Capability.fiber_from_store r {y} hs
+  have hf' : Capability.IsFiber f
+      (g.restrict (Formula.fiber {LogicVar.free y}
+        (🄾 (Atom(q.openAt 0 z) ∧ᶜ (Interp.resultBasicTyping b).openAt 0 z))).freeAtoms)
+      (LogicVar.freeAtomSet {LogicVar.free y}) (s.restrict {y}) := by
+    simpa only [freeBody, LogicVar.freeAtomSet, LogicVar.freeAtoms, Finset.biUnion_singleton] using hf
+  have fiber := fibers (s.restrict {y}) f hf'
+  change f ⊨ (🄾 (Atom((q.openAt 0 z).substitute (s.restrict {y}).toAssignment) ∧ᶜ
+    ((Interp.resultBasicTyping b).openAt 0 z).substituteStore (s.restrict {y}))) at fiber
+  obtain ⟨_, a, holds, lookup⟩ := Formula.models_over_and_atom_holdsStore fiber hsf
+  have sy : (s.restrict {y}).lookup y = σ.lookup y := by simp [s, hyρ]
+  have sz : s.lookup z = some u := by simp [s, hzρ]
+  have domSY : (s.restrict {y}).domain = {y} := by
+    simp [s, Store.domain_restrict, g.mem_domain hρ, g, presentY]
+  have freeSub : ((q.openAt 0 z).substitute (s.restrict {y}).toAssignment).freeAtoms = {z} := by
+    simp [Qualifier.freeAtoms, Qualifier.support_substitute, Qualifier.support_openAt,
+      q, Qualifier.lessThanBase, Value.logicalSupport, LogicVar.openSupport, LogicVar.openBinder,
+      LogicVar.swap, Store.toAssignment_domain, domSY, apartZ, apartZ.symm, LogicVar.freeAtoms]
+  have lookupZ : a.assignment.lookup (.free z) = some u := by
+    rw [lookup z, freeSub, Store.lookup_restrict, if_pos (by simp)]
+    exact sz
+  have absentY : a.assignment.lookup (.free y) = none := by
+    apply (Assignment.lookup_eq_none_iff _ _).2
+    rw [a.domain_eq]
+    simp [Qualifier.support_substitute, Store.toAssignment_domain, domSY]
+  have namedZ : LogicVar.free z ∈ a.assignment.domain :=
+    (Assignment.mem_domain_iff _ _).2 ⟨u, lookupZ⟩
+  have freshY : LogicVar.free y ∉ a.assignment.domain :=
+    (Assignment.lookup_eq_none_iff _ _).1 absentY
+  have reduced : ∃ c₁ c₂, u = .const c₁ ∧ σ.lookup y = some (.const c₂) ∧
+      Qualifier.constantMeasure b c₁ < Qualifier.constantMeasure b c₂ := by
+    simpa [Qualifier.substitute, Qualifier.openAt, q, Qualifier.lessThanBase,
+      Value.denoteAssignment, AssignmentOn.substituteBack, AssignmentOn.swapBack,
+      Assignment.lookup_swap, LogicVar.swap, Assignment.lookup_merge, Assignment.lookup_restrict,
+      lookupZ, absentY, Store.toAssignment_lookup_free, apartZ, apartZ.symm, sy, domSY,
+      namedZ, freshY, Value.logicalSupport, LogicVar.openBinder] using holds
+  obtain ⟨c₁, c₂, eq, hy, lt⟩ := reduced
+  exact ⟨c₁, c₂, by simpa [eq] using valueX, hy, lt⟩
+
+
 end ContextTypes
