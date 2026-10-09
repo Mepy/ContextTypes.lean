@@ -114,6 +114,71 @@ theorem concrete_result_openAt (op : Primitive) (x : Atom) :
   rw [Interp.resultQualifier_openAt _ _ 1 x (by simp [Term.support, Value.support])]
   simp [Term.openAt, Value.openAt, LogicVar.openBinder, LogicVar.swap]
 
+/-- The concrete primitive graph and its argument context entail each other. -/
+theorem concrete_semantic (op : Primitive) : (concrete op).SemanticOk op := by
+  intro x
+  let Δ := BasicEnv.singleton x (.base op.signature.1)
+  let e := Term.primitive op (.free x)
+  let q := Interp.resultQualifier e (.bound 0)
+  have lookup : Δ.lookup x = some (.base op.signature.1) := by
+    change (BasicEnv.singleton x (.base op.signature.1)).lookup x = _
+    exact BasicEnv.lookup_singleton x (.base op.signature.1)
+  have typed : Δ ⊢ₑ e ⋮ (.base op.signature.2) :=
+    BasicTermTyp.primitive rfl (BasicValTyp.free lookup)
+  have typedRet : Δ ⊢ₑ (.ret (.free x)) ⋮ (.base op.signature.1) :=
+    BasicTermTyp.ret (BasicValTyp.free lookup)
+  have wf : q.ScopedAt 1 Δ.domain := by
+    intro ξ hξ
+    change ξ ∈ e.logicSupport ∪ {.bound 0} at hξ
+    simp only [e, Term.logicSupportAt, Value.logicSupportAt, Finset.mem_union,
+      Finset.mem_singleton] at hξ
+    rcases hξ with rfl | rfl
+    · change x ∈ Δ.domain
+      simp [Δ]
+    · exact Nat.zero_lt_succ 0
+  have relevant : Interp.relevantEnv Δ (.precise op.signature.2 q) e = Δ := by
+    apply BasicEnv.restrict_eq_self
+    simp [Δ, Interp.relevantAtoms, e, Term.support, Value.support]
+  have bindEq : Context.interp (.bind x (concrete op).argType) =
+      (Interp.basicWorld Δ ∧ᶜ ContextType.interp Δ
+        (.over op.signature.1 Qualifier.top) (.ret (.free x))) := by
+    have empty : (∅ : BasicEnv).restrict
+        (ContextType.over op.signature.1 Qualifier.top).freeAtoms = ∅ := by
+      apply BasicEnv.restrict_eq_self
+      simp
+    have insert : (∅ : BasicEnv).insert x (.base op.signature.1) = Δ := rfl
+    simp only [Context.interp, Context.interpUnder, concrete, PrimitiveSignature.argType,
+      ContextType.erase, empty, insert, Δ]
+    congr 2
+  rw [concrete_result_openAt]
+  change (Context.interp (.bind x (concrete op).argType) ⊫
+      ContextType.interp Δ (.precise op.signature.2 q) e) ∧
+    (ContextType.interp Δ (.precise op.signature.2 q) e ⊫
+      Context.interp (.bind x (concrete op).argType))
+  rw [bindEq]
+  constructor
+  · intro m h
+    have world := Formula.models_and_elim_left h
+    have total := Interp.models_total_primitive world lookup
+    obtain ⟨hOver, hUnder⟩ := ContextType.models_self_result wf typed world total
+    change m ⊨ ContextType.interpFuel 2 0 Δ (.inter (.over op.signature.2 q)
+      (.under op.signature.2 q)) e
+    simp only [ContextType.interpFuel]
+    have wfτ : (ContextType.precise op.signature.2 q).WellFormed Δ.domain := ⟨wf, wf, rfl⟩
+    apply Formula.models_and_intro (Interp.models_guard_relevant_of_world wfτ typed world total)
+    exact Formula.models_and_intro hOver hUnder
+  · intro m h
+    have world := ContextType.models_interp_basicWorld h
+    rw [relevant] at world
+    apply Formula.models_and_intro world
+    exact ContextType.models_over_top typedRet world (Interp.models_total_ret_free world lookup)
+
+/-- All five core primitives have well-formed graph-precise signatures. -/
+theorem concrete_wellFormed : concrete.WellFormed := by
+  intro op
+  exact ⟨concrete_erasure op, concrete_arg_wellFormed op,
+    concrete_result_wellFormed op, concrete_semantic op⟩
+
 end PrimitiveContext
 
 /-! ## Shared side conditions -/

@@ -37,4 +37,10 @@ theorem sound {Φ : PrimitiveContext} {«Σ» : BasicEnv} {Γ : Context}
   | matchTrue wf value branch ih₁ ih₂ => exact SemTyp.matchTrue wf ih₁ ih₂
   | matchFalse wf value branch ih₁ ih₂ => exact SemTyp.matchFalse wf ih₁ ih₂
 
+/-- Fundamental theorem for the core language's concrete primitive signatures. -/
+theorem concrete {«Σ» : BasicEnv} {Γ : Context} {e : Term} {τ : ContextType}
+    (typed : PrimitiveContext.concrete ; «Σ» ; Γ ⊢ e ⋮ τ) :
+    PrimitiveContext.concrete ; «Σ» ; Γ ⊨ e ⋮ τ :=
+  sound PrimitiveContext.concrete_wellFormed typed
+
 end ContextTypes.Fundamental
