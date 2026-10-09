@@ -5,6 +5,7 @@ import ContextTypes.SemTyp.Match
 import ContextTypes.SemTyp.Let
 import ContextTypes.SemTyp.Function
 import ContextTypes.SemTyp.Application
+import ContextTypes.SemTyp.Fixpoint
 
 /-!
 # Semantic context typing
