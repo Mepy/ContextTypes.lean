@@ -11,6 +11,7 @@ import ContextTypes.Interp
 import ContextTypes.Pretty
 import ContextTypes.SynTyp
 import ContextTypes.SemTyp
+import ContextTypes.Fundamental
 
 /-!
 This module is the public root of the `ContextTypes` library.
